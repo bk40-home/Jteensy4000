@@ -28,7 +28,7 @@ OscillatorBlock::OscillatorBlock()
     _shapeModMixer.gain(2, 1.0f);
     _shapeModMixer.gain(3, 1.0f);
 
-    _outputMix.gain(0, 1.0f);  // Main oscillator
+    _outputMix.gain(0, 0.9f);  // Main oscillator
     _outputMix.gain(1, 0.0f);  // Supersaw off by default
 }
 
@@ -38,10 +38,10 @@ void OscillatorBlock::setWaveformType(int type) {
 
     if (type == 9) {  // Supersaw
         _outputMix.gain(0, 0.0f);
-        _outputMix.gain(1, 1.0f);
+        _outputMix.gain(1, 0.9f); 
     } else {
         _mainOsc.begin(type);
-        _outputMix.gain(0, 1.0f);
+        _outputMix.gain(0, 0.7f); // volume difference for head room, 
         _outputMix.gain(1, 0.0f);
     }
 }
@@ -246,9 +246,9 @@ void OscillatorBlock::update() {
         _supersaw.setFrequency(finalFreq);
         AudioInterrupts();
 
-        // Now it’s safe to log
-        Serial.printf("updateRequired %d, lastFreq %.2f, finalFreq %.2f\n",
-                      (int)updateRequired, _lastFreq, finalFreq);
+        // // Now it’s safe to log
+        // Serial.printf("updateRequired %d, lastFreq %.2f, finalFreq %.2f\n",
+        //               (int)updateRequired, _lastFreq, finalFreq);
 
         _lastFreq = finalFreq;
     }

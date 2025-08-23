@@ -29,6 +29,14 @@ public:
 
     void pollInputs(HardwareInterface& hw, SynthEngine& synth);
 
+    // 🆕 Activity hooks (call whenever user interacts)
+    inline void noteActivity() { _lastActivityMs = millis(); _scopeForced = false; }
+
+    // 🆕 Expose scope input so SynthEngine can patch audio to it
+    // Add this public accessor (by reference)
+    AudioRecordQueue& scopeIn();
+
+
 
 private:
     Adafruit_SSD1306 _display;
@@ -37,5 +45,24 @@ private:
     const char* _labels[4];
     int _values[4];
 
+    uint8_t _lastCCSent[128] = {0};
+    bool    _hasCCSent[128]  = {false};
+
+    // ---------- Screensaver / Scope ----------
+    static constexpr uint32_t SCREEN_SAVER_TIMEOUT_MS = 60000; // keep screensaver
+    uint32_t _lastActivityMs = 0;
+    bool _scopeForced = false;  // legacy screensaver path
+    bool _scopeOn     = false;  // 🆕 explicit toggle via button
+
+    AudioRecordQueue _scopeQueue;
+
+    // ---------- Presets ----------
+    int _currentPreset = 0;     // 🆕 cycles 0..8 while scope is on
+
+    // ---------- Rendering ----------
+    void renderPage();
+    void renderScope();
+
+    void drawRightAligned(const String& text, int y);
 
 };

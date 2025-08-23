@@ -18,6 +18,8 @@ public:
     // ✅ API unchanged — now detects change on SMOOTHED values (threshold in raw counts)
     bool potChanged(int index, int threshold = 4);
 
+    void setPotDebug(bool on) { _debugPots = on; }
+
 private:
     // -------------------- Encoder & button -----------------------
     PolledEncoder _navEncoder;
@@ -45,5 +47,12 @@ private:
 
     // Optional tunables (reasonable defaults)
     float _snapMultiplier = 0.05f;  // 0.01..0.20; higher = snappier, lower = smoother
-    int   _activityThresh = 4;      // raw counts to ignore wiggle until “real” move
+    int   _activityThresh = 6;      // raw counts to ignore wiggle until “real” move
+    
+    // DEBUG: enable to print raw vs smoothed reads
+    bool _debugPots = false;
+
+
+
+
 };

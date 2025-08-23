@@ -38,18 +38,28 @@ void HardwareInterface::begin() {
 }
 
 void HardwareInterface::update() {
-    // ---------------- Encoder/button housekeeping ----------------
     _navEncoder.tick();
-
     bool current = (digitalRead(30) == LOW);
     _fallingEdge = current && !_lastButton;
     _lastButton = current;
 
-    // ---------------- Pot smoothing updates ----------------------
     for (int i = 0; i < 4; ++i) {
-        _potSmooth[i].update();   // keep the smoother fed each loop
+        _potSmooth[i].update();
+
+        if (_debugPots) {
+            int raw      = analogRead(_potPins[i]);             // 0..1023
+            int smoothed = _potSmooth[i].getValue();            // 0..1023
+            int ccRaw    = raw >> 3;                            // 0..127
+            int ccSmooth = smoothed >> 3;                       // 0..127
+            static uint32_t lastPrint = 0;
+            if (millis() - lastPrint > 100) {
+                lastPrint = millis();
+                Serial.printf("[POT%d] raw=%4d cc=%3d | smooth=%4d cc=%3d\n", i, raw, ccRaw, smoothed, ccSmooth);
+            }
+        }
     }
 }
+
 
 int HardwareInterface::getEncoderDelta() {
     int32_t current = _navEncoder.getValue();

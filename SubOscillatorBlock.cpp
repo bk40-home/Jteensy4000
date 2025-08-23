@@ -5,7 +5,7 @@
 SubOscillatorBlock::SubOscillatorBlock() {
     _subOsc.begin(WAVEFORM_SINE);
     _subOsc.frequency(110.0f);  // default 1 octave below A440
-    _subOsc.amplitude(0.5f);
+    _subOsc.amplitude(0.0f);
 }
 
 void SubOscillatorBlock::update() {
@@ -23,7 +23,7 @@ void SubOscillatorBlock::setFrequency(float freq) {
 }
 
 void SubOscillatorBlock::setAmplitude(float amp) {
-    _subOsc.amplitude(amp);
+    _subOsc.amplitude(amp * 0.9f); //allow had room
 }
 void SubOscillatorBlock::setWaveform(int type)  {
     _subOsc.begin(type);

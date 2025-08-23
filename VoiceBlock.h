@@ -165,6 +165,10 @@ private:
     float _subMix = 0.0f;
     float _noiseMix = 0.0f;
 
+    // limit mixers for head room to avoid clipping
+    float _on = 0.8f;
+    float _clampedLevel(float level);
+
 
     AudioConnection* _patchCables[15];
 };

@@ -8,44 +8,53 @@
 #include "Mapping.h"
 #include "CCMap.h"
 #include "HardwareInterface.h"  // ✅ Ensure visibility
+#include "Presets.h"   // make sure this is at the top of UIManager.cpp
 
 // ... [unchanged methods above] ...
 
+
+
+
+
 void UIManager::pollInputs(HardwareInterface& hw, SynthEngine& synth) {
-    int currentPage = getCurrentPage();
+ 
 
-    for (int i = 0; i < 4; ++i) {
-        if (hw.potChanged(i, 5)) {
-            int raw = hw.readPot(i);
-            int mapped = map(raw, 0, 1023, 0, 127);
-            byte cc = ccMap[currentPage][i];
-            setParameterValue(i, mapped);
-            synth.handleControlChange(1, cc, mapped);
-            Serial.printf("Pot %d → CC %d = %d\n", i, cc, mapped);
-        }
-    }
-
-    int delta = hw.getEncoderDelta();
-    if (delta > 0) {
-        int newPage = (currentPage + 1) % NUM_PAGES;
-        setPage(newPage);
-        for (int i = 0; i < 4; ++i)
-            setParameterLabel(i, ccNames[newPage][i]);
-        syncFromEngine(synth);
-        Serial.printf("Page increased to: %d\n", newPage);
-    } else if (delta < 0) {
-        int newPage = (currentPage == 0) ? NUM_PAGES - 1 : currentPage - 1;
-        setPage(newPage);
-        for (int i = 0; i < 4; ++i)
-            setParameterLabel(i, ccNames[newPage][i]);
-        syncFromEngine(synth);
-        Serial.printf("Page decreased to: %d\n", newPage);
-    }
-
+    // -------- Button: toggle scope on/off --------
     if (hw.isButtonPressed()) {
-        // Reserved for future behavior
+        _scopeOn = !_scopeOn;
+        if (!_scopeOn) noteActivity(); // leaving scope resumes normal UI
+    }
+
+    const bool idleTooLong  = (millis() - _lastActivityMs) > SCREEN_SAVER_TIMEOUT_MS;
+    const bool scopeVisible = _scopeOn || idleTooLong;
+
+    // -------- Encoder behavior --------
+    int delta = hw.getEncoderDelta();
+    if (scopeVisible) {
+        // In scope mode, encoder cycles through 0..8 presets
+        if (delta != 0) {
+            _currentPreset += (delta > 0 ? 1 : -1);
+            if (_currentPreset < 0) _currentPreset = 8;
+            if (_currentPreset > 8) _currentPreset = 0;
+
+            // Call your Presets.cpp helper
+            Presets::loadTemplateByIndex(synth, (uint8_t)_currentPreset);
+            syncFromEngine(synth);  // refresh screen so values reflect preset
+            Serial.printf("Loaded preset %d: %s\n", 
+                          _currentPreset, Presets::templateName(_currentPreset));
+        }
+    } else {
+        // … existing page navigation …
+    }
+
+    // -------- Pots --------
+    if (!scopeVisible) {
+        // … existing pot handling …
     }
 }
+
+
+
 
 
 
@@ -63,6 +72,10 @@ void UIManager::begin() {
     _display.setTextSize(1);
     _display.setTextColor(SSD1306_WHITE);
     _display.display();
+
+    // 🆕 Start the scope recorder but don't block if not patched yet
+    _scopeQueue.begin(); // Audio library will push 128-sample blocks when patched
+
 }
 
 void UIManager::setPage(int page) { _currentPage = page; }
@@ -81,43 +94,144 @@ int UIManager::getParameterValue(int index) const {
     return (index >= 0 && index < 4) ? _values[index] : 0;
 }
 
+// --- Decide which screen to show ---------------------------------------------
 void UIManager::updateDisplay(SynthEngine& synth) {
+    const bool idleTooLong  = (millis() - _lastActivityMs) > SCREEN_SAVER_TIMEOUT_MS;
+    const bool scopeVisible = _scopeOn || idleTooLong;
+    if (scopeVisible) renderScope();
+    else              renderPage();
+}
+
+
+// --- Existing page render extracted into a helper (no behavior change) -------
+void UIManager::renderPage() {
     _display.clearDisplay();
     _display.setTextSize(1);
     _display.setTextColor(SSD1306_WHITE);
 
     const int rowHeight = 16;
     const int labelX = 0;
-    const int valueX = 128;
 
     for (int i = 0; i < 4; ++i) {
         int y = i * rowHeight;
-        byte cc = ccMap[_currentPage][i];
-
-        // Left-aligned label
         _display.setCursor(labelX, y);
         _display.print(_labels[i]);
 
-        // Right-aligned value (0..127)
+        // Right aligned raw CC (0..127) as before
         char valueBuf[12];
         snprintf(valueBuf, sizeof(valueBuf), "%3d", _values[i]);
-        valueBuf[sizeof(valueBuf) - 1] = '\0'; // safety
-
-        int16_t x1, y1;
-        uint16_t w, h;
-        _display.getTextBounds(valueBuf, 0, 0, &x1, &y1, &w, &h);
-        _display.setCursor(valueX - w, y);
-        _display.print(valueBuf);
-    }	
+        drawRightAligned(valueBuf, y);
+    }
     _display.display();
 }
+
+// --- Utility: right align text on 128px width --------------------------------
+void UIManager::drawRightAligned(const String& text, int y) {
+    int16_t x1, y1; uint16_t w, h;
+    _display.getTextBounds(text, 0, 0, &x1, &y1, &w, &h);
+    _display.setCursor(128 - w, y);
+    _display.print(text);
+}
+
+// --- Scope renderer: draw waveform from AudioRecordQueue ---------------------
+
+
+void UIManager::renderScope() {
+    _display.clearDisplay();
+    _display.setTextSize(1);
+    _display.setTextColor(SSD1306_WHITE);
+
+    int blocks = _scopeQueue.available();
+    static int16_t lastBlock[128] = {0};
+
+    if (blocks == 0) {
+        // No audio arrived — show hint
+        _display.setCursor(0, 0);
+        _display.print("SCOPE (no blocks)");
+        _display.setCursor(0, 10);
+        _display.print("Check patch to UI queue");
+        // Draw preset banner even if no blocks, so you see where you are
+        _display.fillRect(0, 56, 128, 8, SSD1306_BLACK);
+        _display.setCursor(0, 56);
+        _display.print("P:");
+        _display.print(_currentPreset);
+        _display.print(" ");
+        _display.print(Presets::templateName((uint8_t)_currentPreset));
+        _display.display();                 // <- ensure display updates in this branch
+        return;                             // we're done
+    }
+
+    // Drain to newest block to reduce latency
+    while (blocks-- > 1) { const int16_t* drop = (const int16_t*)_scopeQueue.readBuffer(); _scopeQueue.freeBuffer(); }
+    const int16_t* buf = (const int16_t*)_scopeQueue.readBuffer();
+    memcpy(lastBlock, buf, 128 * sizeof(int16_t));
+    _scopeQueue.freeBuffer();
+
+    // Find peak magnitude for auto-gain
+    int16_t peak = 0;
+    for (int i = 0; i < 128; ++i) {
+        int16_t a = abs(lastBlock[i]);
+        if (a > peak) peak = a;
+    }
+
+    // Choose a dynamic shift so the peak maps to ~28px (out of 64)
+    // Base: >>10 gives ~32px at full-scale (32768)
+    int shift = 10; // default x1
+    if      (peak <  1024) shift = 6;   // x16
+    else if (peak <  2048) shift = 7;   // x8
+    else if (peak <  4096) shift = 8;   // x4
+    else if (peak <  8192) shift = 9;   // x2
+    // else shift = 10 (x1)
+    if (shift < 6)  shift = 6;          // clamp
+    if (shift > 11) shift = 11;         // (x0.5 if ever needed)
+
+    // Draw waveform with dynamic shift
+    const int midY = 32;
+    int prevX = 0, prevY = midY;
+    for (int x = 0; x < 128; ++x) {
+        int16_t s = lastBlock[x];
+        int y = midY - (s >> shift);
+        if (y < 0) y = 0; 
+        else if (y > 63) y = 63;
+        if (x > 0) _display.drawLine(prevX, prevY, x, y, SSD1306_WHITE);
+        prevX = x; prevY = y;
+    }
+
+    // --- Overlay: Preset number + name and current visual gain ---
+    // Use a slim footer so the top of the waveform stays unobstructed
+    _display.fillRect(0, 56, 128, 8, SSD1306_BLACK);   // footer bar
+    _display.setCursor(0, 56);
+    _display.print("P:"); 
+    _display.print(_currentPreset);
+    _display.print(" ");
+    _display.print(Presets::templateName((uint8_t)_currentPreset));
+
+    // Show visual gain (1<<(10-shift))
+    _display.setCursor(100, 56);
+    _display.print("x");
+    _display.print(1 << (10 - shift));
+
+    _display.display(); // <- update for blocks>0 branch
+}
+
+
 
 void UIManager::syncFromEngine(SynthEngine& synth) {
     for (int i = 0; i < 4; ++i) {
         byte cc = ccMap[_currentPage][i];
-        _values[i] = constrain(ccToDisplayValue(cc, synth), 0, 127);
+        if (_hasCCSent[cc]) {
+            _values[i] = _lastCCSent[cc];  // show exactly what we last set
+        } else {
+            _values[i] = 0;                // or a per-CC default if you prefer
+        }
     }
 }
+
+
+AudioRecordQueue& UIManager::scopeIn() {
+  return _scopeQueue;
+}
+
 
 // --- Converts internal SynthEngine values to display-friendly 0–127 CC values
 int UIManager::ccToDisplayValue(byte cc, SynthEngine& synth) {

@@ -305,7 +305,7 @@ void SynthEngine::handleControlChange(byte channel, byte control, byte value) {
         }
         // --- FILTER CONTROLS ---
         case 23: {
-            float cutoffHz = 20.0f * powf(10000.0f / 20.0f, normValue);
+            float cutoffHz = 20.0f * powf(16500.0f / 1.0f, normValue);
             //float cutoffHz = normValue * 10000.0f ;
             Serial.printf("[CC %d] Set Filter cutoff to %.1f Hz\n", control, cutoffHz);
             setFilterCutoff(cutoffHz);
@@ -314,7 +314,7 @@ void SynthEngine::handleControlChange(byte channel, byte control, byte value) {
         case 24: {
 
             Serial.printf("[CC %d] Set Filter resonance to %.2f\n", control, normValue);
-            setFilterResonance(normValue);
+            setFilterResonance(normValue * 1.8f);
             break;
         }
 
@@ -596,19 +596,19 @@ void SynthEngine::handleControlChange(byte channel, byte control, byte value) {
             break;
 
         case 83: {
-            float drive = normValue * 5.0f;
+            float drive = normValue * 4.0f;
             setFilterDrive(drive);
             Serial.printf("[CC %d] Set Filter Drive to %.2f\n", control, drive);
             break;
         }
         case 84: {
-            float oct = normValue * 8.0f;
+            float oct = normValue * 7.0f;
             setFilterOctaveControl(oct);
             Serial.printf("[CC %d] Set Filter Octave Control to %.2f octaves\n", control, oct);
             break;
         }
         case 85: {
-            float pbg = normValue * 3.0f;
+            float pbg = normValue * 0.5f;
             setFilterPassbandGain(pbg);
             Serial.printf("[CC %d] Set Filter Passband Gain to %.2f\n", control, pbg);
             break;

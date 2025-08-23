@@ -21,12 +21,12 @@ VoiceBlock::VoiceBlock() {
     _patchCables[13] = new AudioConnection(_filter.envmod(), 0 , _filterEnvelope.input(), 0); 
     _patchCables[14] = new AudioConnection(_filterEnvelope.output(), 0, _filter.modMixer(), 1);
 
-    _oscMixer.gain(0, 1.0f);
-    _oscMixer.gain(1, 1.0f);
+    _oscMixer.gain(0, _on);
+    _oscMixer.gain(1, _on);
     _oscMixer.gain(2, 0.0f);
     _oscMixer.gain(3, 0.0f);
 
-    _voiceMixer.gain(0, 1.0f);
+    _voiceMixer.gain(0, _on);
     _voiceMixer.gain(1, 0.0f);
     _voiceMixer.gain(2, 0.0f);
     _voiceMixer.gain(3, 0.0f);
@@ -45,7 +45,7 @@ VoiceBlock::VoiceBlock() {
 void VoiceBlock::noteOn(float freq, float velocity) {
     
     Serial.printf("noteOn voice: freq %.1f velocity %.1f\n", freq, velocity);
-    setAmplitude(1.0f);
+    setAmplitude(_on);
     _osc1.noteOn(freq, velocity);
     _osc2.noteOn(freq, velocity);
     _subOsc.setFrequency(freq);
@@ -75,42 +75,51 @@ void VoiceBlock::setAmplitude(float amp) {
     _noise.amplitude(amp);
 }
 
+float VoiceBlock::_clampedLevel(float level){
+    if (level > _on) {
+        level = _on;
+    }
+    return level;
+}
+
 void VoiceBlock::setOscMix(float _osc1Lvl, float _osc2Lvl) {
-    _oscMixer.gain(0, _osc1Lvl);
-    _oscMixer.gain(1, _osc2Lvl);
+    
     _osc1Level = _osc1Lvl;
     _osc2Level = _osc2Lvl;
+    _oscMixer.gain(0, _clampedLevel(_osc1Level));
+    _oscMixer.gain(1, _clampedLevel(_osc2Level));
+   
 }
 
 void VoiceBlock::setOsc1Mix(float _oscLvl) {
-    _oscMixer.gain(0, _oscLvl);
     _osc1Level = _oscLvl;
+    _oscMixer.gain(0, _clampedLevel(_osc1Level));
 }
 
 void VoiceBlock::setOsc2Mix(float _oscLvl) {
-    _oscMixer.gain(1, _oscLvl);
     _osc2Level = _oscLvl;
+    _oscMixer.gain(1, _clampedLevel(_osc2Level));
 }
 
 void VoiceBlock::setRing1Mix(float level) {
-    _oscMixer.gain(2, level);
     _ring1Level = level;
+    _oscMixer.gain(2, _clampedLevel(_ring1Level));    
 }
 
 void VoiceBlock::setRing2Mix(float level) {
-    _oscMixer.gain(3, level);
     _ring2Level = level;
+    _oscMixer.gain(3, _clampedLevel(_ring2Level));    
 }
 
 void VoiceBlock::setSubMix(float level) {
     _subMix = level;
-    _voiceMixer.gain(2, _subMix);
+    _voiceMixer.gain(2, _clampedLevel(_subMix));
 
 }
 
 void VoiceBlock::setNoiseMix(float level) {
     _noiseMix = level;
-    _voiceMixer.gain(3, _noiseMix);
+    _voiceMixer.gain(3, _clampedLevel(_noiseMix));
 }
 
 void VoiceBlock::setOsc1SupersawDetune(float amount) {

@@ -18,7 +18,7 @@ FilterBlock::FilterBlock() {
 }
 
 void FilterBlock::setCutoff(float freqHz) {
-    freqHz = constrain(freqHz, 0.0f, 20000.0f);  // Allow full audio-range cutoff
+    freqHz = constrain(freqHz, 0.0f, 16500.0f);  // Allow full audio-range cutoff
     if (freqHz != _cutoff) {
         _cutoff = freqHz;
         _filter.frequency(freqHz);
