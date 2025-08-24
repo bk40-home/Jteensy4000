@@ -13,6 +13,54 @@
 #include <Arduino.h>
 
 namespace JT4000Map {
+    static constexpr float CUTOFF_MIN_HZ = 20.0f;
+    static constexpr float CUTOFF_MAX_HZ = 20000.0f;
+
+    // Choose taper mode
+    enum CutoffTaper {
+        TAPER_NEUTRAL = 0,  // pure log (geometric mean ~632 Hz at CC=64)
+        TAPER_LOW,          // bias resolution to low frequencies
+        TAPER_HIGH          // bias resolution to high frequencies
+    };
+
+    // You can set this externally (SynthEngine or FilterBlock)
+    static CutoffTaper cutoffTaperMode = TAPER_LOW;
+
+    // Apply taper to normalized CC (0..1)
+    inline float applyTaper(float t) {
+        switch (cutoffTaperMode) {
+            case TAPER_LOW:
+                // sqrt(t) -> expands low end
+                return powf(t, 0.5f);
+            case TAPER_HIGH:
+                // square(t) -> expands high end
+                return powf(t, 2.0f);
+            default:
+                return t; // neutral
+        }
+    }
+
+    // CC (0..127) → Hz
+    inline float cc_to_cutoff_hz(uint8_t cc) {
+        float t = cc / 127.0f;
+        t = applyTaper(t);
+        return CUTOFF_MIN_HZ * powf(CUTOFF_MAX_HZ / CUTOFF_MIN_HZ, t);
+    }
+
+    // Hz → CC
+    inline uint8_t cutoff_hz_to_cc(float hz) {
+        hz = fmaxf(CUTOFF_MIN_HZ, fminf(hz, CUTOFF_MAX_HZ));
+        float t = logf(hz / CUTOFF_MIN_HZ) / logf(CUTOFF_MAX_HZ / CUTOFF_MIN_HZ);
+
+        // Undo taper for display/CC mapping
+        switch (cutoffTaperMode) {
+            case TAPER_LOW:  t = powf(t, 2.0f);  break; // inverse of sqrt
+            case TAPER_HIGH: t = powf(t, 0.5f);  break; // inverse of square
+            default: break;
+        }
+
+        return (uint8_t)lrintf(t * 127.0f);
+    }    
 
     // -------------------------- Helpers --------------------------
     // Clamp float into [0,1], used to protect logs and ratios.
@@ -56,19 +104,7 @@ namespace JT4000Map {
         return (uint8_t)constrain(lroundf(cc), 0, 127);
     }
 
-    // ---------------------- Filter Cutoff (Hz) --------------------
-    // Log map: 20 Hz .. 10 kHz
-    static inline float cc_to_cutoff_hz(uint8_t cc) {
-        float norm = cc_to_norm(cc);
-        return 20.0f * powf(10000.0f / 20.0f, norm);
-    }
 
-    static inline uint8_t cutoff_hz_to_cc(float hz) {
-        if (hz <= 20.0f) return 0;
-        if (hz >= 10000.0f) return 127;
-        float norm = logf(hz / 20.0f) / logf(10000.0f / 20.0f);
-        return norm_to_cc(norm);
-    }
 
     // --------------------------- LFO (Hz) -------------------------
     // Your current spec: f = 0.03 * 1300^norm (~0.03 .. ~39 Hz)

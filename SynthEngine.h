@@ -3,6 +3,10 @@
 #include "VoiceBlock.h"
 #include "LFOBlock.h"
 #include "FXChainBlock.h"
+#include "Mapping.h"  // Keep: shared CC mappings for forward/inverse UI use
+
+// Optional: pull names local for brevity (or prefix with JT4000Map:: each time)
+using namespace JT4000Map;
 
 #define MAX_VOICES 4
 

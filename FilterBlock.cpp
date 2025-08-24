@@ -6,7 +6,7 @@ FilterBlock::FilterBlock() {
     _patchCables[1] = new AudioConnection(_keyTrackDc, 0, _modMixer,0);
 
     _envModDc.amplitude(0.0f);
-    _keyTrackDc.amplitude(0.0f);
+    _keyTrackDc.amplitude(0.5f);
 
     _modMixer.gain(0, 1.0f);
     _modMixer.gain(1, 1.0f);
@@ -18,7 +18,7 @@ FilterBlock::FilterBlock() {
 }
 
 void FilterBlock::setCutoff(float freqHz) {
-    freqHz = constrain(freqHz, 0.0f, 16500.0f);  // Allow full audio-range cutoff
+    //freqHz = constrain(freqHz, 0.0f, 16500.0f);  // Allow full audio-range cutoff
     if (freqHz != _cutoff) {
         _cutoff = freqHz;
         _filter.frequency(freqHz);
@@ -27,9 +27,9 @@ void FilterBlock::setCutoff(float freqHz) {
 }
 
 void FilterBlock::setResonance(float amount) {
-    _resonance = constrain(amount, 0.0f, 1.0f);
-    _filter.resonance(_resonance);
-    // Serial.printf("[FilterBlock] Set Resonance: %.2f\n", _resonance);
+    //_resonance = constrain(amount, 0.0f, 1.5f);
+    _filter.resonance(amount);
+    // Serial.printf("[FilterBlock] Set Resonance: %.2f\n", amount);
 }
 
 void FilterBlock::setDrive(float amount) {

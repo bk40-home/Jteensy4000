@@ -291,30 +291,34 @@ void SynthEngine::handleControlChange(byte channel, byte control, byte value) {
             setOsc2Waveform(safetype);
             break;
         }
-        // --- LFO CONTROL ---
+        // ---------------- LFO1 (mod wheel was case 1) ----------------
         case 1: {
-            if (value == 0) {
-                Serial.printf("[CC %d] LFO1 OFF (0 Hz)\n", control);
-                setLFO1Frequency(0.0f);
-            } else {
-                float lfoHz = 0.1f * powf(200.0f, normValue);
-                Serial.printf("[CC %d] Set LFO1 frequency (log mapped) to %.3f Hz\n", control, lfoHz);
-                setLFO1Frequency(lfoHz);
-            }
+            // If you want MOD WHEEL to drive LFO1 freq, use the shared curve:
+            // (Or keep your special-case, but then also add its inverse to Mapping.h.)
+            float lfoHz = cc_to_lfo_hz(value);                 // Mapping.h
+            Serial.printf("[CC %d] LFO1 freq = %.3f Hz\n", control, lfoHz);
+            setLFO1Frequency(lfoHz);
             break;
         }
-        // --- FILTER CONTROLS ---
+
+        // ---------------- FILTER CUTOFF (20..20k, log + optional taper) ----
         case 23: {
-            float cutoffHz = 20.0f * powf(16500.0f / 1.0f, normValue);
-            //float cutoffHz = normValue * 10000.0f ;
-            Serial.printf("[CC %d] Set Filter cutoff to %.1f Hz\n", control, cutoffHz);
+            float cutoffHz = cc_to_cutoff_hz(value);           // Mapping.h (taper respected)
+            // Keep engine-side safe clamp identical to Mapping.h constants
+            cutoffHz = fminf(fmaxf(cutoffHz, CUTOFF_MIN_HZ), CUTOFF_MAX_HZ);
+            Serial.printf("[CC %d] Filter cutoff = %.1f Hz\n", control, cutoffHz);
             setFilterCutoff(cutoffHz);
             break;
         }
-        case 24: {
 
-            Serial.printf("[CC %d] Set Filter resonance to %.2f\n", control, normValue);
-            setFilterResonance(normValue * 1.8f);
+        // ---------------- FILTER RESONANCE ------------------------------
+        case 24: {
+            // If you have a nonlinear resonance curve in Mapping.h, use it:
+            // float res = cc_to_resonance(value);             // Mapping.h (optional)
+            // Else keep linear 0..1 (engine can map 0..1 to its actual Q)
+            float res = normValue * 1.8f;
+            Serial.printf("[CC %d] Filter resonance = %.2f\n", control, res);
+            setFilterResonance(res);
             break;
         }
 
@@ -423,8 +427,8 @@ void SynthEngine::handleControlChange(byte channel, byte control, byte value) {
 
         // --- LFO2 CONFIG ---
         case 51: {
-            float freq = 0.03f * powf(1300.0f, normValue);  // ~0.03 Hz → ~40 Hz
-            Serial.printf("[CC %d] Set LFO2 Frequency (log) to %.3f Hz\n", control, freq);
+            float freq = cc_to_lfo_hz(value);                  // Mapping.h
+            Serial.printf("[CC %d] LFO2 freq = %.3f Hz\n", control, freq);
             setLFO2Frequency(freq);
             break;
         }
@@ -442,8 +446,8 @@ void SynthEngine::handleControlChange(byte channel, byte control, byte value) {
         }
         // --- LFO1 CONFIG ---
         case 54: {
-            float freq = 0.03f * powf(1300.0f, normValue);  // ~0.03 Hz → ~40 Hz
-            Serial.printf("[CC %d] Set LFO1 Frequency (log) to %.3f Hz\n", control, freq);
+            float freq = cc_to_lfo_hz(value);                  // Mapping.h
+            Serial.printf("[CC %d] LFO1 freq = %.3f Hz\n", control, freq);
             setLFO1Frequency(freq);
             break;
         }
@@ -587,13 +591,14 @@ void SynthEngine::handleControlChange(byte channel, byte control, byte value) {
             Serial.printf("[CC %d] Glide Enabled = %d\n", control, _glideEnabled);
             break;
 
-        case 82:  // Glide Time
-            _glideTimeMs = (value / 127.0f) * 500.0f;
-            for (int i = 0; i < MAX_VOICES; ++i){
-                _voices[i].setGlideTime(_glideTimeMs);
-            }
-            Serial.printf("[CC %d] Glide Time = %.1f ms\n", control, _glideTimeMs);
+        // ---------------- Glide time (optional: reuse time curve) ----------
+        case 82: {
+            float ms = CCtoTime(value);                        // same 0..127 → ms curve
+            _glideTimeMs = ms;
+            for (int i = 0; i < MAX_VOICES; ++i) _voices[i].setGlideTime(ms);
+            Serial.printf("[CC %d] Glide Time = %.1f ms\n", control, ms);
             break;
+        }
 
         case 83: {
             float drive = normValue * 4.0f;
@@ -602,7 +607,7 @@ void SynthEngine::handleControlChange(byte channel, byte control, byte value) {
             break;
         }
         case 84: {
-            float oct = normValue * 7.0f;
+            float oct = normValue * 10.0f;
             setFilterOctaveControl(oct);
             Serial.printf("[CC %d] Set Filter Octave Control to %.2f octaves\n", control, oct);
             break;

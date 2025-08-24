@@ -50,7 +50,7 @@ private:
     // static constexpr uint32_t SCREEN_SAVER_TIMEOUT_MS = 60000; // keep screensaver
     // uint32_t _lastActivityMs = 0;
     // bool _scopeForced = false;  // legacy screensaver path
-    bool _scopeOn     = false;  // 🆕 explicit toggle via button
+    bool _scopeOn = true;  // 🆕 explicit toggle via button
     // Scope ring buffer for longer timebase (choose size you like)
     static const int SCOPE_RING = 4096;        // ≈ 93 ms @ 44.1 kHz
     int16_t _scopeRing[SCOPE_RING];

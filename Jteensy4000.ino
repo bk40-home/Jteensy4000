@@ -107,13 +107,13 @@ void loop() {
   synth.update();
   hw.update();
 
-  static unsigned long lastPerfPrint = 0;
-  if (millis() - lastPerfPrint > 1000) {
-    lastPerfPrint = millis();
-        Serial.printf("Audio CPU: now=%u%%  max=%u%%  Mem: now=%u  max=%u\n", AudioProcessorUsage(), AudioProcessorUsageMax(), AudioMemoryUsage(), AudioMemoryUsageMax());
-    AudioProcessorUsageMaxReset();
-    AudioMemoryUsageMaxReset();
-  }
+  // static unsigned long lastPerfPrint = 0;
+  // if (millis() - lastPerfPrint > 1000) {
+  //   lastPerfPrint = millis();
+  //       Serial.printf("Audio CPU: now=%0.1f%%  max=%0.1f%%  Mem: now=%u  max=%u\n", AudioProcessorUsage(), AudioProcessorUsageMax(), AudioMemoryUsage(), AudioMemoryUsageMax());
+  //   AudioProcessorUsageMaxReset();
+  //   AudioMemoryUsageMaxReset();
+  // }
 
 
   myusb.Task();

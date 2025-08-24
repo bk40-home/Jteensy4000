@@ -29,35 +29,35 @@ void loadInitTemplateByWave(SynthEngine& synth, uint8_t waveIndex) {
   // ---------------- Core oscillator setup ----------------
   // Waveforms
   sendCC(synth, 21, waveIndex);    // OSC1 Waveform (0..8)
-  sendCC(synth, 22, 0);            // OSC2 Waveform (don’t care, OSC2 is muted)
+  sendCC(synth, 22, waveIndex);            // OSC2 Waveform (don’t care, OSC2 is muted)
 
   // Mixes (explicit taps to avoid inverse-pair surprises)
   sendCC(synth, 60, 127);          // OSC1 Mix = 1.0
-  sendCC(synth, 61, 0);            // OSC2 Mix = 0.0
+  sendCC(synth, 61, 127);            // OSC2 Mix = 0.0
   sendCC(synth, 58, 0);            // Sub Mix  = 0.0
   sendCC(synth, 59, 0);            // Noise Mix= 0.0
 
   // Tuning midpoints
-  sendCC(synth, 41, 64);           // OSC1 Pitch bucket @ 0 semis
+  sendCC(synth, 41, 65);           // OSC1 Pitch bucket @ 0 semis
   sendCC(synth, 45, 64);           // OSC1 Fine @ 0 cents
-  sendCC(synth, 43, 64);           // OSC1 Detune center (-1..1 mapped to 0..127)
+  sendCC(synth, 43, 65);           // OSC1 Detune center (-1..1 mapped to 0..127)
 
   // (OSC2 left silent; set to neutral anyway)
-  sendCC(synth, 42, 64);
-  sendCC(synth, 46, 64);
-  sendCC(synth, 44, 64);
+  sendCC(synth, 42, 65);
+  sendCC(synth, 46, 66);
+  sendCC(synth, 44, 65);
 
   // ---------------- Filter: open, no res ----------------
   sendCC(synth, 23, 127);          // Cutoff wide open
   sendCC(synth, 24, 0);            // Resonance 0
-  sendCC(synth, 48, 0);            // Filter Env Amount 0
-  sendCC(synth, 50, 0);            // KeyTrack 0 (adjust if you prefer 50%/100%)
+  sendCC(synth, 48, 65);            // Filter Env Amount 0
+  sendCC(synth, 50, 65);            // KeyTrack 0 (adjust if you prefer 50%/100%)
 
   // Filter extras: Drive=1, Passband Gain=1 (per your request)
   // CC83: Drive 0..5 → 0..127; Drive=1 → ~ 1/5 → ~25
-  sendCC(synth, 83, 25);
+  sendCC(synth, 83, 65);
   // CC85: Passband Gain 0..3 → 0..127; Gain=1 → ~1/3 → ~42
-  sendCC(synth, 85, 42);
+  sendCC(synth, 85, 64);
   // CC84: Octave Control leave at 0
   sendCC(synth, 84, 0);
 
@@ -94,7 +94,7 @@ void loadInitTemplateByWave(SynthEngine& synth, uint8_t waveIndex) {
   // ---------------- Glide / AmpMod ----------------------
   sendCC(synth, 81, 0);            // Glide disabled
   sendCC(synth, 82, 0);            // Glide time 0
-  sendCC(synth, 90, 0);            // Amp Mod DC = 0
+  sendCC(synth, 90, 127);            // Amp Mod DC = 0
 
   AudioInterrupts();
 }
