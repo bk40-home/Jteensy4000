@@ -10,50 +10,63 @@
 #include "HardwareInterface.h"  // ✅ Ensure visibility
 #include "Presets.h"   // make sure this is at the top of UIManager.cpp
 
-// ... [unchanged methods above] ...
-
-
-
-
-
 void UIManager::pollInputs(HardwareInterface& hw, SynthEngine& synth) {
  
 
     // -------- Button: toggle scope on/off --------
     if (hw.isButtonPressed()) {
         _scopeOn = !_scopeOn;
-        if (!_scopeOn) noteActivity(); // leaving scope resumes normal UI
+    
     }
 
-    const bool idleTooLong  = (millis() - _lastActivityMs) > SCREEN_SAVER_TIMEOUT_MS;
-    const bool scopeVisible = _scopeOn || idleTooLong;
+    const bool scopeVisible = _scopeOn ;
 
     // -------- Encoder behavior --------
-    int delta = hw.getEncoderDelta();
+        int delta = hw.getEncoderDelta();
+
     if (scopeVisible) {
-        // In scope mode, encoder cycles through 0..8 presets
+        // SCOPE MODE: encoder cycles presets, pots ignored
         if (delta != 0) {
             _currentPreset += (delta > 0 ? 1 : -1);
             if (_currentPreset < 0) _currentPreset = 8;
             if (_currentPreset > 8) _currentPreset = 0;
 
-            // Call your Presets.cpp helper
+            // Use in-project presets (no JSON here)
             Presets::loadTemplateByIndex(synth, (uint8_t)_currentPreset);
-            syncFromEngine(synth);  // refresh screen so values reflect preset
-            Serial.printf("Loaded preset %d: %s\n", 
-                          _currentPreset, Presets::templateName(_currentPreset));
+            // Keep UI values in sync so when you exit scope, page shows latest
+            syncFromEngine(synth);
+            // stay in scope; do not process pots
         }
-    } else {
-        // … existing page navigation …
+        return; // exit: in scope mode we ignore pots and page nav
+    } 
+    else {
+        // EDIT MODE (page view): encoder navigates pages
+        if (delta > 0) {
+            int newPage = (_currentPage + 1) % NUM_PAGES;
+            setPage(newPage);
+            for (int i = 0; i < 4; ++i) setParameterLabel(i, ccNames[newPage][i]);
+            syncFromEngine(synth);
+        } else if (delta < 0) {
+            int newPage = (_currentPage == 0) ? NUM_PAGES - 1 : _currentPage - 1;
+            setPage(newPage);
+            for (int i = 0; i < 4; ++i) setParameterLabel(i, ccNames[newPage][i]);
+            syncFromEngine(synth);
+        }
     }
-
-    // -------- Pots --------
+        // -------- Pots: only in EDIT mode --------
     if (!scopeVisible) {
-        // … existing pot handling …
+        for (int i = 0; i < 4; ++i) {
+            if (hw.potChanged(i, 1)) {                 // CC-step hysteresis
+                int ccVal = (hw.readPot(i) >> 3);      // smoothed 0..127
+                byte cc = ccMap[_currentPage][i];
+                synth.handleControlChange(1, cc, (uint8_t)ccVal);
+                _lastCCSent[cc] = (uint8_t)ccVal;
+                _hasCCSent[cc]  = true;
+                setParameterValue(i, ccVal);           // shows raw CC for now
+            }
+        }
     }
 }
-
-
 
 
 
@@ -74,7 +87,9 @@ void UIManager::begin() {
     _display.display();
 
     // 🆕 Start the scope recorder but don't block if not patched yet
-    _scopeQueue.begin(); // Audio library will push 128-sample blocks when patched
+    for (int i = 0; i < SCOPE_RING; ++i) _scopeRing[i] = 0;
+    _scopeWrite = 0;
+    _scopeQueue.begin();
 
 }
 
@@ -96,10 +111,8 @@ int UIManager::getParameterValue(int index) const {
 
 // --- Decide which screen to show ---------------------------------------------
 void UIManager::updateDisplay(SynthEngine& synth) {
-    const bool idleTooLong  = (millis() - _lastActivityMs) > SCREEN_SAVER_TIMEOUT_MS;
-    const bool scopeVisible = _scopeOn || idleTooLong;
-    if (scopeVisible) renderScope();
-    else              renderPage();
+    if (_scopeOn) renderScope();
+    else          renderPage();
 }
 
 
@@ -144,59 +157,93 @@ void UIManager::renderScope() {
     int blocks = _scopeQueue.available();
     static int16_t lastBlock[128] = {0};
 
-    if (blocks == 0) {
-        // No audio arrived — show hint
-        _display.setCursor(0, 0);
-        _display.print("SCOPE (no blocks)");
-        _display.setCursor(0, 10);
-        _display.print("Check patch to UI queue");
-        // Draw preset banner even if no blocks, so you see where you are
-        _display.fillRect(0, 56, 128, 8, SSD1306_BLACK);
-        _display.setCursor(0, 56);
-        _display.print("P:");
-        _display.print(_currentPreset);
-        _display.print(" ");
-        _display.print(Presets::templateName((uint8_t)_currentPreset));
-        _display.display();                 // <- ensure display updates in this branch
-        return;                             // we're done
+    // --- Feed ring buffer (keep newest) ---
+    if (blocks > 0) {
+        while (blocks-- > 0) {
+            const int16_t* buf = (const int16_t*)_scopeQueue.readBuffer();
+            // Copy 128 samples into ring
+            for (int i = 0; i < 128; ++i) {
+            _scopeRing[_scopeWrite] = buf[i];
+            _scopeWrite = (_scopeWrite + 1) % SCOPE_RING;
+            }
+            // save latest for emergency drawing if needed
+            memcpy(lastBlock, buf, 128 * sizeof(int16_t));
+            _scopeQueue.freeBuffer();
+        }
     }
 
-    // Drain to newest block to reduce latency
-    while (blocks-- > 1) { const int16_t* drop = (const int16_t*)_scopeQueue.readBuffer(); _scopeQueue.freeBuffer(); }
-    const int16_t* buf = (const int16_t*)_scopeQueue.readBuffer();
-    memcpy(lastBlock, buf, 128 * sizeof(int16_t));
-    _scopeQueue.freeBuffer();
+    // If nothing ever arrived yet, show hint and return
+    static bool everHadAudio = false;
+    everHadAudio |= (blocks >= 0); // we just read any amount
+    if (!everHadAudio) {
+    _display.setCursor(0,0); _display.print("SCOPE (no blocks)");
+    _display.display(); return;
+    }
 
-    // Find peak magnitude for auto-gain
+    // --- Auto timebase: estimate period via zero-crossing ---
+    auto ringAt = [&](int idx)->int16_t { return _scopeRing[(idx + SCOPE_RING) % SCOPE_RING]; };
+    const int Nscan = min(SCOPE_RING, 3000);    // scan up to ~68 ms for period
+    int w = _scopeWrite - 1;                    // start near newest
+    // find last negative-to-positive crossing
+    int anchor = -1;
+    int16_t prev = ringAt(w-1);
+    for (int i = 1; i < Nscan; ++i) {
+    int16_t cur = ringAt(w - i);
+    if (prev < 0 && cur >= 0) { anchor = w - i; break; }
+    prev = cur;
+    }
+    // find previous crossing for period
+    int period = 256; // fallback ~5.8ms
+    if (anchor >= 0) {
+    int16_t pprev = ringAt(anchor-1);
+    for (int i = 1; i < Nscan; ++i) {
+        int16_t c = ringAt(anchor - i);
+        if (pprev < 0 && c >= 0) { period = i; break; }
+        pprev = c;
+    }
+    }
+    // target window ~1.5 cycles, clamp to [128 .. SCOPE_RING]
+    int win = period + period/2;
+    if (win < 128) win = 128;
+    if (win > SCOPE_RING) win = SCOPE_RING;
+
+    // --- Downsample window to 128 columns (mean) ---
+    int start = (_scopeWrite - win + SCOPE_RING) % SCOPE_RING;
+    int stepQ16 = (win << 16) / 128;  // fixed-point step
+    int32_t pos = 0;
+    int16_t col[128];
+    for (int x = 0; x < 128; ++x) {
+    int base = start + (pos >> 16);
+    // small box filter over ~win/128 samples
+    int acc = 0, cnt = 0;
+    int box = max(1, win / 128);
+    for (int k = 0; k < box; ++k) {
+        acc += ringAt(base + k);
+        cnt++;
+    }
+    col[x] = (int16_t)(acc / cnt);
+    pos += stepQ16;
+    }
+
+    // --- Vertical auto-gain (your dynamic shift logic) ---
     int16_t peak = 0;
-    for (int i = 0; i < 128; ++i) {
-        int16_t a = abs(lastBlock[i]);
-        if (a > peak) peak = a;
-    }
+    for (int x = 0; x < 128; ++x) { int16_t a = abs(col[x]); if (a > peak) peak = a; }
+    int shift = 10;
+    if      (peak < 1024) shift = 6;
+    else if (peak < 2048) shift = 7;
+    else if (peak < 4096) shift = 8;
+    else if (peak < 8192) shift = 9;
+    if (shift < 6) shift = 6; if (shift > 11) shift = 11;
 
-    // Choose a dynamic shift so the peak maps to ~28px (out of 64)
-    // Base: >>10 gives ~32px at full-scale (32768)
-    int shift = 10; // default x1
-    if      (peak <  1024) shift = 6;   // x16
-    else if (peak <  2048) shift = 7;   // x8
-    else if (peak <  4096) shift = 8;   // x4
-    else if (peak <  8192) shift = 9;   // x2
-    // else shift = 10 (x1)
-    if (shift < 6)  shift = 6;          // clamp
-    if (shift > 11) shift = 11;         // (x0.5 if ever needed)
-
-    // Draw waveform with dynamic shift
+    // --- Draw ---
     const int midY = 32;
     int prevX = 0, prevY = midY;
     for (int x = 0; x < 128; ++x) {
-        int16_t s = lastBlock[x];
-        int y = midY - (s >> shift);
-        if (y < 0) y = 0; 
-        else if (y > 63) y = 63;
-        if (x > 0) _display.drawLine(prevX, prevY, x, y, SSD1306_WHITE);
-        prevX = x; prevY = y;
+    int y = midY - (col[x] >> shift);
+    if (y < 0) y = 0; else if (y > 63) y = 63;
+    if (x > 0) _display.drawLine(prevX, prevY, x, y, SSD1306_WHITE);
+    prevX = x; prevY = y;
     }
-
     // --- Overlay: Preset number + name and current visual gain ---
     // Use a slim footer so the top of the waveform stays unobstructed
     _display.fillRect(0, 56, 128, 8, SSD1306_BLACK);   // footer bar
