@@ -157,28 +157,31 @@ void UIManager::renderScope() {
     int blocks = _scopeQueue.available();
     static int16_t lastBlock[128] = {0};
 
-    // --- Feed ring buffer (keep newest) ---
-    if (blocks > 0) {
-        while (blocks-- > 0) {
-            const int16_t* buf = (const int16_t*)_scopeQueue.readBuffer();
-            // Copy 128 samples into ring
-            for (int i = 0; i < 128; ++i) {
-            _scopeRing[_scopeWrite] = buf[i];
-            _scopeWrite = (_scopeWrite + 1) % SCOPE_RING;
-            }
-            // save latest for emergency drawing if needed
-            memcpy(lastBlock, buf, 128 * sizeof(int16_t));
-            _scopeQueue.freeBuffer();
-        }
-    }
 
-    // If nothing ever arrived yet, show hint and return
-    static bool everHadAudio = false;
-    everHadAudio |= (blocks >= 0); // we just read any amount
-    if (!everHadAudio) {
-    _display.setCursor(0,0); _display.print("SCOPE (no blocks)");
-    _display.display(); return;
+// --- Feed ring buffer (keep newest) ---
+bool readAny = false;                 // NEW: track if we consumed audio
+while (blocks-- > 0) {
+    const int16_t* buf = (const int16_t*)_scopeQueue.readBuffer();
+    for (int i = 0; i < 128; ++i) {
+        _scopeRing[_scopeWrite] = buf[i];
+        _scopeWrite = (_scopeWrite + 1) % SCOPE_RING;
     }
+    memcpy(lastBlock, buf, 128 * sizeof(int16_t));
+    _scopeQueue.freeBuffer();
+    readAny = true;                   // we read at least one block
+}
+
+// If nothing ever arrived since boot, show hint and return
+static bool everHadAudio = false;
+everHadAudio |= readAny;              // ✅ only set true when we actually read
+if (!everHadAudio) {
+    _display.setCursor(0, 0);
+    _display.print("SCOPE (no blocks)");
+    _display.setCursor(0, 10);
+    _display.print("Check patch to UI queue");
+    _display.display();
+    return;
+}
 
     // --- Auto timebase: estimate period via zero-crossing ---
     auto ringAt = [&](int idx)->int16_t { return _scopeRing[(idx + SCOPE_RING) % SCOPE_RING]; };
