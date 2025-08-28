@@ -2,7 +2,7 @@
 
 AudioSynthSupersaw::AudioSynthSupersaw()
     : AudioStream(0, nullptr), freq(440.0f), detuneAmt(0.5f), mixAmt(0.5f), amp(1.0f),
-      outputGain(1.0f), hpfPrevIn(0.0f), hpfPrevOut(0.0f)
+      outputGain(1.5f), hpfPrevIn(0.0f), hpfPrevOut(0.0f)
 {
     for (int i = 0; i < SUPERSAW_VOICES; i++) {
         phases[i] = (float)rand() / (float)RAND_MAX;
@@ -34,7 +34,7 @@ void AudioSynthSupersaw::setAmplitude(float a) {
 }
 
 void AudioSynthSupersaw::setOutputGain(float gain) {
-    outputGain = constrain(gain, 0.0f, 1.0f);
+    outputGain = constrain(gain, 0.0f, 1.5f);
 }
 
 void AudioSynthSupersaw::noteOn() {
