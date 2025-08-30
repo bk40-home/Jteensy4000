@@ -13,8 +13,8 @@ FilterBlock::FilterBlock() {
     _modMixer.gain(2, 0.0f);
     _modMixer.gain(3, 0.0f);
 
-    _filter.octaveControl(_octaveControl);
-    _filter.passbandGain(_passbandGain);
+    _filter.setCutoffModOctaves(_octaveControl);
+   // _filter.passbandGain(_passbandGain);
 }
 
 void FilterBlock::setCutoff(float freqHz) {
@@ -29,26 +29,26 @@ void FilterBlock::setCutoff(float freqHz) {
 void FilterBlock::setResonance(float amount) {
     //_resonance = constrain(amount, 0.0f, 1.5f);
     _filter.resonance(amount);
-    // Serial.printf("[FilterBlock] Set Resonance: %.2f\n", amount);
+    Serial.printf("[FilterBlock] Set Resonance: %.2f\n", amount);
 }
 
-void FilterBlock::setDrive(float amount) {
-    _drive = amount;
-    _filter.inputDrive(_drive);
-    // Serial.printf("[FilterBlock] Set Drive: %.2f\n", _drive);
-}
+// void FilterBlock::setDrive(float amount) {
+//     _drive = amount;
+//     _filter.inputDrive(_drive);
+//     // Serial.printf("[FilterBlock] Set Drive: %.2f\n", _drive);
+// }
 
 void FilterBlock::setOctaveControl(float octaves) {
     _octaveControl = octaves;
-    _filter.octaveControl(octaves);
+    _filter.setCutoffModOctaves(octaves);
     // Serial.printf("[FilterBlock] Set Octave Control: %.2f\n", octaves);
 }
 
-void FilterBlock::setPassbandGain(float gain) {
-    _passbandGain = gain;
-    _filter.passbandGain(gain);
-    // Serial.printf("[FilterBlock] Set Passband Gain: %.2f\n", gain);
-}
+// void FilterBlock::setPassbandGain(float gain) {
+//     _passbandGain = gain;
+//     _filter.passbandGain(gain);
+//     // Serial.printf("[FilterBlock] Set Passband Gain: %.2f\n", gain);
+// }
 
 void FilterBlock::setEnvModAmount(float amount) {
     _envModAmount = amount;
@@ -66,9 +66,9 @@ void FilterBlock::setKeyTrackAmount(float amount) {
 
 float FilterBlock::getCutoff() const { return _cutoff; }
 float FilterBlock::getResonance() const { return _resonance; }
-float FilterBlock::getDrive() const { return _drive; }
+// float FilterBlock::getDrive() const { return _drive; }
 float FilterBlock::getOctaveControl() const { return _octaveControl; }
-float FilterBlock::getPassbandGain() const { return _passbandGain; }
+// float FilterBlock::getPassbandGain() const { return _passbandGain; }
 float FilterBlock::getEnvModAmount() const { return _envModAmount; }
 float FilterBlock::getKeyTrackAmount() const { return _keyTrackAmount; }
 

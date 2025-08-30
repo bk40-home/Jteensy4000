@@ -133,18 +133,18 @@ public:
     void setFilterResonance(float value);
     //void setFilterLfoAmount(float amt);
     void setFilterKeyTrackAmount(float amt);
-    void setFilterDrive(float drive);
+    //void setFilterDrive(float drive);
     void setFilterOctaveControl(float octaves);
-    void setFilterPassbandGain(float gain);
+    //void setFilterPassbandGain(float gain);
 
     float getFilterCutoff() const;
     float getFilterResonance() const;
-    float getFilterDrive() const;
+    //float getFilterDrive() const;
     float getFilterEnvAmount() const;
     //float getFilterLfoAmount() const;
     float getFilterKeyTrackAmount() const;
     float getFilterOctaveControl() const;
-    float getFilterPassbandGain() const;
+    //float getFilterPassbandGain() const;
 
     bool  getGlideEnabled()const;
     float getGlideTimeMs()const;

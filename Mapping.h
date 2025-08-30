@@ -1,7 +1,7 @@
 // Mapping.h
 // -----------------------------------------------------------------------------
-// Centralized forward + inverse mappings between 7‑bit CC (0..127) and the
-// internal units used by the JT‑4000 project (Hz, ms, normalized 0..1, enums).
+// Centralized forward + inverse mappings between 7-bit CC (0..127) and the
+// internal units used by the JT-4000 project (Hz, ms, normalized 0..1, enums).
 // Keep this header-only to avoid link issues and to make UI/Synth share 1 source.
 // -----------------------------------------------------------------------------
 // IMPORTANT: If you retune any curve (e.g. envelope times), update BOTH forward
@@ -104,8 +104,6 @@ namespace JT4000Map {
         return (uint8_t)constrain(lroundf(cc), 0, 127);
     }
 
-
-
     // --------------------------- LFO (Hz) -------------------------
     // Your current spec: f = 0.03 * 1300^norm (~0.03 .. ~39 Hz)
     static inline float cc_to_lfo_hz(uint8_t cc) {
@@ -122,12 +120,108 @@ namespace JT4000Map {
     }
 
     // ---------------------- Linear 0..1 norms ---------------------
-    // Resonance 0..1 → CC and back
+    // Keep legacy linear resonance helpers (for modules that expect 0..1)
     static inline uint8_t resonance_to_cc(float r) { return norm_to_cc(r); }
     static inline float  cc_to_resonance(uint8_t cc) { return cc_to_norm(cc); }
 
     // Generic linear 0..1 helpers, for mix, depths, etc.
     static inline uint8_t norm_to_cc_lin(float x) { return norm_to_cc(x); }
     static inline float  cc_to_norm_lin(uint8_t cc) { return cc_to_norm(cc); }
+
+    // =================== MoogLinear Resonance (k) ===================
+    // Extended 3-zone mapping for AudioFilterMoogLinear 'k' parameter.
+    // Goal: precise control in 0..1.5, reach 1.5..4 “interesting” region,
+    // and a short tail to extreme 4..20.
+    //
+    // Use these in your filter block instead of the linear 0..1 helpers above:
+    //   float k = JT4000Map::cc_to_res_k(cc);
+    //   uint8_t cc = JT4000Map::res_k_to_cc(k);
+
+    // Zone bounds (in "k")
+    static constexpr float RES_MIN_K  = 0.0f;
+    static constexpr float RES_Z1_MAX = 1.5f;   // normal operating sweet spot
+    static constexpr float RES_Z2_MAX = 4.0f;   // extended “interesting” region
+    static constexpr float RES_MAX_K  = 20.0f;  // extreme tail
+
+    // Zone weights over CC travel (must sum to 1.0)
+    // Tune these to taste without refactoring engine/UI.
+    static constexpr float RES_W1 = 0.75f;   // 75% of CC span in 0..1.5
+    static constexpr float RES_W2 = 0.20f;   // 20% in 1.5..4
+    static constexpr float RES_W3 = 0.05f;   // 5%  in 4..20
+
+    // Curves within each zone (>1.0 biases more resolution to lower end of the zone)
+    static constexpr float RES_CURVE_Z1 = 1.60f;  // more detail near 0..1.5
+    static constexpr float RES_CURVE_Z2 = 1.20f;  // gentle skew 1.5..4
+    static constexpr float RES_CURVE_Z3 = 2.20f;  // strong skew 4..20
+
+    // Clamp for safety
+    static inline float clamp_res_k(float k) {
+        if (k < RES_MIN_K) return RES_MIN_K;
+        if (k > RES_MAX_K) return RES_MAX_K;
+        return k;
+    }
+
+    // Internal easing helpers (kept inline for speed)
+    namespace _res_internal {
+        inline float zone_map(float t, float a, float b, float curve) {
+            if (t <= 0.0f) return a;
+            if (t >= 1.0f) return b;
+            float u = powf(t, curve);
+            return a + (b - a) * u;
+        }
+        inline float zone_map_inv(float v, float a, float b, float curve) {
+            if (v <= a) return 0.0f;
+            if (v >= b) return 1.0f;
+            float u = (v - a) / (b - a);
+            if (curve <= 0.0f) return u; // defensive; we only use >1.0
+            return powf(u, 1.0f / curve);
+        }
+    } // namespace _res_internal
+
+    // CC (0..127) → k (0..20) with 3-zone response
+    static inline float cc_to_res_k(uint8_t cc) {
+        const float n = clamp01(cc / 127.0f);
+        const float W1 = RES_W1;
+        const float W2 = RES_W2;
+        const float W3 = RES_W3; // = 1 - W1 - W2
+
+        if (n <= W1) {
+            // Zone 1: 0 .. 1.5
+            const float t = (W1 > 0.0f) ? (n / W1) : 0.0f;
+            return clamp_res_k(_res_internal::zone_map(t, RES_MIN_K, RES_Z1_MAX, RES_CURVE_Z1));
+        } else if (n <= (W1 + W2)) {
+            // Zone 2: 1.5 .. 4
+            const float t = (W2 > 0.0f) ? ((n - W1) / W2) : 0.0f;
+            return clamp_res_k(_res_internal::zone_map(t, RES_Z1_MAX, RES_Z2_MAX, RES_CURVE_Z2));
+        } else {
+            // Zone 3: 4 .. 20
+            const float t = (W3 > 0.0f) ? ((n - W1 - W2) / W3) : 0.0f;
+            return clamp_res_k(_res_internal::zone_map(t, RES_Z2_MAX, RES_MAX_K, RES_CURVE_Z3));
+        }
+    }
+
+    // k (0..20) → CC (0..127), inverse of above for UI round-trip stability
+    static inline uint8_t res_k_to_cc(float k) {
+        k = clamp_res_k(k);
+
+        const float W1 = RES_W1;
+        const float W2 = RES_W2;
+        const float W3 = RES_W3;
+
+        float n = 0.0f; // normalized [0..1]
+
+        if (k <= RES_Z1_MAX) {
+            const float t = _res_internal::zone_map_inv(k, RES_MIN_K, RES_Z1_MAX, RES_CURVE_Z1);
+            n = t * W1;
+        } else if (k <= RES_Z2_MAX) {
+            const float t = _res_internal::zone_map_inv(k, RES_Z1_MAX, RES_Z2_MAX, RES_CURVE_Z2);
+            n = W1 + t * W2;
+        } else {
+            const float t = _res_internal::zone_map_inv(k, RES_Z2_MAX, RES_MAX_K, RES_CURVE_Z3);
+            n = W1 + W2 + t * W3;
+        }
+
+        return (uint8_t)constrain(lroundf(n * 127.0f), 0, 127);
+    }
 
 } // namespace JT4000Map

@@ -366,9 +366,9 @@ int UIManager::ccToDisplayValue(byte cc, SynthEngine& synth) {
         case 62: return synth.getLFO1Waveform();
 
         // -------------------- Filter Ext (Page 8) -----------------
-        case 83: return norm_to_cc_lin(synth.getFilterDrive() / 5.0f);       // 0..5 -> 0..1
+        //case 83: return norm_to_cc_lin(synth.getFilterDrive() / 5.0f);       // 0..5 -> 0..1
         case 84: return norm_to_cc_lin(synth.getFilterOctaveControl() / 8.0f); // 0..8 -> 0..1
-        case 85: return norm_to_cc_lin(synth.getFilterPassbandGain() / 3.0f);  // 0..3 -> 0..1
+        //case 85: return norm_to_cc_lin(synth.getFilterPassbandGain() / 3.0f);  // 0..3 -> 0..1
 
         // -------------------- Supersaw/DC/Ring --------------------
         case 77: return norm_to_cc_lin(synth.getSupersawDetune(0));

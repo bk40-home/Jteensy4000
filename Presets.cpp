@@ -55,9 +55,9 @@ void loadInitTemplateByWave(SynthEngine& synth, uint8_t waveIndex) {
 
   // Filter extras: Drive=1, Passband Gain=1 (per your request)
   // CC83: Drive 0..5 → 0..127; Drive=1 → ~ 1/5 → ~25
-  sendCC(synth, 83, 65);
+  //sendCC(synth, 83, 65);
   // CC85: Passband Gain 0..3 → 0..127; Gain=1 → ~1/3 → ~42
-  sendCC(synth, 85, 64);
+  //sendCC(synth, 85, 64);
   // CC84: Octave Control leave at 0
   sendCC(synth, 84, 0);
 

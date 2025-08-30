@@ -36,7 +36,7 @@ VoiceBlock::VoiceBlock() {
     _subOsc.setFrequency(110.0f);
     _noise.amplitude(0.0f);
 
-    _osc1.setWaveformType(WAVEFORM_SINE);
+    _osc1.setWaveformType(WAVEFORM_SAWTOOTH);
     _osc2.setWaveformType(WAVEFORM_SAWTOOTH);
     
     
@@ -162,17 +162,17 @@ void VoiceBlock::setFilterResonance(float value) {
     _filter.setResonance(value);
 }
 
-void VoiceBlock::setFilterDrive(float value) {
-    _filter.setDrive(value);
-}
+// void VoiceBlock::setFilterDrive(float value) {
+//     _filter.setDrive(value);
+// }
 
 void VoiceBlock::setFilterOctaveControl(float value) {
     _filter.setOctaveControl(value);
 }
 
-void VoiceBlock::setFilterPassbandGain(float value) {
-    _filter.setPassbandGain(value);
-}
+// void VoiceBlock::setFilterPassbandGain(float value) {
+//     _filter.setPassbandGain(value);
+// }
 
 void VoiceBlock::setFilterEnvAmount(float amt) {
     _filterEnvAmount = amt;
@@ -215,53 +215,28 @@ void VoiceBlock::update() {
     _osc1.update();
     _osc2.update();
 
-    // _filterEnvelope.update();
-    // _ampEnvelope.update();
-
-    // if (_ampEnvelope.isIdle()) {
-    //     //_filter.setCutoff(0.0f);
-    //     _osc1.setAmplitude(0.0f);
-    //     _osc2.setAmplitude(0.0f);
-    //     _subOsc.setAmplitude(0.0f);
-    //     _noise.amplitude(0.0f);
-    //     //_ampBlock.setGain(0.0f);
-    //     return;
-    // }
-
-    // float filterEnvVal = _filterEnvelope.getValue();
-
-    //    
-    // float modCutoff = _baseCutoff * powf(2.0f, (filterEnvVal * _filterEnvAmount));
-    // _filter.setCutoff(_baseCutoff);
-    // _filter.setEnvModAmount(filterEnvVal * _filterEnvAmount);
-    // --- Apply Filter Modulation ---
-    
-
-    // --- Apply Amp Modulation ---
-    //_ampBlock.setGain(constrain(_ampEnvelope.getValue(), 0.0f, 1.0f));
-
 }
 
-    AudioStream& VoiceBlock::output() {
-        return _ampEnvelope.output();
-    }
+AudioStream& VoiceBlock::output() {
+    return _ampEnvelope.output();
+}
 
-    AudioMixer4& VoiceBlock::frequencyModMixerOsc1(){
-        return _osc1.frequencyModMixer();
-    }
-    AudioMixer4& VoiceBlock::shapeModMixerOsc1(){
-        return _osc1.shapeModMixer();
-    }
+AudioMixer4& VoiceBlock::frequencyModMixerOsc1(){
+    return _osc1.frequencyModMixer();
+}
+AudioMixer4& VoiceBlock::shapeModMixerOsc1(){
+    return _osc1.shapeModMixer();
+}
 
-    AudioMixer4& VoiceBlock::frequencyModMixerOsc2(){
-        return _osc2.frequencyModMixer();
-    }
-    AudioMixer4& VoiceBlock::shapeModMixerOsc2(){
-        return _osc2.shapeModMixer();
-    }
-    AudioMixer4& VoiceBlock::filterModMixer(){
-        return _filter.modMixer();
-    }
+AudioMixer4& VoiceBlock::frequencyModMixerOsc2(){
+    return _osc2.frequencyModMixer();
+}
+AudioMixer4& VoiceBlock::shapeModMixerOsc2(){
+    return _osc2.shapeModMixer();
+}
+AudioMixer4& VoiceBlock::filterModMixer(){
+    return _filter.modMixer();
+}
 
 // Getters
 int VoiceBlock::getOsc1Waveform() const { return _osc1.getWaveform(); }
@@ -290,9 +265,9 @@ float VoiceBlock::getGlideTime() const { return _osc1.getGlideTime(); }
 
 float VoiceBlock::getFilterCutoff() const { return _baseCutoff; }
 float VoiceBlock::getFilterResonance() const { return _filter.getResonance(); }
-float VoiceBlock::getFilterDrive() const { return _filter.getDrive(); }
+//float VoiceBlock::getFilterDrive() const { return _filter.getDrive(); }
 float VoiceBlock::getFilterOctaveControl() const { return _filter.getOctaveControl(); }
-float VoiceBlock::getFilterPassbandGain() const { return _filter.getPassbandGain(); }
+//float VoiceBlock::getFilterPassbandGain() const { return _filter.getPassbandGain(); }
 float VoiceBlock::getFilterEnvAmount() const { return _filterEnvAmount; }
 float VoiceBlock::getFilterKeyTrackAmount() const { return _filterKeyTrackAmount; }
 

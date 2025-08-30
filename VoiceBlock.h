@@ -53,9 +53,9 @@ public:
     // --- Filter
     void setFilterCutoff(float value) ;
     void setFilterResonance(float value);
-    void setFilterDrive(float value) ;
+    // void setFilterDrive(float value) ;
     void setFilterOctaveControl(float octaves);
-    void setFilterPassbandGain(float gain);
+    // void setFilterPassbandGain(float gain);
     void setFilterEnvAmount(float amt) ;
     void setFilterKeyTrackAmount(float amt);
 
@@ -102,9 +102,9 @@ public:
 
     float getFilterCutoff() const;
     float getFilterResonance() const; 
-    float getFilterDrive() const; 
+    // float getFilterDrive() const; 
     float getFilterOctaveControl() const;
-    float getFilterPassbandGain() const;
+    // float getFilterPassbandGain() const;
     float getFilterEnvAmount() const; 
     float getFilterKeyTrackAmount() const; 
     
@@ -153,7 +153,7 @@ private:
     float _keyTrackVal = 0.0f;
     float _filterEnvAmount = 0.0f;
     float _filterLfoAmount = 0.0f;
-    float _filterKeyTrackAmount = 1.0f;
+    float _filterKeyTrackAmount = 0.5f;
 
 
     float _currentFreq = 0.0f;

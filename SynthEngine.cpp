@@ -291,6 +291,7 @@ void SynthEngine::handleControlChange(byte channel, byte control, byte value) {
             setOsc2Waveform(safetype);
             break;
         }
+        
         // ---------------- LFO1 (mod wheel was case 1) ----------------
         case 1: {
             // If you want MOD WHEEL to drive LFO1 freq, use the shared curve:
@@ -313,14 +314,11 @@ void SynthEngine::handleControlChange(byte channel, byte control, byte value) {
 
         // ---------------- FILTER RESONANCE ------------------------------
         case 24: {
-            // If you have a nonlinear resonance curve in Mapping.h, use it:
-            // float res = cc_to_resonance(value);             // Mapping.h (optional)
-            // Else keep linear 0..1 (engine can map 0..1 to its actual Q)
-            float res = normValue * 1.8f;
-            Serial.printf("[CC %d] Filter resonance = %.2f\n", control, res);
-            setFilterResonance(res);
-            break;
+        float k = JT4000Map::cc_to_res_k(value); // value 0..127 → k 0..20
+            setFilterResonance(k);           // or setResonance(k) in your block
+        break;
         }
+
 
         // --- AMP ENVELOPE ---
         case 25: {
@@ -566,23 +564,7 @@ void SynthEngine::handleControlChange(byte channel, byte control, byte value) {
             setSupersawMix(1, norm);
             break;
         }
-        // case 81: {  // Glide enable (0 = off, >=1 = on)
-        //     bool enabled = (value >= 1);
-        //     for (int i = 0; i < MAX_VOICES; ++i) {
-        //         _voices[i].setGlideEnabled(enabled);
-        //     }
-        //     Serial.printf("[CC %d] Glide Enabled = %d\n", control, enabled);
-        //     break;
-        // }
 
-        // case 82: {  // Glide time (map 0–127 to 0–500 ms for now)
-        //     float ms = (value / 127.0f) * 500.0f;
-        //     for (int i = 0; i < MAX_VOICES; ++i) {
-        //         _voices[i].setGlideTime(ms);
-        //     }
-        //     Serial.printf("[CC %d] Glide Time = %.1f ms\n", control, ms);
-        //     break;
-        // }
         case 81:  // Glide Enable
             _glideEnabled = (value >= 1);
             for (int i = 0; i < MAX_VOICES; ++i){
@@ -600,24 +582,27 @@ void SynthEngine::handleControlChange(byte channel, byte control, byte value) {
             break;
         }
 
-        case 83: {
-            float drive = normValue * 4.0f;
-            setFilterDrive(drive);
-            Serial.printf("[CC %d] Set Filter Drive to %.2f\n", control, drive);
-            break;
-        }
+        // spare
+        // case 83: {
+        //     float drive = normValue * 4.0f;
+        //     setFilterDrive(drive);
+        //     Serial.printf("[CC %d] Set Filter Drive to %.2f\n", control, drive);
+        //     break;
+        // }
         case 84: {
             float oct = normValue * 10.0f;
             setFilterOctaveControl(oct);
             Serial.printf("[CC %d] Set Filter Octave Control to %.2f octaves\n", control, oct);
             break;
         }
-        case 85: {
-            float pbg = normValue * 0.5f;
-            setFilterPassbandGain(pbg);
-            Serial.printf("[CC %d] Set Filter Passband Gain to %.2f\n", control, pbg);
-            break;
-        }
+        
+        // spare
+        // case 85: {
+        //     float pbg = normValue * 0.5f;
+        //     setFilterPassbandGain(pbg);
+        //     Serial.printf("[CC %d] Set Filter Passband Gain to %.2f\n", control, pbg);
+        //     break;
+        // }
 		case 86: {  
             float value = normValue;
             Serial.printf("[CC %d] Set Osc1 frequencyDc = %.2f\n", control, value);
@@ -675,20 +660,20 @@ void SynthEngine::setFilterKeyTrackAmount(float amt) {
         _voices[i].setFilterKeyTrackAmount(amt);
 }
 
-void SynthEngine::setFilterDrive(float drive) {
-    for (int i = 0; i < MAX_VOICES; ++i)
-        _voices[i].setFilterDrive(drive);
-}
+// void SynthEngine::setFilterDrive(float drive) {
+//     for (int i = 0; i < MAX_VOICES; ++i)
+//         _voices[i].setFilterDrive(drive);
+// }
 
 void SynthEngine::setFilterOctaveControl(float octaves) {
     for (int i = 0; i < MAX_VOICES; ++i)
         _voices[i].setFilterOctaveControl(octaves);
 }
 
-void SynthEngine::setFilterPassbandGain(float gain) {
-    for (int i = 0; i < MAX_VOICES; ++i)
-        _voices[i].setFilterPassbandGain(gain);
-}
+// void SynthEngine::setFilterPassbandGain(float gain) {
+//     for (int i = 0; i < MAX_VOICES; ++i)
+//         _voices[i].setFilterPassbandGain(gain);
+// }
 
 void SynthEngine::setFilterEnvAmount(float amt) {
     for (int i = 0; i < MAX_VOICES; ++i)
@@ -746,11 +731,11 @@ float SynthEngine::getRing2Mix() const { return _voices[0].getRing2Mix(); }
 
 float SynthEngine::getFilterCutoff() const { return _voices[0].getFilterCutoff(); }
 float SynthEngine::getFilterResonance() const { return _voices[0].getFilterResonance(); }
-float SynthEngine::getFilterDrive() const{ return _voices[0].getFilterDrive(); }
+//float SynthEngine::getFilterDrive() const{ return _voices[0].getFilterDrive(); }
 
 float SynthEngine::getFilterKeyTrackAmount() const{ return _voices[0].getFilterKeyTrackAmount(); }
 float SynthEngine::getFilterOctaveControl() const{ return _voices[0].getFilterOctaveControl(); }
-float SynthEngine::getFilterPassbandGain() const{ return _voices[0].getFilterPassbandGain(); }
+//float SynthEngine::getFilterPassbandGain() const{ return _voices[0].getFilterPassbandGain(); }
 
 
 

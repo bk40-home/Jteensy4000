@@ -15,7 +15,7 @@ const byte ccMap[NUM_PAGES][PARAMS_PER_PAGE] = {
     {58, 255, 255, 255}, // Page 6: Sub Osc & Spare
 
     {23, 24, 48, 50},    // Page 7: Filter - Cutoff, Res, Env Amt, KeyTrack
-    {83, 84, 85, 255},   // Page 8: Filter Ext - Drive, Oct Ctrl, Passband Gain
+    {255, 84, 255, 255},   // Page 8: Filter Ext - Drive, Oct Ctrl, Passband Gain
 
     {25, 26, 27, 28},    // Page 9: Amp Env - A, D, S, R
     {29, 30, 31, 32},    // Page 10: Filter Env - A, D, S, R
@@ -41,7 +41,7 @@ const char* const ccNames[NUM_PAGES][PARAMS_PER_PAGE] = {
     {"Sub Mix", "-", "-", "-"},
 
     {"Cutoff", "Resonance", "Filt Env Amt", "Key Track"},
-    {"Drive", "Oct Ctrl", "Passband G", "-"},
+    {"-", "Oct Ctrl", "", "-"},
 
     {"Amp Att", "Amp Dec", "Amp Sus", "Amp Rel"},
     {"Filt Att", "Filt Dec", "Filt Sus", "Filt Rel"},
