@@ -8,7 +8,7 @@
 #include "CCMap.h"
 #include "Presets.h"
 
-AudioOutputI2S i2sOut;
+AudioOutputI2S i2sOut2;
 AudioOutputUSB usbOut;
 AudioControlSGTL5000 audioShield;
 AudioConnection* patchOutL;
