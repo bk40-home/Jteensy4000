@@ -14,7 +14,7 @@ public:
     bool isButtonPressed();         // Single button
 
     // ✅ API unchanged — now returns SMOOTHED raw (0..1023)
-    int readPot(int index);         // A10–A13
+    int readPot(int index);         // A17–A14
     // ✅ API unchanged — now detects change on SMOOTHED values (threshold in raw counts)
     bool potChanged(int index, int threshold = 4);
 
@@ -31,15 +31,15 @@ private:
     const unsigned long _debounceMs = 200;
 
     // -------------------- Pots (hardware pins) -------------------
-    uint8_t _potPins[4] = {A10, A11, A12, A13};
+    uint8_t _potPins[4] = {A17, A16, A15, A14};
 
     // -------------------- Smoothing state ------------------------
     // Construct smoothers per-pin; 'true' enables sleep behavior (quieter when idle)
     ResponsiveAnalogRead _potSmooth[4] = {
-        ResponsiveAnalogRead(A10, true),
-        ResponsiveAnalogRead(A11, true),
-        ResponsiveAnalogRead(A12, true),
-        ResponsiveAnalogRead(A13, true)
+        ResponsiveAnalogRead(A17, true),
+        ResponsiveAnalogRead(A16, true),
+        ResponsiveAnalogRead(A15, true),
+        ResponsiveAnalogRead(A14, true)
     };
 
     // Last *smoothed* raw values (0..1023) used by potChanged thresholding
