@@ -79,7 +79,7 @@ UIManager::UIManager() : _display(128, 64, &Wire1, -1), _currentPage(0), _highli
 }
 
 void UIManager::begin() {
-    Wire1.begin();
+    Wire2.begin();
     _display.begin(SSD1306_SWITCHCAPVCC, 0x3C);
     _display.clearDisplay();
     _display.setTextSize(1);
