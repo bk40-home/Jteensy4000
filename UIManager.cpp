@@ -1,3 +1,4 @@
+#include "WireIMXRT.h"
 // UIManager.cpp  (full file with safe edits)
 // -----------------------------------------------------------------------------
 // UI reflects engine state by converting internal units back to 0..127,
@@ -71,7 +72,7 @@ void UIManager::pollInputs(HardwareInterface& hw, SynthEngine& synth) {
 
 
 
-UIManager::UIManager() : _display(128, 64, &Wire1, -1), _currentPage(0), _highlightIndex(0) {
+UIManager::UIManager() : _display(128, 64, &Wire2, -1), _currentPage(0), _highlightIndex(0) {
     for (int i = 0; i < 4; ++i) {
         _labels[i] = "";
         _values[i] = 0;
@@ -79,7 +80,7 @@ UIManager::UIManager() : _display(128, 64, &Wire1, -1), _currentPage(0), _highli
 }
 
 void UIManager::begin() {
-    Wire1.begin();
+        Wire2.begin();
     _display.begin(SSD1306_SWITCHCAPVCC, 0x3C);
     _display.clearDisplay();
     _display.setTextSize(1);
