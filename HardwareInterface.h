@@ -2,7 +2,7 @@
 #pragma once
 #include <Arduino.h>
 #include <EncoderTool.h>
-#include <ResponsiveAnalogRead.h>   // 🆕 smoothing library
+#include <ResponsiveAnalogRead.h>
 using namespace EncoderTool;
 
 class HardwareInterface {
@@ -11,31 +11,39 @@ public:
     void begin();
     void update();
 
-    int getEncoderDelta();          // One encoder for nav
-    bool isButtonPressed();         // Single button
+    int  getEncoderDelta();
+    bool isButtonPressed();
 
-    // ✅ API unchanged — now returns SMOOTHED raw (0..1023)
-    int readPot(int index);         // A10–A13
-    // ✅ API unchanged — now detects change on SMOOTHED values (threshold in raw counts)
+    // Returns SMOOTHED raw (0..1023), after optional inversion
+    int  readPot(int index);
     bool potChanged(int index, int threshold = 4);
 
     void setPotDebug(bool on) { _debugPots = on; }
 
+    // --- Optional: runtime control if you ever want to flip individual pots in code ---
+    void setPotInverted(int index, bool inverted);
+
 private:
-    // -------------------- Encoder & button -----------------------
+    // ----------- Encoder pins -----------
+    static constexpr uint8_t ENC_A_PIN  = 36;
+    static constexpr uint8_t ENC_B_PIN  = 37;
+    static constexpr uint8_t ENC_SW_PIN = 35;
+
+    // ----------- Encoder & button -----------
     PolledEncoder _navEncoder;
     int32_t _lastEncoderValue = 0;
-
     bool _lastButton = false;
     bool _fallingEdge = false;
     unsigned long _lastButtonMs = 0;
     const unsigned long _debounceMs = 200;
 
-    // -------------------- Pots (hardware pins) -------------------
+    // ----------- Pots -----------
+    // If you keep current wiring, set all to true so clockwise increases.
+    // If you rewire (preferred), set all to false (no inversion).
+    static constexpr int POT_MAX = 1023;
     uint8_t _potPins[4] = {A17, A16, A15, A14};
+    bool    _potInvert[4] = { true, true, true, true }; // <-- flip sense in software
 
-    // -------------------- Smoothing state ------------------------
-    // Construct smoothers per-pin; 'true' enables sleep behavior (quieter when idle)
     ResponsiveAnalogRead _potSmooth[4] = {
         ResponsiveAnalogRead(A17, true),
         ResponsiveAnalogRead(A16, true),
@@ -43,17 +51,12 @@ private:
         ResponsiveAnalogRead(A14, true)
     };
 
-    // Last *smoothed* raw values (0..1023) used by potChanged thresholding
+    // Store last *transformed* (post-inversion) smoothed values
     int _lastPotValues[4] = {0, 0, 0, 0};
 
-    // Optional tunables (reasonable defaults)
-    float _snapMultiplier = 0.05f;  // 0.01..0.20; higher = snappier, lower = smoother
-    int   _activityThresh = 6;      // raw counts to ignore wiggle until “real” move
-    
-    // DEBUG: enable to print raw vs smoothed reads
+    // Smoother tunables
+    float _snapMultiplier = 0.05f;
+    int   _activityThresh = 6;
+
     bool _debugPots = false;
-
-
-
-
 };
