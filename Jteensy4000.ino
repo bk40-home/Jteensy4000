@@ -115,7 +115,7 @@ void setup() {
 
   // I2S amp L/R -> I2S out L/R
   patchOutL    = new AudioConnection(ampI2SL, 0, i2sOut, 0);
-  patchOutR    = new AudioConnection(ampI2SL, 0, i2sOut, 1);
+  patchOutR    = new AudioConnection(ampI2SR, 0, i2sOut, 1);
 
   // USB amp L/R -> USB out L/R
   patchOutUSBL = new AudioConnection(ampUSBL, 0, usbOut, 0);
@@ -130,8 +130,8 @@ void setup() {
   ui.begin();
 
   // Split-path gains (will later map to a master volume)
-  ampI2SL.gain(0.5f);
-  ampI2SR.gain(0.5f);
+  ampI2SL.gain(0.3f);
+  ampI2SR.gain(0.3f);
   ampUSBL.gain(0.3f);
   ampUSBR.gain(0.3f);
 
