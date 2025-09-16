@@ -45,6 +45,8 @@ static inline float CCtoTime(uint8_t cc)
     return JT4000Map::cc_to_time_ms(cc);  // ms
 }
 
+
+
 void SynthEngine::noteOn(byte note, float velocity) {
     float freq = 440.0f * powf(2.0f, (note - 69) / 12.0f);
 
@@ -201,6 +203,8 @@ void SynthEngine::setLFO2Destination(LFODestination dest){
         }
     }
 }
+void SynthEngine::setLFO1Waveform(int type){ _lfo1.setWaveformType(type); }
+void SynthEngine::setLFO2Waveform(int type){ _lfo2.setWaveformType(type); }
 
 void SynthEngine::setOsc1PitchOffset(float semis) {
     Serial.printf("setOsc1PitchOffset  to %.3f semis\n", semis);
@@ -279,18 +283,21 @@ void SynthEngine::handleControlChange(byte channel, byte control, byte value) {
 
     switch (control) {
         // --- OSCILLATOR CONTROLS ---
-        case 21: {
-            int safetype = constrain(value, 0, 9);
-            Serial.printf("[CC %d] Set Oscillator 1 waveform to(%d)\n", control, safetype);
-            setOsc1Waveform(safetype);
+
+        case 21: { // OSC1 Waveform (0..127 mapped to discrete shapes)
+            WaveformType t = waveformFromCC(value);
+            Serial.printf("[CC %d] OSC1 Waveform -> %s (%d)\n", control, waveformShortName(t), (int)t);
+            setOsc1Waveform((int)t);
             break;
         }
-        case 22: {
-            int safetype = constrain(value, 0, 9);
-            Serial.printf("[CC %d] Set Oscillator 2 waveform to(%d)\n", control, safetype);
-            setOsc2Waveform(safetype);
+
+        case 22: { // OSC2 Waveform (0..127 mapped to discrete shapes)
+            WaveformType t = waveformFromCC(value);
+            Serial.printf("[CC %d] OSC2 Waveform -> %s (%d)\n", control, waveformShortName(t), (int)t);
+            setOsc2Waveform((int)t);
             break;
         }
+
         
         // ---------------- LFO1 (mod wheel was case 1) ----------------
         case 1: {
@@ -436,12 +443,16 @@ void SynthEngine::handleControlChange(byte channel, byte control, byte value) {
             setLFO2Amount(depth);
             break;
         }
-        case 53: {
-            LFODestination dest = static_cast<LFODestination>(value % NUM_LFO_DESTS);
-            Serial.printf("[CC %d] Set LFO2 Destination to %d\n", control, dest);
-            setLFO2Destination(dest);
-            break;
-        }
+
+
+// LFO2 Destination (CC 53)
+case 53: {
+    int d = JT4000Map::lfoDestFromCC(value);     // Mapping.h binning
+    const char* name = (d >= 0 && d < NUM_LFO_DESTS) ? LFODestNames[d] : "Unknown";
+    Serial.printf("[CC %d] LFO2 Dest -> %s (%d)\n", control, name, d);
+    setLFO2Destination((LFODestination)d);
+    break;
+}
         // --- LFO1 CONFIG ---
         case 54: {
             float freq = cc_to_lfo_hz(value);                  // Mapping.h
@@ -455,10 +466,12 @@ void SynthEngine::handleControlChange(byte channel, byte control, byte value) {
             setLFO1Amount(depth);
             break;
         }
+        // LFO1 Destination (CC 56): map 0..127 -> NUM_LFO_DESTS bins
         case 56: {
-            LFODestination dest = static_cast<LFODestination>(value % NUM_LFO_DESTS);
-            Serial.printf("[CC %d] Set LFO1 Destination to %d\n", control, dest);
-            setLFO1Destination(dest);
+            int d = JT4000Map::lfoDestFromCC(value);     // Mapping.h binning
+            const char* name = (d >= 0 && d < NUM_LFO_DESTS) ? LFODestNames[d] : "Unknown";
+            Serial.printf("[CC %d] LFO1 Dest -> %s (%d)\n", control, name, d);
+            setLFO1Destination((LFODestination)d);
             break;
         }
         case 57: {break;}
@@ -488,18 +501,26 @@ void SynthEngine::handleControlChange(byte channel, byte control, byte value) {
             break;
         }
 
-        case 62: {
-            int safetype = constrain(value, 0, 8);
-            Serial.printf("[CC %d] setLfo1Waveform  = %d\n", control, safetype);
-            _lfo1.setWaveformType(safetype);
-            break;
-        }
-        case 63: {
-            int safetype = constrain(value, 0, 8);
-            Serial.printf("[CC %d] setLfo1Waveform  = %d\n", control, safetype);
-            _lfo2.setWaveformType(safetype);
-            break;
-        }
+// LFO1 Waveform (CC 62): map 0..127 -> discrete Teensy waveform ID via bins (same as OSC)
+case 62: {
+    WaveformType t = waveformFromCC(value);      // Waveforms.h mapping (binning)
+    Serial.printf("[CC %d] LFO1 Waveform -> %s (%d)\n", control, waveformShortName(t), (int)t);
+    setLFO1Waveform((int)t);                     // calls through to LFOBlock
+    break;
+}
+
+// LFO2 Waveform (CC 63)
+case 63: {
+    WaveformType t = waveformFromCC(value);
+    Serial.printf("[CC %d] LFO2 Waveform -> %s (%d)\n", control, waveformShortName(t), (int)t);
+    setLFO2Waveform((int)t);
+    break;
+}
+
+
+
+
+
         // --- GLOBAL FX CHAIN CONTROLS ---
         case 70: {
             float val = normValue;
@@ -701,6 +722,16 @@ void SynthEngine::setSupersawMix(uint8_t oscIndex, float amount) {
 
 int SynthEngine::getOsc1Waveform() const { return _voices[0].getOsc1Waveform(); }
 int SynthEngine::getOsc2Waveform() const { return _voices[0].getOsc2Waveform(); }
+// Return short UI name for current wave (OSC1/OSC2 of voice 0 shown in UI)
+const char* SynthEngine::getOsc1WaveformName() const {
+    int w = _voices[0].getOsc1Waveform();
+    return waveformShortName((WaveformType)w);
+}
+const char* SynthEngine::getOsc2WaveformName() const {
+    int w = _voices[0].getOsc2Waveform();
+    return waveformShortName((WaveformType)w);
+}
+
 float SynthEngine::getOsc1PitchOffset() const { return _voices[0].getOsc1PitchOffset(); }
 float SynthEngine::getOsc2PitchOffset() const { return _voices[0].getOsc2PitchOffset(); }
 float SynthEngine::getOsc1Detune() const { return _voices[0].getOsc1Detune(); }
@@ -761,6 +792,26 @@ LFODestination SynthEngine::getLFO1Destination() const { return _lfo1.getDestina
 LFODestination SynthEngine::getLFO2Destination() const { return _lfo2.getDestination(); }
 int  SynthEngine::getLFO1Waveform() const { return _lfo1.getWaveform(); }
 int  SynthEngine::getLFO2Waveform() const { return _lfo2.getWaveform(); }
+
+const char* SynthEngine::getLFO1WaveformName() const {
+    int w = _lfo1.getWaveform();  // already returns Teensy ID 0..12
+    return waveformShortName((WaveformType)w);
+}
+const char* SynthEngine::getLFO2WaveformName() const {
+    int w = _lfo2.getWaveform();
+    return waveformShortName((WaveformType)w);
+}
+const char* SynthEngine::getLFO1DestinationName() const {
+    auto d = _lfo1.getDestination();
+    if ((int)d >= 0 && (int)d < NUM_LFO_DESTS) return LFODestNames[(int)d];
+    return "Unknown";
+}
+const char* SynthEngine::getLFO2DestinationName() const {
+    auto d = _lfo2.getDestination();
+    if ((int)d >= 0 && (int)d < NUM_LFO_DESTS) return LFODestNames[(int)d];
+    return "Unknown";
+}
+
 
 // Glide and AmpMod DC level (for UI reflection)
 bool  SynthEngine::getGlideEnabled()   const { return _glideEnabled; }

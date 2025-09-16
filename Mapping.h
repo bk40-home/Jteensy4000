@@ -16,6 +16,113 @@ namespace JT4000Map {
     static constexpr float CUTOFF_MIN_HZ = 20.0f;
     static constexpr float CUTOFF_MAX_HZ = 20000.0f;
 
+    // ============================================================================
+// JT -> ENGINE ENUM LUTs (engine uses AudioSynthWaveformModulated ordering)
+// Engine wave indices: 0=SINE,1=SAW,2=RSAW,3=SQU,4=TRI,5=VTRI,6=ARB,7=PULSE,8=S&H,9=SUPERSAW
+// ============================================================================
+
+// OSC1 (JT order): 0=Off, 1=Triangle, 2=Square, 3=PWM, 4=Saw, 5=Supersaw, 6=FM, 7=Noise
+// Notes:
+//  - Off: map to SINE (0) as a neutral placeholder; actual “mute” should come from level/mix elsewhere.
+//  - PWM: map to PULSE (7).
+//  - Supersaw: map to SUPERSAW (9).
+//  - FM: engine doesn’t have an FM osc mode -> map to SINE (0) or choose a fallback you prefer.
+//  - Noise: engine noise is not an osc waveform -> map to SINE (0). TODO: drive your Noise mix CC separately if needed.
+static constexpr uint8_t LUT_OSC1_WAVE_FROM_JT[8] = {
+/*Off, Tri,  Sq,  PWM, Saw, Ssup, FM,  Noise */
+   0,   4,    3,   7,   1,   9,    0,   0
+};
+
+// OSC2 (JT order): 0=Off, 1=Triangle, 2=Square, 3=PWM, 4=Saw, 5=Noise
+// Same caveats for Off/Noise as above.
+static constexpr uint8_t LUT_OSC2_WAVE_FROM_JT[6] = {
+/*Off, Tri,  Sq,  PWM, Saw, Noise */
+   0,   4,    3,   7,   1,   0
+};
+
+// LFO wave (JT): 0=Triangle, 1=Square, 2=Saw
+// If your LFOs also use AudioSynthWaveformModulated indices, map to TRI=4, SQU=3, SAW=1:
+static constexpr uint8_t LUT_LFO_WAVE_FROM_JT[3] = {
+/*Tri, Sq,  Saw */
+   4,   3,   1
+};
+
+// Optional: LFO1 destination (JT: 0=VCF,1=OSC). Change if your engine’s dest enum differs.
+static constexpr uint8_t LUT_LFO1_DEST_FROM_JT[2] = { 0, 1 };
+
+    // Central transforms
+    enum class Xform : uint8_t {
+    Raw_0_127,
+    Bool_0_127,        // 0 -> 0, nonzero -> 127
+    Enum_Direct,       // pass enum index as-is
+    Scale_0_99_to_127, // optional
+    EnumMap_Osc1Wave,
+    EnumMap_Osc2Wave,
+    EnumMap_LFOWave,
+    EnumMap_LFO1Dest,
+    };
+
+    // Convert raw preset byte to CC value
+    inline uint8_t toCC(uint8_t raw, Xform xf) {
+    switch (xf) {
+        case Xform::Bool_0_127:        return raw ? 127 : 0;
+        case Xform::Enum_Direct:       return raw;
+        case Xform::Scale_0_99_to_127: return (raw > 99) ? 127 : (raw * 127) / 99;
+        case Xform::EnumMap_Osc1Wave:  return (raw < 8) ? LUT_OSC1_WAVE_FROM_JT[raw] : 0;
+        case Xform::EnumMap_Osc2Wave:  return (raw < 6) ? LUT_OSC2_WAVE_FROM_JT[raw] : 0;
+        case Xform::EnumMap_LFOWave:   return (raw < 3) ? LUT_LFO_WAVE_FROM_JT[raw]  : 0;
+        case Xform::EnumMap_LFO1Dest:  return (raw < 2) ? LUT_LFO1_DEST_FROM_JT[raw] : 0;
+        default:                       return raw;
+    }
+    }
+
+    // One mapping row (Byte numbers are 1-based from the JT table)
+    struct Slot { uint8_t byte1; uint8_t cc; Xform xf; };
+
+    // Central map JT Byte -> CC (use CC numbers from CCMap.h)
+    #include "CCMap.h"
+    inline constexpr Slot kSlots[] = {
+    // ---- OSC ----
+    {  1, 21, Xform::EnumMap_Osc1Wave }, // OSC1 Wave
+    {  2, 22, Xform::EnumMap_Osc2Wave }, // OSC2 Wave
+    {  3, 77, Xform::Raw_0_127        }, // OSC1 ParamA (PWM/Detune/FM)
+    {  4, 78, Xform::Raw_0_127        }, // OSC2 ParamA
+    {  5, 41, Xform::Raw_0_127        }, // OSC1 Coarse
+    {  6, 45, Xform::Raw_0_127        }, // OSC1 Fine
+    {  7, 42, Xform::Raw_0_127        }, // OSC2 Coarse
+    {  8, 46, Xform::Raw_0_127        }, // OSC2 Fine
+    {  9, 60, Xform::Raw_0_127        }, // Balance / mix
+
+    // ---- RING / PORTA ----
+    { 44, 64, Xform::Bool_0_127       }, // Ring switch 0/1
+    { 45, 65, Xform::Raw_0_127        }, // Ring amount
+    { 46, 81, Xform::Enum_Direct      }, // Porta mode 0=Porta,1=Gliss
+    { 47, 82, Xform::Raw_0_127        }, // Porta amount
+
+    // ---- LFOs ----
+    { 48, 85, Xform::EnumMap_LFOWave  }, // LFO1 wave
+    { 49, 89, Xform::EnumMap_LFOWave  }, // LFO2 wave
+    { 50, 87, Xform::Raw_0_127        }, // LFO1 rate
+    { 51, 88, Xform::Raw_0_127        }, // LFO1 depth
+    { 52, 91, Xform::Raw_0_127        }, // LFO2 rate
+    { 53, 92, Xform::Raw_0_127        }, // LFO2 depth
+    { 54, 86, Xform::EnumMap_LFO1Dest }, // LFO1 dest 0=VCF,1=OSC
+
+    // ---- FILTER ENV (VCF) ----
+    { 15, 101, Xform::Raw_0_127       }, // A
+    { 16, 102, Xform::Raw_0_127       }, // D
+    { 17, 103, Xform::Raw_0_127       }, // S
+    { 18, 104, Xform::Raw_0_127       }, // R
+    { 23, 75,  Xform::Raw_0_127       }, // Env amount
+
+    // ---- AMP ENV (VCA) ----
+    { 19, 97,  Xform::Raw_0_127       }, // A
+    { 20, 98,  Xform::Raw_0_127       }, // D
+    { 21, 99,  Xform::Raw_0_127       }, // S
+    { 22, 100, Xform::Raw_0_127       }, // R
+    };
+
+
     // Choose taper mode
     enum CutoffTaper {
         TAPER_NEUTRAL = 0,  // pure log (geometric mean ~632 Hz at CC=64)
@@ -118,6 +225,21 @@ namespace JT4000Map {
         float norm = logf(hz / 0.03f) / logf(1300.0f);
         return norm_to_cc(norm);
     }
+
+    // ---- LFO destination CC binning (NUM_LFO_DESTS from LFOBlock.h) -------------
+    static inline uint8_t ccFromLfoDest(int dest /*0..NUM_LFO_DESTS-1*/) {
+        if (dest < 0) dest = 0;
+        if (dest >= NUM_LFO_DESTS) dest = NUM_LFO_DESTS - 1;
+        const uint16_t start = (dest    * 128u) / NUM_LFO_DESTS;
+        const uint16_t end   = ((dest+1)* 128u) / NUM_LFO_DESTS;
+        return (uint8_t)((start + end) / 2);
+    }
+    static inline int lfoDestFromCC(uint8_t cc) {
+        uint8_t idx = (uint16_t(cc) * NUM_LFO_DESTS) / 128;
+        if (idx >= NUM_LFO_DESTS) idx = NUM_LFO_DESTS - 1;
+        return (int)idx;
+}
+
 
     // ---------------------- Linear 0..1 norms ---------------------
     // Keep legacy linear resonance helpers (for modules that expect 0..1)

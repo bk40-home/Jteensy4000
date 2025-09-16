@@ -15,6 +15,10 @@ void LFOBlock::update() {
 void LFOBlock::setWaveformType(int type) {
     _type = type;
     _lfo.begin(_type);
+        // If user selected a pulse-type LFO, ensure a valid width
+    if (_type == WAVEFORM_PULSE || _type == WAVEFORM_BANDLIMIT_PULSE) {
+        _lfo.pulseWidth(0.5f);
+    }
 }
 
 // --- Parameter Setters

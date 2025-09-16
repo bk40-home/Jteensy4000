@@ -1,5 +1,7 @@
 #include "Presets.h"
 #include "CCMap.h"   // for CC numbers consistency if needed
+#include "Mapping.h"
+#include "Presets_Microsphere.h" // already in your tree
 
 namespace {
 
@@ -18,6 +20,33 @@ const char* templateName(uint8_t idx) {
     "Init Wave 5","Init Wave 6","Init Wave 7","Init Wave 8"
   };
   return (idx < 9) ? names[idx] : "Init";
+}
+// --- put near the top of Presets.cpp ---
+static const int kTEMPLATE_COUNT = 9; // you expose 9: "Init Wave 0" .. "Init Wave 8"
+
+int presets_templateCount() { return kTEMPLATE_COUNT; }
+int presets_totalCount()    { return kTEMPLATE_COUNT + JT4000_PRESET_COUNT; }
+
+const char* presets_nameByGlobalIndex(int idx) {
+  if (idx < 0) return "—";
+  if (idx < kTEMPLATE_COUNT) return templateName((uint8_t)idx);
+  int bankIdx = idx - kTEMPLATE_COUNT;
+  if (bankIdx >= 0 && bankIdx < JT4000_PRESET_COUNT) return JT4000_Presets[bankIdx].name;
+  return "—";
+}
+
+void presets_loadByGlobalIndex(SynthEngine& synth, int globalIdx, uint8_t midiCh) {
+  const int total = presets_totalCount();
+  if (total <= 0) return;
+  while (globalIdx < 0) globalIdx += total;
+  while (globalIdx >= total) globalIdx -= total;
+
+  if (globalIdx < kTEMPLATE_COUNT) {
+    loadInitTemplateByWave(synth, (uint8_t)globalIdx);
+  } else {
+    const int bankIdx = globalIdx - kTEMPLATE_COUNT;
+    loadMicrospherePreset(synth, bankIdx, midiCh);
+  }
 }
 
 void loadInitTemplateByWave(SynthEngine& synth, uint8_t waveIndex) {
@@ -97,6 +126,24 @@ void loadInitTemplateByWave(SynthEngine& synth, uint8_t waveIndex) {
   sendCC(synth, 90, 127);            // Amp Mod DC = 0
 
   AudioInterrupts();
+}
+
+void loadRawPatchViaCC(SynthEngine& synth, const uint8_t data[64], uint8_t midiCh) {
+  AudioNoInterrupts();
+  for (const auto& row : JT4000Map::kSlots) {
+    const uint8_t idx0 = (row.byte1 >= 1) ? (row.byte1 - 1) : 0;
+    if (idx0 >= 64) continue;
+    const uint8_t raw = data[idx0];
+    const uint8_t val = JT4000Map::toCC(raw, row.xf);
+    sendCC(synth, row.cc, val, midiCh);
+
+  }
+  AudioInterrupts();
+}
+
+void loadMicrospherePreset(SynthEngine& synth, int index, uint8_t midiCh) {
+  if (index < 0 || index >= JT4000_PRESET_COUNT) return;
+  loadRawPatchViaCC(synth, JT4000_Presets[index].data, midiCh);
 }
 
 } // namespace Presets

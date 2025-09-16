@@ -7,11 +7,13 @@
 #include "UIManager.h"
 #include "CCMap.h"
 #include "Presets.h"
+#include "AudioScopeTap.h" 
 
 // ---------------------- Audio endpoints ----------------------
 AudioOutputI2S2 i2sOut;                 // I2S audio out (to SGTL5000 / PCM path)
 AudioOutputUSB usbOut;                 // USB audio out
 AudioControlSGTL5000 audioShield;      // Audio shield control
+AudioScopeTap scopeTap;                    // ➋ create the tap (always-on)
 
 // Patch-cord pointers (kept alive for the program lifetime)
 AudioConnection* patchAmpI2SL = nullptr;
@@ -24,7 +26,7 @@ AudioConnection* patchAmpUSBR = nullptr;
 AudioConnection* patchOutUSBL = nullptr;
 AudioConnection* patchOutUSBR = nullptr;
 
-AudioConnection* patchOutOsc  = nullptr;   // scope feed
+AudioConnection* patchOutScope  = nullptr;   // scope feed
 
 // ---------------------- Engine & UI --------------------------
 SynthEngine synth;
@@ -123,7 +125,7 @@ void setup() {
 
   // Scope tap (FX L -> UI scope input)
   // ui.scopeIn() must return an AudioStream& (e.g., an AudioAnalyze or custom scope sink)
-  patchOutOsc  = new AudioConnection(synth.getFXOutL(), 0, ui.scopeIn(), 0);
+  patchOutScope  = new AudioConnection(synth.getFXOutL(), 0, scopeTap, 0);
 
   // ---------------------- INIT UI/HW --------------------------
   hw.begin();

@@ -1,7 +1,9 @@
 #pragma once
 
 #include <Audio.h>
+#include "Waveforms.h"  // canonical wave IDs + Supersaw
 #include "AudioSynthSupersaw.h"
+
 
 // OscillatorBlock manages a hybrid waveform oscillator with modulation and tuning
 class OscillatorBlock {

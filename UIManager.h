@@ -25,9 +25,14 @@ public:
     int getParameterValue(int index) const;
     int ccToDisplayValue(byte cc, SynthEngine& synth);
     // --- Sync
+    // Return non-null for discrete params that should display text (e.g., waveform)
+    const char* ccToDisplayText(byte cc, SynthEngine& synth);
+
     void syncFromEngine(SynthEngine& synth);
 
     void pollInputs(HardwareInterface& hw, SynthEngine& synth);
+    
+    inline void markStatsDirty() { _statsDirty = true; }
 
     
     // 🆕 Expose scope input so SynthEngine can patch audio to it
@@ -67,5 +72,13 @@ private:
     void renderScope();
 
     void drawRightAligned(const String& text, int y);
+
+    uint32_t _statsNextMs = 0;   // next allowed refresh time
+    bool     _statsDirty  = true; // event-driven refresh flag
+    float    _cpuNowDisp  = 0.0f;
+    uint16_t _blkNowDisp  = 0;
+    // In class UIManager (private:)
+    const char* _valueText[4];  // nullptr = show numeric
+
 
 };

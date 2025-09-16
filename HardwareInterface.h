@@ -41,14 +41,14 @@ private:
     // If you keep current wiring, set all to true so clockwise increases.
     // If you rewire (preferred), set all to false (no inversion).
     static constexpr int POT_MAX = 1023;
-    uint8_t _potPins[4] = {A17, A16, A15, A14};
+    uint8_t _potPins[4] = {A17, A16, A14, A15};
     bool    _potInvert[4] = { true, true, true, true }; // <-- flip sense in software
 
     ResponsiveAnalogRead _potSmooth[4] = {
         ResponsiveAnalogRead(A17, true),
         ResponsiveAnalogRead(A16, true),
-        ResponsiveAnalogRead(A15, true),
-        ResponsiveAnalogRead(A14, true)
+        ResponsiveAnalogRead(A14, true),
+        ResponsiveAnalogRead(A15, true)
     };
 
     // Store last *transformed* (post-inversion) smoothed values

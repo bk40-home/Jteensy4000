@@ -1,6 +1,8 @@
 #pragma once
 #include <Arduino.h>
 #include <Audio.h>
+#include "Waveforms.h"  // ✅ use the same waveform IDs & names as main osc
+
 
 enum LFODestination {
     LFO_DEST_NONE = 0,
@@ -10,6 +12,17 @@ enum LFODestination {
     LFO_DEST_AMP,
     NUM_LFO_DESTS
 };
+
+// LFO destination names — indices must match LFODestination
+static const char* LFODestNames[NUM_LFO_DESTS] = {
+    "None",           // LFO_DEST_NONE
+    "Pitch",          // LFO_DEST_PITCH
+    "Filter",         // LFO_DEST_FILTER
+    "Pulse Width",    // LFO_DEST_PWM   (called “PWM” in enum; UI shows “Pulse Width”)
+    "Amp"             // LFO_DEST_AMP
+};
+
+
 
 
 class LFOBlock {

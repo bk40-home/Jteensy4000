@@ -33,18 +33,23 @@ OscillatorBlock::OscillatorBlock()
 }
 
 
+// Set oscillator type (Teensy waves 0..12 or JT-4000 Supersaw = 100)
 void OscillatorBlock::setWaveformType(int type) {
     _currentType = type;
 
-    if (type == 9) {  // Supersaw
+    if (type == WAVEFORM_SUPERSAW) {  // Supersaw
+        // Route audio to the supersaw bus
         _outputMix.gain(0, 0.0f);
-        _outputMix.gain(1, 0.9f); 
+        _outputMix.gain(1, 0.9f);
     } else {
-        _mainOsc.begin(type);
-        _outputMix.gain(0, 0.7f); // volume difference for head room, 
-        _outputMix.gain(1, 0.0f);
+        // Standard Teensy waveform: pass canonical ID straight to begin()
+        _mainOsc.begin((uint8_t)type);        // <- important: use Teensy IDs directly
+        _outputMix.gain(0, 0.7f);             // headroom
+        _outputMix.gain(1, 0.0f);             // mute supersaw path
     }
 }
+
+
 void OscillatorBlock::setAmplitude(float amp) {
     _mainOsc.amplitude(amp);
     _supersaw.setAmplitude(amp);

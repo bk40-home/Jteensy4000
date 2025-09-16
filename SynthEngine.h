@@ -4,6 +4,8 @@
 #include "LFOBlock.h"
 #include "FXChainBlock.h"
 #include "Mapping.h"  // Keep: shared CC mappings for forward/inverse UI use
+#include "Waveforms.h"  // waveform names + CC mapping
+
 
 // Optional: pull names local for brevity (or prefix with JT4000Map:: each time)
 using namespace JT4000Map;
@@ -56,6 +58,9 @@ public:
     float getLFO1Amount() const;
     int getLFO1Waveform() const;
     LFODestination getLFO1Destination() const;
+    // LFO name helpers for UI
+    const char* getLFO1WaveformName() const;
+    const char* getLFO1DestinationName() const;
     
 
     // --- LFO 2
@@ -68,6 +73,8 @@ public:
     int getLFO2Waveform() const;
     float getLFO2Amount() const;
     LFODestination getLFO2Destination() const;
+    const char* getLFO2WaveformName() const;
+    const char* getLFO2DestinationName() const;
    
 
     // --- Envelopes

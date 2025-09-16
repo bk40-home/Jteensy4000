@@ -16,6 +16,25 @@ namespace Presets {
     loadInitTemplateByWave(synth, idx);
   }
 
+  // Apply a 64-byte JT patch via CC map
+  void loadRawPatchViaCC(SynthEngine& synth, const uint8_t data[64], uint8_t midiCh = 1);
+
+  // Load one of the Microsphere bank patches by index [0..31]
+  void loadMicrospherePreset(SynthEngine& synth, int index, uint8_t midiCh = 1);
+
+// Number of your existing init/templates (whatever you already expose)
+int presets_templateCount();   // returns N (existing templates)
+
+// Total = templates + Microsphere bank (32)
+int presets_totalCount();
+
+// Load by a single global index [0 .. totalCount-1]
+void presets_loadByGlobalIndex(SynthEngine& synth, int globalIdx, uint8_t midiCh = 1);
+
+// Optional: helper to get a display name for current index
+const char* presets_nameByGlobalIndex(int globalIdx);
+
+
   // Optional: get a friendly name for UI/debug (“Init Saw”, etc.)
   const char* templateName(uint8_t idx);
 }
