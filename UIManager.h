@@ -2,7 +2,7 @@
 #include <Adafruit_SSD1306.h>
 #include <Wire.h>
 #include "SynthEngine.h"
-#include "CCMap.h"
+//#include "CCMap.h"
 #include "HardwareInterface.h"
 
 class UIManager {

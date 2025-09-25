@@ -5,7 +5,8 @@
 #include "SynthEngine.h"
 #include "HardwareInterface.h"
 #include "UIManager.h"
-#include "CCMap.h"
+#include "UIPageLayout.h"   // UI-only page->CC layout and labels
+//#include "CCMap.h"
 #include "Presets.h"
 #include "AudioScopeTap.h" 
 
@@ -47,6 +48,49 @@ MIDIDevice midiHost(myusb);
 unsigned long lastDisplayUpdate = 0;
 const unsigned long displayRefreshMs = 100;
 
+static void onParam(uint8_t cc, uint8_t v) {
+  Serial.printf("[NOTIFY] CC %u = %u\n", cc, v);
+  // Optional: keep screen values fresh even if change came via MIDI/menu
+  // ui.syncFromEngine(synth);  // uncomment if you want immediate reflection
+}
+
+// --- Debug: dump current page mapping and values -----------------------------
+static void debugDumpPage(UIManager& ui, HardwareInterface& hw, SynthEngine& synth) {
+  const int page = ui.getCurrentPage();
+  Serial.printf("\n[PAGE] %d\n", page);
+
+  for (int i = 0; i < 4; ++i) {
+    const byte cc      = UIPage::ccMap[page][i];                 // UI routing
+    const char* label  = UIPage::ccNames[page][i];               // OLED label
+    const int  raw     = hw.readPot(i);                          // 0..1023
+    const int  ccVal   = (raw >> 3);                             // 0..127
+    const char* ccDesc = CC::name(cc);                           // friendly name or nullptr
+
+    // Ask UIManager to compute the engine-reflected CC (inverse mapping)
+    const int engineCC = (cc != 255) ? ui.ccToDisplayValue(cc, synth) : -1;
+
+    if (cc == 255) {
+      Serial.printf("  knob %d: label='%-10s'  [UNMAPPED]\n", i, label ? label : "");
+      continue;
+    }
+
+    Serial.printf("  knob %d: label='%-10s'  map→ CC %3u  (%s)"
+                  "  potRaw=%4d  potCC=%3d  engineCC=%3d\n",
+                  i,
+                  label ? label : "",
+                  cc,
+                  ccDesc ? ccDesc : "unnamed",
+                  raw, ccVal, engineCC);
+  }
+  Serial.println();
+}
+
+//   // Jteensy4000.ino  (in setup() after synth/ui begin)
+// static void onParam(uint8_t cc, uint8_t v) {
+//   Serial.printf("[NOTIFY] CC %u = %u\n", cc, v);
+//   // Optional: keep screen values fresh even if change came via MIDI/menu
+//   // ui.syncFromEngine(synth);  // uncomment if you want immediate reflection
+// }
 // ---------------------- MIDI handlers ------------------------
 void handleNoteOn(byte channel, byte note, byte velocity) {
   float normvelocity = velocity / 127.0f;
@@ -131,6 +175,9 @@ void setup() {
   hw.begin();
   ui.begin();
 
+synth.setNotifier(onParam);
+
+
   // Split-path gains (will later map to a master volume)
   ampI2SL.gain(0.3f);
   ampI2SR.gain(0.3f);
@@ -139,7 +186,7 @@ void setup() {
 
   int page = ui.getCurrentPage();
   for (int i = 0; i < 4; ++i) {
-    ui.setParameterLabel(i, ccNames[page][i]);
+    ui.setParameterLabel(i, UIPage::ccNames[page][i]);
   }
   ui.syncFromEngine(synth);
 }

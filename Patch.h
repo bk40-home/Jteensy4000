@@ -1,6 +1,6 @@
 #pragma once
 #include <Arduino.h>
-#include "CCMap.h"       // use your existing ccMap pages/rows
+//#include "CCMap.h"       // use your existing ccMap pages/rows
 #include "SynthEngine.h" // for getters and CC apply
 #include "Mapping.h"     // JT4000Map: conversions for capture from engine
 
