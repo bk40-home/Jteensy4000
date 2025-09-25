@@ -39,43 +39,90 @@ const char* UIManager::ccToDisplayText(byte cc, SynthEngine& synth) {
 int UIManager::ccToDisplayValue(byte cc, SynthEngine& synth) {
     using namespace JT4000Map;
 
+int UIManager::ccToDisplayValue(byte cc, SynthEngine& synth) {
+    using namespace JT4000Map;
+
     switch (cc) {
-        // Waveforms → keep the currently selected waveform centered in a bin
+        // ---------------- Waveforms ----------------
+        // Keep the currently selected waveform centered in a bin
         case CC::OSC1_WAVE: return ccFromWaveform((WaveformType)synth.getOsc1Waveform());
         case CC::OSC2_WAVE: return ccFromWaveform((WaveformType)synth.getOsc2Waveform());
 
-        // Filter core
+        // ---------------- Filter core --------------
         case CC::FILTER_CUTOFF:    return cutoff_hz_to_cc(synth.getFilterCutoff());
         case CC::FILTER_RESONANCE: return resonance_to_cc(synth.getFilterResonance());
 
-        // Amp env
+        // ---------------- Amp env ------------------
         case CC::AMP_ATTACK:  return time_ms_to_cc(synth.getAmpAttack());
         case CC::AMP_DECAY:   return time_ms_to_cc(synth.getAmpDecay());
         case CC::AMP_SUSTAIN: return norm_to_cc(synth.getAmpSustain());
         case CC::AMP_RELEASE: return time_ms_to_cc(synth.getAmpRelease());
 
-        // Filter env
+        // ---------------- Filter env ---------------
         case CC::FILTER_ENV_ATTACK:  return time_ms_to_cc(synth.getFilterEnvAttack());
         case CC::FILTER_ENV_DECAY:   return time_ms_to_cc(synth.getFilterEnvDecay());
         case CC::FILTER_ENV_SUSTAIN: return norm_to_cc(synth.getFilterEnvSustain());
         case CC::FILTER_ENV_RELEASE: return time_ms_to_cc(synth.getFilterEnvRelease());
 
-        // LFOs
-        case CC::LFO1_FREQ:  return lfo_hz_to_cc(synth.getLFO1Frequency());
-        case CC::LFO1_DEPTH: return norm_to_cc(synth.getLFO1Amount());
-        case CC::LFO2_FREQ:  return lfo_hz_to_cc(synth.getLFO2Frequency());
-        case CC::LFO2_DEPTH: return norm_to_cc(synth.getLFO2Amount());
+        // ---------------- LFOs ---------------------
+        case CC::LFO1_FREQ:        return lfo_hz_to_cc(synth.getLFO1Frequency());
+        case CC::LFO1_DEPTH:       return norm_to_cc(synth.getLFO1Amount());
+        case CC::LFO2_FREQ:        return lfo_hz_to_cc(synth.getLFO2Frequency());
+        case CC::LFO2_DEPTH:       return norm_to_cc(synth.getLFO2Amount());
         case CC::LFO1_DESTINATION: return JT4000Map::ccFromLfoDest((int)synth.getLFO1Destination());
         case CC::LFO2_DESTINATION: return JT4000Map::ccFromLfoDest((int)synth.getLFO2Destination());
 
-        // Mixer
-        case CC::OSC_MIX_BALANCE: return norm_to_cc(synth.getOscMix2()); // show osc2 level for balance
+        // ---------------- Mixer --------------------
+        // For the balance control, show OSC2 level (your UI convention)
+        case CC::OSC_MIX_BALANCE: return norm_to_cc(synth.getOscMix2());
         case CC::OSC1_MIX:        return norm_to_cc(synth.getOscMix1());
         case CC::OSC2_MIX:        return norm_to_cc(synth.getOscMix2());
         case CC::SUB_MIX:         return norm_to_cc(synth.getSubMix());
         case CC::NOISE_MIX:       return norm_to_cc(synth.getNoiseMix());
 
-        // Supersaw / DC / Ring
+        // ---------------- Pitch / Detune / Fine ----
+        // Coarse pitch shows the *bucket center* values so the OLED matches the detents
+        case CC::OSC1_PITCH_OFFSET: {
+            float semis = synth.getOsc1PitchOffset(); // -24, -12, 0, +12, +24
+            // Return the center CC of those buckets, matching your earlier UI mapping.
+            if      (semis <= -18.0f) return 12;   // ~ -24
+            else if (semis <=  -6.0f) return 38;   // ~ -12
+            else if (semis <=   6.0f) return 64;   // ~  0
+            else if (semis <=  18.0f) return 90;   // ~ +12
+            else                      return 116;  // ~ +24
+        }
+        case CC::OSC2_PITCH_OFFSET: {
+            float semis = synth.getOsc2PitchOffset();
+            if      (semis <= -18.0f) return 12;
+            else if (semis <=  -6.0f) return 38;
+            else if (semis <=   6.0f) return 64;
+            else if (semis <=  18.0f) return 90;
+            else                      return 116;
+        }
+
+        // Detune stored as -1..+1 → map back to 0..127
+        case CC::OSC1_DETUNE: {
+            float d = synth.getOsc1Detune(); // -1..+1
+            return norm_to_cc((d + 1.0f) * 0.5f);
+        }
+        case CC::OSC2_DETUNE: {
+            float d = synth.getOsc2Detune(); // -1..+1
+            return norm_to_cc((d + 1.0f) * 0.5f);
+        }
+
+        // Fine tune stored as -100..+100 cents → map back to 0..127
+        case CC::OSC1_FINE_TUNE: {
+            float cents = synth.getOsc1FineTune();  // -100..+100
+            int v = (int)lroundf((cents + 100.0f) * 127.0f / 200.0f);
+            return (uint8_t)constrain(v, 0, 127);
+        }
+        case CC::OSC2_FINE_TUNE: {
+            float cents = synth.getOsc2FineTune();  // -100..+100
+            int v = (int)lroundf((cents + 100.0f) * 127.0f / 200.0f);
+            return (uint8_t)constrain(v, 0, 127);
+        }
+
+        // ---------------- Supersaw / DC / Ring ----
         case CC::SUPERSAW1_DETUNE: return norm_to_cc(synth.getSupersawDetune(0));
         case CC::SUPERSAW1_MIX:    return norm_to_cc(synth.getSupersawMix(0));
         case CC::SUPERSAW2_DETUNE: return norm_to_cc(synth.getSupersawDetune(1));
@@ -87,29 +134,29 @@ int UIManager::ccToDisplayValue(byte cc, SynthEngine& synth) {
         case CC::RING1_MIX:        return norm_to_cc(synth.getRing1Mix());
         case CC::RING2_MIX:        return norm_to_cc(synth.getRing2Mix());
 
-        // Filter mods
-        case CC::FILTER_ENV_AMOUNT:    return norm_to_cc((synth.getFilterEnvAmount() + 1.0f) * 0.5f);
-        case CC::FILTER_KEY_TRACK:     return norm_to_cc((synth.getFilterKeyTrackAmount() + 1.0f) * 0.5f);
-        case CC::FILTER_OCTAVE_CONTROL:return norm_to_cc(synth.getFilterOctaveControl() / 8.0f);
+        // ---------------- Filter mods --------------
+        case CC::FILTER_ENV_AMOUNT:     return norm_to_cc((synth.getFilterEnvAmount() + 1.0f) * 0.5f);
+        case CC::FILTER_KEY_TRACK:      return norm_to_cc((synth.getFilterKeyTrackAmount() + 1.0f) * 0.5f);
+        case CC::FILTER_OCTAVE_CONTROL: return norm_to_cc(synth.getFilterOctaveControl() / 8.0f);
 
-        // FX
-        case CC::FX_REVERB_SIZE:    // 0..1
+        // ---------------- FX (add getters when available) -----------
+        case CC::FX_REVERB_SIZE:
         case CC::FX_REVERB_DAMP:
         case CC::FX_DELAY_FEEDBACK:
         case CC::FX_DRY_MIX:
         case CC::FX_REVERB_MIX:
         case CC::FX_DELAY_MIX:
-            // If you expose FX getters, map them here; until then, fall back to 0
-            return 0;
         case CC::FX_DELAY_TIME:
-            return 0; // same note as above
+            // TODO: map once SynthEngine exposes getters
+            return 0;
 
-        // Glide / AmpModDC
-        case CC::GLIDE_ENABLE: return synth.getGlideEnabled() ? 127 : 0;
-        case CC::GLIDE_TIME:   return (uint8_t)constrain(lroundf((synth.getGlideTimeMs()/500.0f)*127.0f),0,127);
+        // ---------------- Glide / AmpModDC --------------------------
+        case CC::GLIDE_ENABLE:        return synth.getGlideEnabled() ? 127 : 0;
+        case CC::GLIDE_TIME:          return (uint8_t)constrain(lroundf((synth.getGlideTimeMs() / 500.0f) * 127.0f), 0, 127);
         case CC::AMP_MOD_FIXED_LEVEL: return norm_to_cc(synth.getAmpModFixedLevel());
 
-        default: return 0;
+        default:
+            return 0;
     }
 }
 
