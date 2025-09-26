@@ -36,7 +36,6 @@ void HardwareInterface::begin() {
 }
 
 void HardwareInterface::update() {
-    _navEncoder.tick();
 
     // Manual button handling
     bool current = (digitalRead(ENC_SW_PIN) == LOW);
