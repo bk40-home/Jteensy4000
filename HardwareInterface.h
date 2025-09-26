@@ -30,7 +30,7 @@ private:
     static constexpr uint8_t ENC_SW_PIN = 35;
 
     // ----------- Encoder & button -----------
-    PolledEncoder _navEncoder;
+    Encoder _navEncoder;
     int32_t _lastEncoderValue = 0;
     bool _lastButton = false;
     bool _fallingEdge = false;
