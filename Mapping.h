@@ -146,22 +146,72 @@ namespace JT4000Map {
 
     // Clamp for safety
     static inline float clamp_res_k(float k) {
+        if (k < RES_MIN_K) return RES_MIN_K;
+        if (k > RES_MAX_K) return RES_MAX_K;
+        return k;
     }
 
     // Internal easing helpers (kept inline for speed)
     namespace _res_internal {
         inline float zone_map(float t, float a, float b, float curve) {
+            if (t <= 0.0f) return a;
+            if (t >= 1.0f) return b;
+            float u = powf(t, curve);
+            return a + (b - a) * u;
         }
         inline float zone_map_inv(float v, float a, float b, float curve) {
+            if (v <= a) return 0.0f;
+            if (v >= b) return 1.0f;
+            float u = (v - a) / (b - a);
+            if (curve <= 0.0f) return u; // defensive; we only use >1.0
+            return powf(u, 1.0f / curve);
         }
     } // namespace _res_internal
 
     // CC (0..127) → k (0..20) with 3-zone response
     static inline float cc_to_res_k(uint8_t cc) {
+        const float n = clamp01(cc / 127.0f);
+        const float W1 = RES_W1;
+        const float W2 = RES_W2;
+        const float W3 = RES_W3; // = 1 - W1 - W2
+
+        if (n <= W1) {
+            // Zone 1: 0 .. 1.5
+            const float t = (W1 > 0.0f) ? (n / W1) : 0.0f;
+            return clamp_res_k(_res_internal::zone_map(t, RES_MIN_K, RES_Z1_MAX, RES_CURVE_Z1));
+        } else if (n <= (W1 + W2)) {
+            // Zone 2: 1.5 .. 4
+            const float t = (W2 > 0.0f) ? ((n - W1) / W2) : 0.0f;
+            return clamp_res_k(_res_internal::zone_map(t, RES_Z1_MAX, RES_Z2_MAX, RES_CURVE_Z2));
+        } else {
+            // Zone 3: 4 .. 20
+            const float t = (W3 > 0.0f) ? ((n - W1 - W2) / W3) : 0.0f;
+            return clamp_res_k(_res_internal::zone_map(t, RES_Z2_MAX, RES_MAX_K, RES_CURVE_Z3));
+        }
     }
 
     // k (0..20) → CC (0..127), inverse of above for UI round-trip stability
     static inline uint8_t res_k_to_cc(float k) {
+        k = clamp_res_k(k);
+
+        const float W1 = RES_W1;
+        const float W2 = RES_W2;
+        const float W3 = RES_W3;
+
+        float n = 0.0f; // normalized [0..1]
+
+        if (k <= RES_Z1_MAX) {
+            const float t = _res_internal::zone_map_inv(k, RES_MIN_K, RES_Z1_MAX, RES_CURVE_Z1);
+            n = t * W1;
+        } else if (k <= RES_Z2_MAX) {
+            const float t = _res_internal::zone_map_inv(k, RES_Z1_MAX, RES_Z2_MAX, RES_CURVE_Z2);
+            n = W1 + t * W2;
+        } else {
+            const float t = _res_internal::zone_map_inv(k, RES_Z2_MAX, RES_MAX_K, RES_CURVE_Z3);
+            n = W1 + W2 + t * W3;
+        }
+
+        return (uint8_t)constrain(lroundf(n * 127.0f), 0, 127);
     }
 
 } // namespace JT4000Map
