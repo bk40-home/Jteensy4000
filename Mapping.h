@@ -80,7 +80,7 @@ namespace JT4000Map {
     inline float cc_to_time_ms(uint8_t cc) {
         const float a=-5.44635f, b=0.054448f;
         const float tau = expf(a + b * (float)(cc>127?127:cc));
-        return (2.3026f * tau) * 1000.0f;
+        return (2.3026f * tau) * 10000.0f;
     }
     inline uint8_t time_ms_to_cc(float ms) {
         if (ms<=0) return 0;
@@ -144,7 +144,6 @@ namespace JT4000Map {
     static constexpr float RES_CURVE_Z2 = 1.20f;  // gentle skew 1.5..4
     static constexpr float RES_CURVE_Z3 = 2.20f;  // strong skew 4..20
 
-<<<<<<< Updated upstream
     // Clamp for safety
     static inline float clamp_res_k(float k) {
         if (k < RES_MIN_K) return RES_MIN_K;
@@ -214,51 +213,5 @@ namespace JT4000Map {
 
         return (uint8_t)constrain(lroundf(n * 127.0f), 0, 127);
     }
-=======
-constexpr float RES_K_MIN = 0.0f;
-constexpr float RES_K_MAX = 20.0f;
-
-inline float clamp_res_k(float k) {
-    if (k < RES_K_MIN) return RES_K_MIN;
-    if (k > RES_K_MAX) return RES_K_MAX;
-    return k;
-}
-
-namespace _res_internal {
-
-// Map x in [x0..x1] linearly to y in [y0..y1].
-// Clamps outside the range (useful for piecewise zones).
-inline float zone_map(float x, float x0, float x1, float y0, float y1) {
-    if (x <= x0) return y0;
-    if (x >= x1) return y1;
-    const float t = (x - x0) / (x1 - x0);
-    return y0 + t * (y1 - y0);
-}
-
-// Inverse of the above: given y in [y0..y1], return x in [x0..x1].
-inline float zone_map_inv(float y, float x0, float x1, float y0, float y1) {
-    if (y <= y0) return x0;
-    if (y >= y1) return x1;
-    const float t = (y - y0) / (y1 - y0);
-    return x0 + t * (x1 - x0);
-}
-
-} // namespace _res_internal
-
-// CC (0..127) -> resonance k (0..20)  [linear by default]
-inline float cc_to_res_k(uint8_t cc) {
-    const float n = static_cast<float>(cc) / 127.0f;   // 0..1
-    return clamp_res_k(n * RES_K_MAX);                 // 0..20
-}
-
-// resonance k (0..20) -> CC (0..127)
-inline uint8_t res_k_to_cc(float k) {
-    const float n = clamp_res_k(k) / RES_K_MAX;        // 0..1
-    int v = static_cast<int>(lroundf(n * 127.0f));
-    if (v < 0)   v = 0;
-    if (v > 127) v = 127;
-    return static_cast<uint8_t>(v);
-}
->>>>>>> Stashed changes
 
 } // namespace JT4000Map

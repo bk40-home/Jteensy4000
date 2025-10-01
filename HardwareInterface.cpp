@@ -5,15 +5,18 @@ HardwareInterface::HardwareInterface() {
 }
 
 void HardwareInterface::begin() {
-    // ---------------- Encoder & button ----------------
+    // Initialize the interrupt-based encoder.  CountMode::quarter gives
+    // one increment per full detent.  The switch pin is handled separately
+    // since the interrupt-based encoder only configures the A/B pins.
     _navEncoder.begin(
         ENC_A_PIN,
         ENC_B_PIN,
-        ENC_SW_PIN,
         EncoderTool::CountMode::quarter,
         INPUT_PULLUP
     );
-    // pinMode(ENC_SW_PIN, INPUT_PULLUP); // not needed; kept for reference
+    // Configure the button pin with a pull-up resistor.
+    pinMode(ENC_SW_PIN, INPUT_PULLUP);
+
 
     // ---------------- Analog setup --------------------
     analogReadResolution(10); // 0..1023

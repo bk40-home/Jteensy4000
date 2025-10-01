@@ -123,7 +123,7 @@ void handleSerialPresets(SynthEngine& synth, UIManager& ui) {
 
 void setup() {
   Serial.begin(115200);                 // debug prints
-  AudioMemory(1000);                     // audio buffers before starting graph
+  AudioMemory(100);                     // audio buffers before starting graph
 
   // Start USB host
   myusb.begin();
