@@ -14,7 +14,8 @@ enum LFODestination {
 };
 
 // LFO destination names — indices must match LFODestination
-static const char* LFODestNames[NUM_LFO_DESTS] = {
+static const char* LFODestNames[NUM_LFO_DESTS]
+    __attribute__((unused)) = {
     "None",           // LFO_DEST_NONE
     "Pitch",          // LFO_DEST_PITCH
     "Filter",         // LFO_DEST_FILTER

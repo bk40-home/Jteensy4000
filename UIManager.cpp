@@ -20,24 +20,25 @@ static inline int wrapIndex(int i, int max) {
     return i;
 }
 
-
-
-// ---------- text helpers for discrete parameters ----------
+// Text labels for enum-like CCs. Return nullptr for numeric params so UI prints numbers.
 const char* UIManager::ccToDisplayText(byte cc, SynthEngine& synth) {
     switch (cc) {
-        case CC::OSC1_WAVE:        return synth.getOsc1WaveformName();
-        case CC::OSC2_WAVE:        return synth.getOsc2WaveformName();
-        case CC::LFO1_WAVEFORM:    return synth.getLFO1WaveformName();
-        case CC::LFO2_WAVEFORM:    return synth.getLFO2WaveformName();
-        case CC::LFO1_DESTINATION: return synth.getLFO1DestinationName();
+        // ---- Oscillator waveforms (short names) ----
+        case CC::OSC1_WAVE: return synth.getOsc1WaveformName();   // e.g. "SQR", "SAW", "SINE", "SSAW"
+        case CC::OSC2_WAVE: return synth.getOsc2WaveformName();
+
+        // ---- LFO waveforms (short names) ----
+        case CC::LFO1_WAVEFORM: return synth.getLFO1WaveformName();
+        case CC::LFO2_WAVEFORM: return synth.getLFO2WaveformName();
+
+        // ---- LFO destinations (human names) ----
+        case CC::LFO1_DESTINATION: return synth.getLFO1DestinationName(); // e.g. "Pitch", "Filter", "Shape", "Amp"
         case CC::LFO2_DESTINATION: return synth.getLFO2DestinationName();
+
+        // Everything else is numeric (0..127) → return nullptr so renderPage() prints the number
         default: return nullptr;
     }
 }
-
-// ---------- numeric fallback (0..127) using inverse curves ----------
-int UIManager::ccToDisplayValue(byte cc, SynthEngine& synth) {
-    using namespace JT4000Map;
 
 int UIManager::ccToDisplayValue(byte cc, SynthEngine& synth) {
     using namespace JT4000Map;
@@ -160,6 +161,10 @@ int UIManager::ccToDisplayValue(byte cc, SynthEngine& synth) {
     }
 }
 
+
+
+
+
 // ---------- input handling (pots + encoder + scope toggle) ----------
 void UIManager::pollInputs(HardwareInterface& hw, SynthEngine& synth) {
     if (hw.isButtonPressed()) {
@@ -211,17 +216,19 @@ void UIManager::pollInputs(HardwareInterface& hw, SynthEngine& synth) {
     }
 
     // Pots edit current page’s four parameters
-    for (int i=0;i<4;++i) {
-        if (!hw.potChanged(i,1)) continue;
-        uint8_t v = (hw.readPot(i) >> 3);
-        uint8_t cc = UIPage::ccMap[_currentPage][i];
+    for (int i = 0; i < 4; ++i) {
+        if (!hw.potChanged(i, 1)) continue;
+
+        // FIX: use 'uint8_t', not 'U_INT8'
+        byte v  = (hw.readPot(i) >> 3);
+        byte cc = UIPage::ccMap[_currentPage][i];
         if (cc == 255) continue;
+
         synth.handleControlChange(1, cc, v);
         setParameterValue(i, v);
         _valueText[i] = ccToDisplayText(cc, synth);
-        Serial.printf("[POT] page %d knob %d → CC %3u (%s) = %3u\n",
-             _currentPage, i, cc, CC::name(cc) ? CC::name(cc) : "unnamed", v);
-    
+
+        Serial.printf("[POT] page %d knob %d → CC %3u = %3u\n", _currentPage, i, cc, v);
     }
 }
 
