@@ -7,6 +7,7 @@
 #include "Presets.h"
 #include "AudioScopeTap.h"
 #include "WaveForms.h"      // waveform helpers
+#include "AKWF_All.h"       // AKWF bank helpers for ARB display
 
 // If you are patching the scope via a global tap, keep this extern.
 // If not used on your build, it’s harmless.
@@ -34,6 +35,12 @@ const char* UIManager::ccToDisplayText(byte cc, SynthEngine& synth) {
         // ---- LFO destinations (human names) ----
         case CC::LFO1_DESTINATION: return synth.getLFO1DestinationName(); // e.g. "Pitch", "Filter", "Shape", "Amp"
         case CC::LFO2_DESTINATION: return synth.getLFO2DestinationName();
+
+        // ---- Arbitrary waveform bank names ----
+        // When selecting an ARB bank via the CC, display the human-readable bank name.
+        case CC::OSC1_ARB_BANK: return akwf_bankName(synth.getOsc1ArbBank());
+        case CC::OSC2_ARB_BANK: return akwf_bankName(synth.getOsc2ArbBank());
+        // Table index is numeric; fall through to default (returns nullptr)
 
         // Everything else is numeric (0..127) → return nullptr so renderPage() prints the number
         default: return nullptr;
@@ -140,21 +147,93 @@ int UIManager::ccToDisplayValue(byte cc, SynthEngine& synth) {
         case CC::FILTER_KEY_TRACK:      return norm_to_cc((synth.getFilterKeyTrackAmount() + 1.0f) * 0.5f);
         case CC::FILTER_OCTAVE_CONTROL: return norm_to_cc(synth.getFilterOctaveControl() / 8.0f);
 
-        // ---------------- FX (add getters when available) -----------
-        case CC::FX_REVERB_SIZE:
-        case CC::FX_REVERB_DAMP:
-        case CC::FX_DELAY_FEEDBACK:
-        case CC::FX_DRY_MIX:
-        case CC::FX_REVERB_MIX:
-        case CC::FX_DELAY_MIX:
-        case CC::FX_DELAY_TIME:
-            // TODO: map once SynthEngine exposes getters
-            return 0;
+        // ---------------- FX (use SynthEngine getters for display) -----------
+        case CC::FX_REVERB_SIZE: {
+            // Room size is 0..1 → map linearly to CC
+            return norm_to_cc(synth.getFXReverbRoomSize());
+        }
+        case CC::FX_REVERB_DAMP: {
+            // High damping (legacy mapping).  Use separate getter for hi damping.
+            return norm_to_cc(synth.getFXReverbHiDamping());
+        }
+        case CC::FX_REVERB_LODAMP: {
+            // Low damping
+            return norm_to_cc(synth.getFXReverbLoDamping());
+        }
+        case CC::FX_DELAY_TIME: {
+            // Delay time in ms (0..2000).  Map linearly to CC 0..127.
+            float ms = synth.getFXDelayTimeMs();
+            if (ms < 0.0f) ms = 0.0f;
+            if (ms > 2000.0f) ms = 2000.0f;
+            return (uint8_t)constrain(lroundf((ms / 2000.0f) * 127.0f), 0, 127);
+        }
+        case CC::FX_DELAY_FEEDBACK: {
+            return norm_to_cc(synth.getFXDelayFeedback());
+        }
+        case CC::FX_DRY_MIX: {
+            return norm_to_cc(synth.getFXDryMix());
+        }
+        case CC::FX_REVERB_MIX: {
+            return norm_to_cc(synth.getFXReverbMix());
+        }
+        case CC::FX_DELAY_MIX: {
+            return norm_to_cc(synth.getFXDelayMix());
+        }
+        case CC::FX_DELAY_MOD_RATE: {
+            return norm_to_cc(synth.getFXDelayModRate());
+        }
+        case CC::FX_DELAY_MOD_DEPTH: {
+            return norm_to_cc(synth.getFXDelayModDepth());
+        }
+        case CC::FX_DELAY_INERTIA: {
+            return norm_to_cc(synth.getFXDelayInertia());
+        }
+        case CC::FX_DELAY_TREBLE: {
+            return norm_to_cc(synth.getFXDelayTreble());
+        }
+        case CC::FX_DELAY_BASS: {
+            return norm_to_cc(synth.getFXDelayBass());
+        }
 
         // ---------------- Glide / AmpModDC --------------------------
         case CC::GLIDE_ENABLE:        return synth.getGlideEnabled() ? 127 : 0;
         case CC::GLIDE_TIME:          return (uint8_t)constrain(lroundf((synth.getGlideTimeMs() / 500.0f) * 127.0f), 0, 127);
         case CC::AMP_MOD_FIXED_LEVEL: return norm_to_cc(synth.getAmpModFixedLevel());
+
+        // ---------------- Arbitrary waveform bank/table ----------------
+        case CC::OSC1_ARB_BANK: {
+            // Map the current bank to the midpoint of its CC bin
+            uint8_t numBanks = static_cast<uint8_t>(ArbBank::BwTri) + 1;
+            uint8_t bankIdx = static_cast<uint8_t>(synth.getOsc1ArbBank());
+            uint16_t start = (static_cast<uint16_t>(bankIdx) * 128u) / numBanks;
+            uint16_t end   = (static_cast<uint16_t>(bankIdx + 1) * 128u) / numBanks;
+            return static_cast<uint8_t>((start + end) / 2);
+        }
+        case CC::OSC2_ARB_BANK: {
+            uint8_t numBanks = static_cast<uint8_t>(ArbBank::BwTri) + 1;
+            uint8_t bankIdx = static_cast<uint8_t>(synth.getOsc2ArbBank());
+            uint16_t start = (static_cast<uint16_t>(bankIdx) * 128u) / numBanks;
+            uint16_t end   = (static_cast<uint16_t>(bankIdx + 1) * 128u) / numBanks;
+            return static_cast<uint8_t>((start + end) / 2);
+        }
+        case CC::OSC1_ARB_INDEX: {
+            uint16_t count = akwf_bankCount(synth.getOsc1ArbBank());
+            if (count == 0) return 0;
+            uint16_t idx = synth.getOsc1ArbIndex();
+            if (idx >= count) idx = count - 1;
+            uint16_t start = (idx * 128u) / count;
+            uint16_t end   = ((idx + 1) * 128u) / count;
+            return static_cast<uint8_t>((start + end) / 2);
+        }
+        case CC::OSC2_ARB_INDEX: {
+            uint16_t count = akwf_bankCount(synth.getOsc2ArbBank());
+            if (count == 0) return 0;
+            uint16_t idx = synth.getOsc2ArbIndex();
+            if (idx >= count) idx = count - 1;
+            uint16_t start = (idx * 128u) / count;
+            uint16_t end   = ((idx + 1) * 128u) / count;
+            return static_cast<uint8_t>((start + end) / 2);
+        }
 
         default:
             return 0;

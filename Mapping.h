@@ -77,18 +77,21 @@ namespace JT4000Map {
         return (uint8_t)constrain(lroundf(t*127.0f),0,127);
     }
 
+    const float msMin = 1.0f;      // <<< set your desired minimum (e.g. 1 ms)
+    const float msMax = 11880.0f;  // <<< set your desired maximum (e.g. 30 s)
+
     inline float cc_to_time_ms(uint8_t cc) {
-        const float a=-5.44635f, b=0.054448f;
-        const float tau = expf(a + b * (float)(cc>127?127:cc));
-        return (2.3026f * tau) * 10000.0f;
-    }
-    inline uint8_t time_ms_to_cc(float ms) {
-        if (ms<=0) return 0;
-        const float a=-5.44635f, b=0.054448f;
-        float cc = (logf((ms/1000.0f)/2.3026f) - a)/b;
-        if (!isfinite(cc)) cc = 0;
-        return (uint8_t)constrain(lroundf(cc),0,127);
-    }
+    const float t = (float)cc / 127.0f;
+    return msMin * powf(msMax / msMin, t);
+}
+
+inline uint8_t time_ms_to_cc(float ms) {
+    if (ms <= msMin) return 0;
+    if (ms >= msMax) return 127;
+    const float cc = 127.0f * logf(ms / msMin) / logf(msMax / msMin);
+    return (uint8_t)constrain(lroundf(cc), 0, 127);
+}
+
 
     inline float cc_to_lfo_hz(uint8_t cc) { return 0.03f * powf(1300.0f, cc_to_norm(cc)); }
     inline uint8_t lfo_hz_to_cc(float hz) {

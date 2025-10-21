@@ -184,6 +184,52 @@ void SynthEngine::setOsc2ShapeDcAmp(float amp)     { _osc2ShapeDc = amp; for (in
 void SynthEngine::setRing1Mix(float level) { _ring1Mix = level; for (int i=0;i<MAX_VOICES;++i) _voices[i].setRing1Mix(level); }
 void SynthEngine::setRing2Mix(float level) { _ring2Mix = level; for (int i=0;i<MAX_VOICES;++i) _voices[i].setRing2Mix(level); }
 
+// ---- Arbitrary waveform bank/index selection ----
+void SynthEngine::setOsc1ArbBank(ArbBank b) {
+    _osc1ArbBank = b;
+    // Clamp current index against the new bank count
+    uint16_t count = akwf_bankCount(b);
+    if (count > 0 && _osc1ArbIndex >= count) _osc1ArbIndex = count - 1;
+    for (int i = 0; i < MAX_VOICES; ++i) {
+        _voices[i].setOsc1ArbBank(b);
+        // also update index on voice since setArbBank may clamp index internally
+        _voices[i].setOsc1ArbIndex(_osc1ArbIndex);
+    }
+}
+
+void SynthEngine::setOsc2ArbBank(ArbBank b) {
+    _osc2ArbBank = b;
+    uint16_t count = akwf_bankCount(b);
+    if (count > 0 && _osc2ArbIndex >= count) _osc2ArbIndex = count - 1;
+    for (int i = 0; i < MAX_VOICES; ++i) {
+        _voices[i].setOsc2ArbBank(b);
+        _voices[i].setOsc2ArbIndex(_osc2ArbIndex);
+    }
+}
+
+void SynthEngine::setOsc1ArbIndex(uint16_t idx) {
+    // Clamp index by current bank
+    uint16_t count = akwf_bankCount(_osc1ArbBank);
+    if (count == 0) {
+        _osc1ArbIndex = 0;
+    } else {
+        if (idx >= count) idx = count - 1;
+        _osc1ArbIndex = idx;
+    }
+    for (int i = 0; i < MAX_VOICES; ++i) _voices[i].setOsc1ArbIndex(_osc1ArbIndex);
+}
+
+void SynthEngine::setOsc2ArbIndex(uint16_t idx) {
+    uint16_t count = akwf_bankCount(_osc2ArbBank);
+    if (count == 0) {
+        _osc2ArbIndex = 0;
+    } else {
+        if (idx >= count) idx = count - 1;
+        _osc2ArbIndex = idx;
+    }
+    for (int i = 0; i < MAX_VOICES; ++i) _voices[i].setOsc2ArbIndex(_osc2ArbIndex);
+}
+
 // ---- Amp mod DC ----
 void SynthEngine::SetAmpModFixedLevel(float level) {
     _ampModFixedLevel = level;
@@ -283,14 +329,88 @@ const char* SynthEngine::getLFO2DestinationName() const {
 
 
 // ---- FX (store + hand off to FXChainBlock as needed) ----
-void SynthEngine::setFXReverbRoomSize(float v) { _fxChain.setReverbRoomSize(v); }
-void SynthEngine::setFXReverbDamping(float v)  { _fxChain.setReverbDamping(v); }   // name fix
-void SynthEngine::setFXDelayBaseTime(float ms) { _fxChain.setBaseDelayTime(ms); }   // name fix
-void SynthEngine::setFXDelayFeedback(float v)  { _fxChain.setDelayFeedback(v); }
+// The new FX API splits reverb damping into high/low bands and adds
+// additional parameters for delay modulation and tone.  Each setter caches
+// the value for UI readback and forwards it to FXChainBlock.
 
-void SynthEngine::setFXDryMix(float v)    { _fxChain.setDryMix(v, v); }            // 2 args
-void SynthEngine::setFXReverbMix(float v) { _fxChain.setReverbMix(v, v); }         // 2 args
-void SynthEngine::setFXDelayMix(float v)  { _fxChain.setDelayMix(v, v); }          // 2 args
+void SynthEngine::setFXReverbRoomSize(float v) {
+    if (v < 0.0f) v = 0.0f; if (v > 1.0f) v = 1.0f;
+    _fxReverbRoomSize = v;
+    _fxChain.setReverbRoomSize(v);
+}
+
+void SynthEngine::setFXReverbHiDamping(float v) {
+    if (v < 0.0f) v = 0.0f; if (v > 1.0f) v = 1.0f;
+    _fxReverbHiDamping = v;
+    _fxChain.setReverbHiDamping(v);
+}
+
+void SynthEngine::setFXReverbLoDamping(float v) {
+    if (v < 0.0f) v = 0.0f; if (v > 1.0f) v = 1.0f;
+    _fxReverbLoDamping = v;
+    _fxChain.setReverbLoDamping(v);
+}
+
+void SynthEngine::setFXDelayTimeMs(float ms) {
+    // clamp only below zero; FXChainBlock enforces its own maximum internally
+    if (ms < 0.0f) ms = 0.0f;
+    _fxDelayTimeMs = ms;
+    _fxChain.setDelayTimeMs(ms);
+}
+
+void SynthEngine::setFXDelayFeedback(float v) {
+    if (v < 0.0f) v = 0.0f; if (v > 1.0f) v = 1.0f;
+    _fxDelayFeedback = v;
+    _fxChain.setDelayFeedback(v);
+}
+
+void SynthEngine::setFXDelayModRate(float v) {
+    if (v < 0.0f) v = 0.0f; if (v > 1.0f) v = 1.0f;
+    _fxDelayModRate = v;
+    _fxChain.setDelayModRate(v);
+}
+
+void SynthEngine::setFXDelayModDepth(float v) {
+    if (v < 0.0f) v = 0.0f; if (v > 1.0f) v = 1.0f;
+    _fxDelayModDepth = v;
+    _fxChain.setDelayModDepth(v);
+}
+
+void SynthEngine::setFXDelayInertia(float v) {
+    if (v < 0.0f) v = 0.0f; if (v > 1.0f) v = 1.0f;
+    _fxDelayInertia = v;
+    _fxChain.setDelayInertia(v);
+}
+
+void SynthEngine::setFXDelayTreble(float v) {
+    if (v < 0.0f) v = 0.0f; if (v > 1.0f) v = 1.0f;
+    _fxDelayTreble = v;
+    _fxChain.setDelayTreble(v);
+}
+
+void SynthEngine::setFXDelayBass(float v) {
+    if (v < 0.0f) v = 0.0f; if (v > 1.0f) v = 1.0f;
+    _fxDelayBass = v;
+    _fxChain.setDelayBass(v);
+}
+
+void SynthEngine::setFXDryMix(float v) {
+    if (v < 0.0f) v = 0.0f; if (v > 1.0f) v = 1.0f;
+    _fxDryMix = v;
+    _fxChain.setDryMix(v, v);
+}
+
+void SynthEngine::setFXReverbMix(float v) {
+    if (v < 0.0f) v = 0.0f; if (v > 1.0f) v = 1.0f;
+    _fxReverbMix = v;
+    _fxChain.setReverbMix(v, v);
+}
+
+void SynthEngine::setFXDelayMix(float v) {
+    if (v < 0.0f) v = 0.0f; if (v > 1.0f) v = 1.0f;
+    _fxDelayMix = v;
+    _fxChain.setDelayMix(v, v);
+}
 
 
 // ---- UI helper getters ----
@@ -325,6 +445,23 @@ float SynthEngine::getOsc2ShapeDc() const     { return _osc2ShapeDc; }
 
 bool  SynthEngine::getGlideEnabled() const { return _glideEnabled; }
 float SynthEngine::getGlideTimeMs()  const { return _glideTimeMs; }
+
+// ---- FX getters ----
+float SynthEngine::getFXDelayTimeMs() const      { return _fxDelayTimeMs; }
+float SynthEngine::getFXReverbHiDamping() const { return _fxReverbHiDamping; }
+float SynthEngine::getFXReverbLoDamping() const { return _fxReverbLoDamping; }
+float SynthEngine::getFXDelayModRate() const    { return _fxDelayModRate; }
+float SynthEngine::getFXDelayModDepth() const   { return _fxDelayModDepth; }
+float SynthEngine::getFXDelayInertia() const    { return _fxDelayInertia; }
+float SynthEngine::getFXDelayTreble() const     { return _fxDelayTreble; }
+float SynthEngine::getFXDelayBass() const       { return _fxDelayBass; }
+float SynthEngine::getFXDelayFeedback() const   { return _fxDelayFeedback; }
+float SynthEngine::getFXReverbRoomSize() const  { return _fxReverbRoomSize; }
+
+// Additional FX getters
+float SynthEngine::getFXDryMix() const     { return _fxDryMix; }
+float SynthEngine::getFXDelayMix() const   { return _fxDelayMix; }
+float SynthEngine::getFXReverbMix() const  { return _fxReverbMix; }
 
 // ---- MIDI CC dispatcher with JT_LOGF tracing --------------------------------
 // ---- MIDI CC dispatcher: now using CCDefs.h names consistently ----
@@ -501,13 +638,60 @@ void SynthEngine::handleControlChange(byte /*channel*/, byte control, byte value
         case CC::LFO2_WAVEFORM:    { WaveformType t = waveformFromCC(value); setLFO2Waveform((int)t); JT_LOGF("[CC %u:%s] LFO2 Wave -> %s (%d)\n", control, ccName, waveformShortName(t), (int)t); } break;
 
         // ------------------- FX -------------------
-        case CC::FX_REVERB_SIZE:     { setFXReverbRoomSize(norm);           JT_LOGF("[CC %u:%s] Reverb RoomSize = %.3f\n", control, ccName, norm); } break;
-        case CC::FX_REVERB_DAMP:     { setFXReverbDamping(norm);            JT_LOGF("[CC %u:%s] Reverb Damping  = %.3f\n", control, ccName, norm); } break;
-        case CC::FX_DELAY_TIME:      { float ms = norm * 1000.0f; setFXDelayBaseTime(ms); JT_LOGF("[CC %u:%s] Delay BaseTime = %.1f ms\n", control, ccName, ms); } break;
-        case CC::FX_DELAY_FEEDBACK:  { setFXDelayFeedback(norm);            JT_LOGF("[CC %u:%s] Delay Feedback  = %.3f\n", control, ccName, norm); } break;
-        case CC::FX_DRY_MIX:         { setFXDryMix(norm);                   JT_LOGF("[CC %u:%s] Dry Mix         = %.3f\n", control, ccName, norm); } break;
-        case CC::FX_REVERB_MIX:      { setFXReverbMix(norm);                JT_LOGF("[CC %u:%s] Reverb Mix      = %.3f\n", control, ccName, norm); } break;
-        case CC::FX_DELAY_MIX:       { setFXDelayMix(norm);                 JT_LOGF("[CC %u:%s] Delay Mix       = %.3f\n", control, ccName, norm); } break;
+        case CC::FX_REVERB_SIZE: {
+            setFXReverbRoomSize(norm);
+            JT_LOGF("[CC %u:%s] Reverb RoomSize = %.3f\n", control, ccName, norm);
+        } break;
+        case CC::FX_REVERB_DAMP: {
+            // Legacy mapping: use high damping for the original damp CC
+            setFXReverbHiDamping(norm);
+            JT_LOGF("[CC %u:%s] Reverb HiDamp  = %.3f\n", control, ccName, norm);
+        } break;
+        case CC::FX_REVERB_LODAMP: {
+            setFXReverbLoDamping(norm);
+            JT_LOGF("[CC %u:%s] Reverb LoDamp  = %.3f\n", control, ccName, norm);
+        } break;
+        case CC::FX_DELAY_TIME: {
+            float ms = norm * 2000.0f; // 0..2s range
+            setFXDelayTimeMs(ms);
+            JT_LOGF("[CC %u:%s] Delay Time    = %.1f ms\n", control, ccName, ms);
+        } break;
+        case CC::FX_DELAY_FEEDBACK: {
+            setFXDelayFeedback(norm);
+            JT_LOGF("[CC %u:%s] Delay Feedback = %.3f\n", control, ccName, norm);
+        } break;
+        case CC::FX_DELAY_MOD_RATE: {
+            setFXDelayModRate(norm);
+            JT_LOGF("[CC %u:%s] Delay ModRate  = %.3f\n", control, ccName, norm);
+        } break;
+        case CC::FX_DELAY_MOD_DEPTH: {
+            setFXDelayModDepth(norm);
+            JT_LOGF("[CC %u:%s] Delay ModDepth = %.3f\n", control, ccName, norm);
+        } break;
+        case CC::FX_DELAY_INERTIA: {
+            setFXDelayInertia(norm);
+            JT_LOGF("[CC %u:%s] Delay Inertia  = %.3f\n", control, ccName, norm);
+        } break;
+        case CC::FX_DELAY_TREBLE: {
+            setFXDelayTreble(norm);
+            JT_LOGF("[CC %u:%s] Delay Treble   = %.3f\n", control, ccName, norm);
+        } break;
+        case CC::FX_DELAY_BASS: {
+            setFXDelayBass(norm);
+            JT_LOGF("[CC %u:%s] Delay Bass     = %.3f\n", control, ccName, norm);
+        } break;
+        case CC::FX_DRY_MIX: {
+            setFXDryMix(norm);
+            JT_LOGF("[CC %u:%s] Dry Mix        = %.3f\n", control, ccName, norm);
+        } break;
+        case CC::FX_REVERB_MIX: {
+            setFXReverbMix(norm);
+            JT_LOGF("[CC %u:%s] Reverb Mix     = %.3f\n", control, ccName, norm);
+        } break;
+        case CC::FX_DELAY_MIX: {
+            setFXDelayMix(norm);
+            JT_LOGF("[CC %u:%s] Delay Mix      = %.3f\n", control, ccName, norm);
+        } break;
 
         // ------------------- Supersaw / DC / Ring -------------------
         case CC::SUPERSAW1_DETUNE: { setSupersawDetune(0, norm); JT_LOGF("[CC %u:%s] Supersaw1 Detune = %.3f\n", control, ccName, norm); } break;
@@ -523,6 +707,49 @@ void SynthEngine::handleControlChange(byte /*channel*/, byte control, byte value
         case CC::RING1_MIX: { setRing1Mix(norm); JT_LOGF("[CC %u:%s] Ring1 Mix = %.3f\n", control, ccName, norm); } break;
         case CC::RING2_MIX: { setRing2Mix(norm); JT_LOGF("[CC %u:%s] Ring2 Mix = %.3f\n", control, ccName, norm); } break;
 
+        // ------------------- Arbitrary waveform bank selection -------------------
+        case CC::OSC1_ARB_BANK: {
+            // Map CC value (0..127) evenly across number of banks
+            const uint8_t numBanks = static_cast<uint8_t>(ArbBank::BwTri) + 1;
+            uint8_t bankIdx = (static_cast<uint16_t>(value) * numBanks) / 128;
+            if (bankIdx >= numBanks) bankIdx = numBanks - 1;
+            ArbBank bank = static_cast<ArbBank>(bankIdx);
+            setOsc1ArbBank(bank);
+            JT_LOGF("[CC %u:%s] OSC1 Bank -> %s (%u)\n", control, ccName, akwf_bankName(bank), bankIdx);
+        } break;
+
+        case CC::OSC2_ARB_BANK: {
+            const uint8_t numBanks = static_cast<uint8_t>(ArbBank::BwTri) + 1;
+            uint8_t bankIdx = (static_cast<uint16_t>(value) * numBanks) / 128;
+            if (bankIdx >= numBanks) bankIdx = numBanks - 1;
+            ArbBank bank = static_cast<ArbBank>(bankIdx);
+            setOsc2ArbBank(bank);
+            JT_LOGF("[CC %u:%s] OSC2 Bank -> %s (%u)\n", control, ccName, akwf_bankName(bank), bankIdx);
+        } break;
+
+        // ------------------- Arbitrary waveform table index ----------------------
+        case CC::OSC1_ARB_INDEX: {
+            uint16_t count = akwf_bankCount(_osc1ArbBank);
+            uint16_t idx = 0;
+            if (count > 0) {
+                idx = (static_cast<uint16_t>(value) * count) / 128;
+                if (idx >= count) idx = count - 1;
+            }
+            setOsc1ArbIndex(idx);
+            JT_LOGF("[CC %u:%s] OSC1 Table -> %u/%u\n", control, ccName, idx, count);
+        } break;
+
+        case CC::OSC2_ARB_INDEX: {
+            uint16_t count = akwf_bankCount(_osc2ArbBank);
+            uint16_t idx = 0;
+            if (count > 0) {
+                idx = (static_cast<uint16_t>(value) * count) / 128;
+                if (idx >= count) idx = count - 1;
+            }
+            setOsc2ArbIndex(idx);
+            JT_LOGF("[CC %u:%s] OSC2 Table -> %u/%u\n", control, ccName, idx, count);
+        } break;
+
         // ------------------- Glide -------------------
         case CC::GLIDE_ENABLE: {
             _glideEnabled = (value >= 1);
@@ -536,6 +763,9 @@ void SynthEngine::handleControlChange(byte /*channel*/, byte control, byte value
             for (int i=0; i<MAX_VOICES; ++i) _voices[i].setGlideTime(ms);
             JT_LOGF("[CC %u:%s] Glide Time = %.2f ms\n", control, ccName, ms);
         } break;
+
+        //AMP_MOD_FIXED_LEVEL
+        case CC::AMP_MOD_FIXED_LEVEL: { SetAmpModFixedLevel(norm); JT_LOGF("[CC %u:%s] Ring1 Mix = %.3f\n", control, ccName, norm); } break;
 
         // ------------------- Fallback -------------------
         default:

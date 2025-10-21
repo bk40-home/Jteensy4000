@@ -29,6 +29,31 @@
 // Project-local extension (keep outside 0..12 range)
 static constexpr uint8_t WAVEFORM_SUPERSAW = 100;
 
+// ========= ARBITRARY sub-selection helpers (AKWF Piano) =========
+// We already ship 8 tables via AKWFPianoTables.h in this iteration.
+// You can raise this to 30, etc., once you add more tables.
+
+static constexpr uint8_t ARB_PIANO_COUNT = 8;
+
+inline const char* arbPianoShortName(uint8_t idx) {
+    static const char* k[] = { "PI1" };
+    return (idx < ARB_PIANO_COUNT) ? k[idx] : "PI?";
+}
+
+// CC <-> ARB index binning
+inline uint8_t arbIndexFromCC(uint8_t cc) {
+    uint8_t idx = (uint16_t(cc) * ARB_PIANO_COUNT) / 128;
+    if (idx >= ARB_PIANO_COUNT) idx = ARB_PIANO_COUNT - 1;
+    return idx;
+}
+inline uint8_t ccFromArbIndex(uint8_t idx) {
+    if (idx >= ARB_PIANO_COUNT) idx = ARB_PIANO_COUNT - 1;
+    const uint16_t start = (idx    * 128u) / ARB_PIANO_COUNT;
+    const uint16_t end   = ((idx+1)* 128u) / ARB_PIANO_COUNT;
+    return (uint8_t)((start + end) / 2);
+}
+
+
 // Unified enum (explicit values keep 1:1 mapping with Teensy)
 enum WaveformType : uint8_t {
     WAVE_SINE                         = WAVEFORM_SINE,
@@ -36,7 +61,7 @@ enum WaveformType : uint8_t {
     WAVE_SQUARE                       = WAVEFORM_SQUARE,
     WAVE_TRIANGLE                     = WAVEFORM_TRIANGLE,
     WAVE_ARBITRARY                    = WAVEFORM_ARBITRARY,
-    WAVE_PULSE                        = WAVEFORM_PULSE,              // adjust via pulseWidth()
+    WAVE_PULSE                        = WAVEFORM_PULSE,
     WAVE_SAW_REVERSE                  = WAVEFORM_SAWTOOTH_REVERSE,
     WAVE_SAMPLE_HOLD                  = WAVEFORM_SAMPLE_HOLD,
     WAVE_TRIANGLE_VARIABLE            = WAVEFORM_TRIANGLE_VARIABLE,
@@ -45,7 +70,10 @@ enum WaveformType : uint8_t {
     WAVE_BANDLIMIT_SQUARE             = WAVEFORM_BANDLIMIT_SQUARE,
     WAVE_BANDLIMIT_PULSE              = WAVEFORM_BANDLIMIT_PULSE,
     // JT-4000 custom:
-    WAVE_SUPERSAW                     = WAVEFORM_SUPERSAW
+    WAVE_SUPERSAW                     = WAVEFORM_SUPERSAW,
+    // Note: Arbitrary (ARB) waveforms use a separate table index parameter
+    // instead of distinct enum values.  Selecting WAVE_ARBITRARY then
+    // choosing an index via OSCx_ARB_INDEX CC loads the appropriate table.
 };
 
 // Core Teensy shapes (documented order)
@@ -114,7 +142,8 @@ inline bool isBandlimited(WaveformType t) {
            (t == WAVE_BANDLIMIT_SQUARE) || (t == WAVE_BANDLIMIT_PULSE);
 }
 inline bool isStandardTeensyWave(WaveformType t) {
-    return (t != WAVE_SUPERSAW);
+    // Standard Teensy waves are those whose enum value is less than or equal to the last bandlimited pulse
+    return ((uint8_t)t <= static_cast<uint8_t>(WAVE_BANDLIMIT_PULSE));
 }
 inline bool supportsPulseWidth(WaveformType t) {
     return (t == WAVE_PULSE) || (t == WAVE_BANDLIMIT_PULSE);

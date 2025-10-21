@@ -47,6 +47,16 @@ public:
     void setRing2Mix(float level); 
     void setBaseFrequency(float freq);   
 
+    // Arbitrary waveform bank and table selection
+    // These methods allow the SynthEngine to propagate the selected AKWF bank
+    // and table index to each oscillator.  When the oscillator's waveform type
+    // is set to WAVEFORM_ARBITRARY, these determine which single-cycle
+    // waveform is loaded.  See OscillatorBlock for details.
+    void setOsc1ArbBank(ArbBank bank);
+    void setOsc2ArbBank(ArbBank bank);
+    void setOsc1ArbIndex(uint16_t idx);
+    void setOsc2ArbIndex(uint16_t idx);
+
     void setGlideEnabled(bool enabled);
     void setGlideTime(float ms);
 

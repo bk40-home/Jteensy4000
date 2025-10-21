@@ -2,6 +2,7 @@
 
 #include <Audio.h>
 #include "Waveforms.h"  // canonical wave IDs + Supersaw
+#include "AKWF_All.h"   // AKWF bank definitions and helpers
 #include "AudioSynthSupersaw.h"
 
 
@@ -29,6 +30,13 @@ public:
     void setGlideTime(float ms);
     void setFrequencyDcAmp(float amp);
     void setShapeDcAmp(float amp);
+    // Set the current AKWF bank and table index.  When the waveform type is
+    // WAVEFORM_ARBITRARY, these select which bank and which single-cycle
+    // waveform from that bank to use.  Bank defaults to ArbBank::BwBlended.
+    void setArbBank(ArbBank b);
+    void setArbTableIndex(uint16_t idx);
+    ArbBank getArbBank() const { return _arbBank; }
+    uint16_t getArbTableIndex() const { return _arbIndex; }
 
     // Parameter Getters
     int getWaveform() const;
@@ -79,6 +87,9 @@ private:
     bool _glideActive = false;
     float _frequencyDcAmp = 0.0f;
     float _shapeDcAmp = 0.0f;
+    ArbBank  _arbBank  = ArbBank::BwBlended; // Current arbitrary waveform bank
+    uint16_t _arbIndex = 0;                   // Current table index within the bank
+    void _applyArbWave();  // helper to (re)load table when ARB or index changes
 
     // Per-instance last frequency to avoid cross-talk between instances
     float _lastFreq = -1.0f;

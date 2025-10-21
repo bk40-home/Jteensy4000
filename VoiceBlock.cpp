@@ -284,3 +284,26 @@ float VoiceBlock::getFilterEnvAttack() const { return _filterEnvelope.getAttackT
 float VoiceBlock::getFilterEnvDecay() const { return _filterEnvelope.getDecayTime(); }
 float VoiceBlock::getFilterEnvSustain() const { return _filterEnvelope.getSustainLevel(); }
 float VoiceBlock::getFilterEnvRelease() const { return _filterEnvelope.getReleaseTime(); }
+
+// === Arbitrary waveform bank/index forwarding ===
+// These functions allow the SynthEngine to set the current AKWF bank and
+// table index for each oscillator.  When the oscillator waveform type is
+// WAVEFORM_ARBITRARY, the OscillatorBlock will call akwf_get() to fetch
+// the correct table from AKWF_All.h based on the bank and index.  See
+// OscillatorBlock::setArbBank() and setArbTableIndex().
+
+void VoiceBlock::setOsc1ArbBank(ArbBank bank) {
+    _osc1.setArbBank(bank);
+}
+
+void VoiceBlock::setOsc2ArbBank(ArbBank bank) {
+    _osc2.setArbBank(bank);
+}
+
+void VoiceBlock::setOsc1ArbIndex(uint16_t idx) {
+    _osc1.setArbTableIndex(idx);
+}
+
+void VoiceBlock::setOsc2ArbIndex(uint16_t idx) {
+    _osc2.setArbTableIndex(idx);
+}

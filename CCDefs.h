@@ -61,6 +61,13 @@ namespace CC {
     static constexpr uint8_t OSC1_FINE_TUNE    = 45; // Fine tune (–100..+100 cents)
     static constexpr uint8_t OSC2_FINE_TUNE    = 46;
 
+    // --- Arbitrary waveform table selection (per oscillator) ---
+    // When the oscillator waveform is ARBITRARY, these CCs select which
+    // AKWF piano table to load.  Values map evenly across the available
+    // tables via arbIndexFromCC().
+    static constexpr uint8_t OSC1_ARB_INDEX   = 83;
+    static constexpr uint8_t OSC2_ARB_INDEX   = 85;
+
     // -------------------------------------------------------------------------
     // Oscillator mix/balance and supersaw parameters
     // -------------------------------------------------------------------------
@@ -110,6 +117,47 @@ namespace CC {
     static constexpr uint8_t FX_DELAY_MIX       = 76;
 
     // -------------------------------------------------------------------------
+    // Additional effect parameters for the new stereo ping‑pong delay and plate
+    // reverb from hexefx_audiolib_i16.  These CCs are assigned starting at
+    // 93 to avoid clashing with existing mappings.  See FXChainBlock for
+    // implementation details.  When a mix parameter is zero the corresponding
+    // effect will be bypassed to save CPU cycles.
+    // -------------------------------------------------------------------------
+
+    // Plate reverb damping is now split into separate high‑ and low‑frequency
+    // damping controls.  FX_REVERB_DAMP controls the high band (0..1).  The
+    // low band uses this new CC.  A value of 0.0 yields no damping, 1.0
+    // shortens the low frequency decay substantially.
+    static constexpr uint8_t FX_REVERB_LODAMP    = 93;
+
+    // Stereo ping‑pong delay modulation rate (0..1).  Higher values increase
+    // the speed of the internal LFO that modulates the delay time, producing
+    // chorusing and flanging effects.  Use in conjunction with mod depth.
+    static constexpr uint8_t FX_DELAY_MOD_RATE   = 94;
+
+    // Stereo ping‑pong delay modulation depth (0..1).  Controls the amount
+    // of delay time modulation.  A value of 0 disables modulation; 1.0
+    // produces strong pitch‑bending effects.
+    static constexpr uint8_t FX_DELAY_MOD_DEPTH  = 95;
+
+    // Stereo ping‑pong delay inertia (0..1).  This controls the inertia of
+    // the internal diffusion network; higher values smooth transitions and
+    // smear echoes.  Lower values produce crisp repeats.
+    static constexpr uint8_t FX_DELAY_INERTIA    = 96;
+
+    // High‑frequency tone control for the ping‑pong delay (0..1).  Lower
+    // values darken the repeats by rolling off treble; higher values keep
+    // more high end.  Internally this maps to the treble parameter of
+    // AudioEffectDelayStereo_i16.
+    static constexpr uint8_t FX_DELAY_TREBLE     = 97;
+
+    // Low‑frequency tone control for the ping‑pong delay (0..1).  Lower
+    // values reduce bass in the repeats; higher values preserve or boost
+    // low frequencies.  Internally this maps to the bass parameter of
+    // AudioEffectDelayStereo_i16.
+    static constexpr uint8_t FX_DELAY_BASS       = 98;
+
+    // -------------------------------------------------------------------------
     // Glide and global modulation
     // -------------------------------------------------------------------------
     static constexpr uint8_t GLIDE_ENABLE      = 81;
@@ -125,6 +173,18 @@ namespace CC {
     static constexpr uint8_t OSC2_SHAPE_DC     = 89;
     static constexpr uint8_t RING1_MIX         = 91;
     static constexpr uint8_t RING2_MIX         = 92;
+
+
+    // -------------------------------------------------------------------------
+    // Arbitrary waveform bank selection
+    // -------------------------------------------------------------------------
+    // These CCs select which AKWF bank to use for arbitrary waveforms on each
+    // oscillator.  Values are evenly binned across the number of banks defined
+    // in AKWF_All.h.  See SynthEngine::handleControlChange for mapping logic.
+    static constexpr uint8_t OSC1_ARB_BANK = 101;
+    static constexpr uint8_t OSC2_ARB_BANK = 102;
+
+
 
     // -------------------------------------------------------------------------
     // Utility: return a human‑readable name for a CC.  If a CC is not
@@ -178,6 +238,13 @@ namespace CC {
             case FX_DRY_MIX:          return "Dry Mix";
             case FX_REVERB_MIX:       return "Rev Mix";
             case FX_DELAY_MIX:        return "Delay Mix";
+            // New effect parameters
+            case FX_REVERB_LODAMP:    return "Rev LoDamp";
+            case FX_DELAY_MOD_RATE:   return "Dly ModRate";
+            case FX_DELAY_MOD_DEPTH:  return "Dly ModDepth";
+            case FX_DELAY_INERTIA:    return "Dly Inertia";
+            case FX_DELAY_TREBLE:     return "Dly Treble";
+            case FX_DELAY_BASS:       return "Dly Bass";
             case GLIDE_ENABLE:        return "Glide En";
             case GLIDE_TIME:          return "Glide Time";
             case AMP_MOD_FIXED_LEVEL: return "Amp Mod DC";
@@ -187,6 +254,11 @@ namespace CC {
             case OSC2_SHAPE_DC:       return "Osc2 Shape DC";
             case RING1_MIX:           return "Ring Mix1";
             case RING2_MIX:           return "Ring Mix2";
+            case OSC1_ARB_BANK:       return "Osc1 Bank";
+            case OSC2_ARB_BANK:       return "Osc2 Bank";
+            case OSC1_ARB_INDEX:      return "Osc1 Table";
+            case OSC2_ARB_INDEX:      return "Osc2 Table";
+
             default:                  return nullptr;
         }
     }

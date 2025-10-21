@@ -10,6 +10,7 @@
 #include "Mapping.h"          // shared CC mappings (forward/inverse)
 #include "Waveforms.h"        // waveform names + CC mapping helpers
 #include "DebugTrace.h"   // << add near other includes
+#include "AKWF_All.h"      // AKWF bank catalog for arbitrary waveforms
 
 using namespace JT4000Map;
 
@@ -46,6 +47,19 @@ public:
     void setOsc2ShapeDcAmp(float amp);                      // 0..1
     void setRing1Mix(float level);                          // 0..1
     void setRing2Mix(float level);                          // 0..1
+
+    // --- Arbitrary waveform bank + index selection (per oscillator) ---
+    // When an oscillator waveform is WAVEFORM_ARBITRARY, these functions
+    // specify which AKWF bank and which table within that bank are used.
+    // The index is clamped to the number of tables in the selected bank.
+    void setOsc1ArbBank(ArbBank b);
+    void setOsc2ArbBank(ArbBank b);
+    void setOsc1ArbIndex(uint16_t idx);
+    void setOsc2ArbIndex(uint16_t idx);
+    ArbBank  getOsc1ArbBank() const { return _osc1ArbBank; }
+    ArbBank  getOsc2ArbBank() const { return _osc2ArbBank; }
+    uint16_t getOsc1ArbIndex() const { return _osc1ArbIndex; }
+    uint16_t getOsc2ArbIndex() const { return _osc2ArbIndex; }
 
     // Amp modulation DC
     void SetAmpModFixedLevel(float level);
@@ -105,12 +119,36 @@ public:
 
     // FX
     void setFXReverbRoomSize(float size);
-    void setFXReverbDamping(float damp);
-    void setFXDelayBaseTime(float baseMs);
+    // Split reverb damping into separate high and low bands
+    void setFXReverbHiDamping(float damp);
+    void setFXReverbLoDamping(float damp);
+    void setFXDelayTimeMs(float ms);
+    void setFXDelayModRate(float rate);
+    void setFXDelayModDepth(float depth);
+    void setFXDelayInertia(float inertia);
+    void setFXDelayTreble(float treble);
+    void setFXDelayBass(float bass);
     void setFXDryMix(float level);
     void setFXReverbMix(float level);
     void setFXDelayMix(float level);
     void setFXDelayFeedback(float feedback);
+
+    // New FX getters for UI/preset readback
+    float getFXDelayTimeMs() const;
+    float getFXReverbHiDamping() const;
+    float getFXReverbLoDamping() const;
+    float getFXDelayModRate() const;
+    float getFXDelayModDepth() const;
+    float getFXDelayInertia() const;
+    float getFXDelayTreble() const;
+    float getFXDelayBass() const;
+    float getFXDryMix() const;
+    float getFXDelayMix() const;
+    float getFXReverbMix() const;
+    float getFXReverbRoomSize() const;
+    float getFXDelayFeedback()  const;
+
+
 
     // --- UI helpers
     int getOsc1Waveform() const;
@@ -229,6 +267,30 @@ private:
     bool  _glideEnabled = false;
     float _glideTimeMs = 0.0f;
     float _lastNoteFreq = 0.0f;
+
+    // --- Arbitrary waveform selection state per oscillator ---
+    // These store the current AKWF bank and table index for each oscillator.  They
+    // are used by setOsc1ArbBank()/setOsc2ArbBank() and setOsc1ArbIndex()/
+    // setOsc2ArbIndex() to propagate to each voice.
+    ArbBank  _osc1ArbBank = ArbBank::BwBlended;
+    ArbBank  _osc2ArbBank = ArbBank::BwBlended;
+    uint16_t _osc1ArbIndex = 0;
+    uint16_t _osc2ArbIndex = 0;
+
+    // --- Cached FX parameters for UI/preset readback ---
+    float _fxDelayTimeMs = 400.0f;
+    float _fxDelayFeedback = 0.5f;
+    float _fxDelayModRate = 0.0f;
+    float _fxDelayModDepth = 0.0f;
+    float _fxDelayInertia = 0.0f;
+    float _fxDelayTreble = 0.5f;
+    float _fxDelayBass = 0.5f;
+    float _fxReverbRoomSize = 0.5f;
+    float _fxReverbHiDamping = 0.5f;
+    float _fxReverbLoDamping = 0.5f;
+    float _fxReverbMix = 0.0f;
+    float _fxDelayMix = 0.0f;
+    float _fxDryMix = 1.0f;
 
     NotifyFn _notify = nullptr;
 };

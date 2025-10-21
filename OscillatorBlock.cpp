@@ -1,4 +1,6 @@
 #include "OscillatorBlock.h"
+// Bring AKWF catalog into scope (bank definitions and lookup functions)
+#include "AKWF_All.h"
 
 OscillatorBlock::OscillatorBlock()
     : 
@@ -33,21 +35,81 @@ OscillatorBlock::OscillatorBlock()
 }
 
 
-// Set oscillator type (Teensy waves 0..12 or JT-4000 Supersaw = 100)
+// AKWF_All.h included above for arbitrary waveform access
+
+// Load the current arbitrary waveform table into the main oscillator when
+// using an ARBITRARY waveform.  Looks up the table based on the current
+// bank and index via akwf_get(), and computes the maximum usable frequency
+// from the table length.
+void OscillatorBlock::_applyArbWave() {
+    uint16_t len = 0;
+    const int16_t* table = akwf_get(_arbBank, _arbIndex, len);
+    if (table && len > 0) {
+        const float maxFreq = AUDIO_SAMPLE_RATE_EXACT / (float)len;
+        _mainOsc.arbitraryWaveform(table, maxFreq);
+    }
+}
+
+// Set the current bank used for arbitrary waveforms.  If the oscillator
+// waveform type is ARBITRARY, reapply the waveform with the new bank.
+void OscillatorBlock::setArbBank(ArbBank b) {
+    _arbBank = b;
+    // Clamp index to new bank size
+    uint16_t count = akwf_bankCount(b);
+    if (count > 0 && _arbIndex >= count) {
+        _arbIndex = count - 1;
+    }
+    if (_currentType == WAVEFORM_ARBITRARY) {
+        _applyArbWave();
+        _mainOsc.begin(WAVEFORM_ARBITRARY);
+        _outputMix.gain(0, 0.7f);
+        _outputMix.gain(1, 0.0f);
+    }
+}
+
+// Set the current table index within the selected bank.  Indexes
+// outside the range are clamped to the last available table.  If the
+// waveform is ARBITRARY, reapply the waveform immediately.
+void OscillatorBlock::setArbTableIndex(uint16_t idx) {
+    uint16_t count = akwf_bankCount(_arbBank);
+    if (count == 0) {
+        _arbIndex = 0;
+        return;
+    }
+    if (idx >= count) idx = count - 1;
+    _arbIndex = idx;
+    if (_currentType == WAVEFORM_ARBITRARY) {
+        _applyArbWave();
+        _mainOsc.begin(WAVEFORM_ARBITRARY);
+        _outputMix.gain(0, 0.7f);
+        _outputMix.gain(1, 0.0f);
+    }
+}
+
+// --- existing constructor etc. ---
+
 void OscillatorBlock::setWaveformType(int type) {
     _currentType = type;
 
-    if (type == WAVEFORM_SUPERSAW) {  // Supersaw
-        // Route audio to the supersaw bus
+    if (type == WAVEFORM_SUPERSAW) {
+        // Supersaw path
         _outputMix.gain(0, 0.0f);
         _outputMix.gain(1, 0.9f);
+    } else if (type == WAVEFORM_ARBITRARY) {
+        // Arbitrary waveform path: apply table based on current bank/index
+        _applyArbWave();
+        _mainOsc.begin(WAVEFORM_ARBITRARY);
+        _outputMix.gain(0, 0.7f);
+        _outputMix.gain(1, 0.0f);
     } else {
-        // Standard Teensy waveform: pass canonical ID straight to begin()
-        _mainOsc.begin((uint8_t)type);        // <- important: use Teensy IDs directly
-        _outputMix.gain(0, 0.7f);             // headroom
-        _outputMix.gain(1, 0.0f);             // mute supersaw path
+        // Standard Teensy waveform
+        _mainOsc.begin((uint8_t)type);
+        _outputMix.gain(0, 0.7f);
+        _outputMix.gain(1, 0.0f);
     }
 }
+
+
 
 
 void OscillatorBlock::setAmplitude(float amp) {
@@ -97,7 +159,7 @@ void OscillatorBlock::noteOn(float freq, float velocity) {
     // _supersaw.setFrequency(_targetFreq);
     
     AudioNoInterrupts();
-    if (_currentType == 9) {
+    if (_currentType == WAVEFORM_SUPERSAW) {
         _mainOsc.amplitude(0);
         _supersaw.setAmplitude(amp);
     } else {

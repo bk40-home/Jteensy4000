@@ -43,15 +43,22 @@ void presets_loadByGlobalIndex(SynthEngine& synth, int globalIdx, uint8_t midiCh
     }
 }
 
-void loadInitTemplateByWave(SynthEngine& synth, uint8_t waveIndex) {
-    if (waveIndex > 8) waveIndex = 0;
-    AudioNoInterrupts();
+void loadInitTemplateByWave(SynthEngine &synth, uint8_t waveIndex) {
+    // Constrain to the number of defined waveforms (sine, saw, square, supersaw, etc.).
+    waveIndex %= numWaveformsAll;
 
-    sendCC(synth, CC::OSC1_WAVE, waveIndex);
-    sendCC(synth, CC::OSC2_WAVE, waveIndex);
+    // Find the WaveformType corresponding to the template index.
+    WaveformType wfType = waveformListAll[waveIndex];
 
-    sendCC(synth, CC::OSC1_MIX, 0);
-    sendCC(synth, CC::OSC2_MIX, 0);
+    // Convert the waveform to the appropriate CC value for OSC1_WAVE/OSC2_WAVE.
+    uint8_t waveCC = ccFromWaveform(wfType);
+
+    // Now send CC values using the full 0–127 range.
+    sendCC(synth, CC::OSC1_WAVE, waveCC);
+    sendCC(synth, CC::OSC2_WAVE, waveCC);
+
+    sendCC(synth, CC::OSC_MIX_BALANCE, 0);
+    //sendCC(synth, CC::OSC2_MIX, 0);
     sendCC(synth, CC::SUB_MIX, 0);
     sendCC(synth, CC::NOISE_MIX, 0);
 

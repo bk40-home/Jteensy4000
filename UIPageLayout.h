@@ -11,7 +11,11 @@
 
 namespace UIPage {
 
-static constexpr int NUM_PAGES       = 16;
+// Increase page count to accommodate all new FX parameters and the new
+// arbitrary waveform selection page.  We now have
+// 18 pages: the original 16 plus a Dry/Glide page and an extra page for
+// ARB Bank/Table controls.
+static constexpr int NUM_PAGES       = 18;
 static constexpr int PARAMS_PER_PAGE = 4;
 
 static constexpr uint8_t ccMap[NUM_PAGES][PARAMS_PER_PAGE] = {
@@ -34,10 +38,17 @@ static constexpr uint8_t ccMap[NUM_PAGES][PARAMS_PER_PAGE] = {
     {CC::LFO1_FREQ,        CC::LFO1_DEPTH,        CC::LFO1_DESTINATION,  CC::LFO1_WAVEFORM}, // 11
     {CC::LFO2_FREQ,        CC::LFO2_DEPTH,        CC::LFO2_DESTINATION,  CC::LFO2_WAVEFORM}, // 12
 
-    {CC::FX_REVERB_SIZE,   CC::FX_REVERB_DAMP,    CC::FX_DELAY_TIME,     CC::FX_DELAY_FEEDBACK}, // 13
-    {CC::FX_DRY_MIX,       CC::FX_REVERB_MIX,     CC::FX_DELAY_MIX,      255},                // 14
-
-    {CC::GLIDE_ENABLE,     CC::GLIDE_TIME,        CC::AMP_MOD_FIXED_LEVEL, 255}              // 15
+    // Page 13: Delay parameters (part 1)
+    {CC::FX_DELAY_TIME,     CC::FX_DELAY_FEEDBACK, CC::FX_DELAY_MOD_RATE,  CC::FX_DELAY_MOD_DEPTH}, // 13
+    // Page 14: Delay parameters (part 2)
+    {CC::FX_DELAY_INERTIA,  CC::FX_DELAY_TREBLE,   CC::FX_DELAY_BASS,      CC::FX_DELAY_MIX},      // 14
+    // Page 15: Reverb parameters
+    {CC::FX_REVERB_SIZE,    CC::FX_REVERB_DAMP,    CC::FX_REVERB_LODAMP,   CC::FX_REVERB_MIX},     // 15
+    // Page 16: Dry mix and global controls (moved Glide from original page 15)
+    {CC::FX_DRY_MIX,        CC::GLIDE_ENABLE,      CC::GLIDE_TIME,         CC::AMP_MOD_FIXED_LEVEL}, // 16
+    // Page 17: Arbitrary waveform bank/table selection for both oscillators
+    {CC::OSC1_ARB_BANK,     CC::OSC1_ARB_INDEX,    CC::OSC2_ARB_BANK,      CC::OSC2_ARB_INDEX},     // 17
+    // Note: no sentinel row; NUM_PAGES defines exactly the number of active pages.
 };
 
 static constexpr const char* ccNames[NUM_PAGES][PARAMS_PER_PAGE] = {
@@ -60,10 +71,12 @@ static constexpr const char* ccNames[NUM_PAGES][PARAMS_PER_PAGE] = {
     {"LFO1 Freq", "LFO1 Depth", "LFO1 Dest", "LFO1 Wave"},
     {"LFO2 Freq", "LFO2 Depth", "LFO2 Dest", "LFO2 Wave"},
 
-    {"Rev Size", "Rev Damp", "Delay Time", "Delay FB"},
-    {"Dry Mix", "Rev Mix", "Delay Mix", "-"},
-
-    {"Glide En", "Glide Time", "Amp Mod DC", "-"}
+    {"Delay Time", "Delay FB", "Dly ModRate", "Dly ModDepth"},
+    {"Dly Inertia", "Dly Treble", "Dly Bass", "Dly Mix"},
+    {"Rev Size", "Rev HiDamp", "Rev LoDamp", "Rev Mix"},
+    {"Dry Mix", "Glide En", "Glide Time", "Amp Mod DC"},
+    {"OSC1 Bank", "OSC1 Table", "OSC2 Bank", "OSC2 Table"},
+    // No sentinel row; the last page (ARB bank/table) is fully used.
 };
 
 } // namespace UIPage
