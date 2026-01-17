@@ -6,7 +6,7 @@ FilterBlock::FilterBlock() {
     _patchCables[1] = new AudioConnection(_keyTrackDc, 0, _modMixer,0);
 
     _envModDc.amplitude(0.0f);
-    _keyTrackDc.amplitude(0.5f);
+    _keyTrackDc.amplitude(0.0f);
 
     _modMixer.gain(0, 1.0f);
     _modMixer.gain(1, 1.0f);

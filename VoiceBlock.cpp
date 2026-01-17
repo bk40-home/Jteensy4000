@@ -51,7 +51,23 @@ void VoiceBlock::noteOn(float freq, float velocity) {
     _subOsc.setFrequency(freq);
     _filterEnvelope.noteOn();
     _ampEnvelope.noteOn();
-    _filter.setKeyTrackAmount(log2f(freq / 440.0f));
+    //_filter.setKeyTrackAmount(log2f(freq / 440.0f));
+    // Compute key tracking modulation.  deltaOct is the number of
+    // octaves above or below the reference (A4=440 Hz).  We normalise
+    // this by the filter’s octave-control setting, scale it by the
+    // user’s key‑tracking depth (0–1), and clamp to ±1.
+
+    float deltaOct   = log2f(freq / 440.0f);
+    float octaveCtrl = _filter.getOctaveControl();
+    float norm       = (octaveCtrl > 0.0f) ? (deltaOct / octaveCtrl) : 0.0f;
+    norm *= _filterKeyTrackAmount;
+    if (norm >  1.0f) norm =  1.0f;
+    if (norm < -1.0f) norm = -1.0f;
+    _filter.setKeyTrackAmount(norm);
+
+    // Cache the current frequency so changes to the key‑tracking
+    // amount during a held note can update correctly.
+    _currentFreq = freq;
 }
 
 void VoiceBlock::noteOff() {
@@ -180,8 +196,22 @@ void VoiceBlock::setFilterEnvAmount(float amt) {
 }
 
 void VoiceBlock::setFilterKeyTrackAmount(float amt) {
+    // _filterKeyTrackAmount = amt;
+    // _filter.setKeyTrackAmount(amt);
+    // Store the user’s desired key‑tracking depth (0–1).
     _filterKeyTrackAmount = amt;
-    _filter.setKeyTrackAmount(amt);
+     // If a note has been played (i.e. _currentFreq > 0), recompute the
+     // modulation using the last frequency.  Otherwise, the next call to
+      // noteOn() will set it.
+    if (_currentFreq > 0.0f) {
+        float deltaOct   = log2f(_currentFreq / 440.0f);
+        float octaveCtrl = _filter.getOctaveControl();
+        float norm       = (octaveCtrl > 0.0f) ? (deltaOct / octaveCtrl) : 0.0f;
+        norm *= _filterKeyTrackAmount;
+        if (norm >  1.0f) norm =  1.0f;
+        if (norm < -1.0f) norm = -1.0f;
+        _filter.setKeyTrackAmount(norm);
+    }
 }
 
 
