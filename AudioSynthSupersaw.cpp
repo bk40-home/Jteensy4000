@@ -1,49 +1,96 @@
 #include "AudioSynthSupersaw.h"
+#include <math.h>   // powf, fminf, fmaxf
+
+// -----------------------------------------------------------------------------
+// Reverse-engineered / Szabó-derived per-voice frequency offsets
+// These are ratios relative to the center oscillator: f_i = f * (1 + offset_i)
+// -----------------------------------------------------------------------------static const float kFreqOffsetsMax[SUPERSAW_VOICES] = {
+    -0.11002313f,
+    -0.06288439f,
+    -0.01952356f,
+     0.0f,
+     0.01991221f,
+     0.06216538f,
+     0.10745242f
+};
+
+// -----------------------------------------------------------------------------
+// Hardware-measured per-voice phase offsets (0..1 cycles). Repeatable start.
+// (These were posted earlier by you; they’re extremely close to the ratio set.)
+// -----------------------------------------------------------------------------
+static const float kPhaseOffsets[SUPERSAW_VOICES] = {
+    0.10986328125f,
+    0.06286621094f,
+    0.01953125f,
+    0.0f,
+    0.01953125f,
+    0.06225585938f,
+    0.107421875f
+};
+
+// Small helper clamp without pulling in Arduino constrain macro requirements.
+static inline float clampf(float v, float lo, float hi) {
+    return (v < lo) ? lo : ((v > hi) ? hi : v);
+}
 
 AudioSynthSupersaw::AudioSynthSupersaw()
-    : AudioStream(0, nullptr), freq(440.0f), detuneAmt(0.5f), mixAmt(0.5f), amp(1.0f),
-      outputGain(1.0f), hpfPrevIn(0.0f), hpfPrevOut(0.0f)
+    : AudioStream(0, nullptr),
+      freq(440.0f),
+      detuneAmt(0.5f),
+      mixAmt(0.5f),
+      amp(1.0f),
+      outputGain(1.0f),
+      hpfPrevIn(0.0f),
+      hpfPrevOut(0.0f),
+      hpfAlpha(0.0f)
 {
-    for (int i = 0; i < SUPERSAW_VOICES; i++) {
-        phases[i] = (float)rand() / (float)RAND_MAX;
+    // Fixed initial phase (matches hardware-like repeatability)
+    for (int i = 0; i < SUPERSAW_VOICES; ++i) {
+        phases[i] = kPhaseOffsets[i];
     }
+
     calculateIncrements();
     calculateGains();
     calculateHPF();
 }
 
 void AudioSynthSupersaw::setFrequency(float f) {
-    freq = f;
+    // Prevent pathological values
+    freq = (f < 0.0f) ? 0.0f : f;
+
     calculateIncrements();
     calculateHPF();
 }
 
 void AudioSynthSupersaw::setDetune(float amount) {
-    detuneAmt = constrain(amount, 0.0f, 1.0f);
+    detuneAmt = clampf(amount, 0.0f, 1.0f);
     calculateIncrements();
 }
 
 void AudioSynthSupersaw::setMix(float amount) {
-    mixAmt = constrain(amount, 0.0f, 1.0f);
+    mixAmt = clampf(amount, 0.0f, 1.0f);
     calculateGains();
 }
 
 void AudioSynthSupersaw::setAmplitude(float a) {
-    amp = constrain(a, 0.0f, 1.0f);
+    amp = clampf(a, 0.0f, 1.0f);
     calculateGains();
 }
 
 void AudioSynthSupersaw::setOutputGain(float gain) {
-    outputGain = constrain(gain, 0.0f, 1.5f);
+    outputGain = clampf(gain, 0.0f, 1.5f);
 }
 
+// “noteOn” should reset phases in a repeatable hardware-like way.
+// (If you want “free-running” behaviour, make this a no-op.)
 void AudioSynthSupersaw::noteOn() {
-    for (int i = 0; i < SUPERSAW_VOICES; i++) {
-        phases[i] = (float)rand() / (float)RAND_MAX;
+    for (int i = 0; i < SUPERSAW_VOICES; ++i) {
+        phases[i] = kPhaseOffsets[i];
     }
 }
 
 float AudioSynthSupersaw::detuneCurve(float x) {
+    // Your fitted curve (kept intact)
     return (
         10028.7312891634f * powf(x, 11) -
         50818.8652045924f * powf(x, 10) +
@@ -54,40 +101,52 @@ float AudioSynthSupersaw::detuneCurve(float x) {
         17019.9518580080f * powf(x, 5) -
         3425.0836591318f * powf(x, 4) +
         404.2703938388f * powf(x, 3) -
-        24.1878824391f * powf(x, 2) +
-        0.6717417634f * x +
+        24.1878824391f  * powf(x, 2) +
+        0.6717417634f   * x +
         0.0030115596f
     );
 }
 
 void AudioSynthSupersaw::calculateIncrements() {
-    float sr = AUDIO_SAMPLE_RATE_EXACT;
-    float spread = detuneCurve(detuneAmt);
-    static const float offsets[SUPERSAW_VOICES] = { -3, -2, -1, 0, 1, 2, 3 };
+    const float sr = AUDIO_SAMPLE_RATE_EXACT;
+    const float nyquist = 0.5f * sr;
+
+    // detuneCurve() gives your “amount feel” in 0..~1 territory (depending on fit)
+    // Clamp to keep things stable if curve overshoots.
+    const float detuneDepth = clampf(detuneCurve(detuneAmt), 0.0f, 1.0f);
 
     for (int i = 0; i < SUPERSAW_VOICES; ++i) {
-        float ratio = 1.0f + offsets[i] * 0.01f * spread;
-        float oscFreq = freq * ratio;
-        if (oscFreq > sr * 0.5f) oscFreq = sr * 0.5f;
+        // Apply reverse-engineered ratios directly
+        float oscFreq = freq * (1.0f + (kFreqOffsetsMax[i] * detuneDepth));
+
+        // Clamp to valid range
+        if (oscFreq < 0.0f)    oscFreq = 0.0f;
+        if (oscFreq > nyquist) oscFreq = nyquist;
+
         phaseInc[i] = oscFreq / sr;
     }
 }
 
 void AudioSynthSupersaw::calculateGains() {
-    float centerGain = -0.55366f * mixAmt + 0.99785f;
-    float sideGain   = -0.73764f * mixAmt * mixAmt + 1.2841f * mixAmt + 0.044372f;
+    // Your existing gain law (kept intact)
+    const float centerGain = -0.55366f * mixAmt + 0.99785f;
+    const float sideGain   = -0.73764f * mixAmt * mixAmt + 1.2841f * mixAmt + 0.044372f;
 
     for (int i = 0; i < SUPERSAW_VOICES; ++i) {
-        if (i == SUPERSAW_VOICES / 2)
+        if (i == (SUPERSAW_VOICES / 2)) {
             gains[i] = amp * centerGain;
-        else
+        } else {
             gains[i] = amp * (sideGain / (SUPERSAW_VOICES - 1));
+        }
     }
 }
 
 void AudioSynthSupersaw::calculateHPF() {
-    float rc = 1.0f / (6.2831853f * freq);
-    float dt = 1.0f / AUDIO_SAMPLE_RATE_EXACT;
+    // Simple 1-pole HPF; you were tying cutoff to freq.
+    // Keep as-is but clamp freq so RC doesn’t go crazy at 0Hz.
+    const float f = fmaxf(freq, 1.0f);
+    const float rc = 1.0f / (6.2831853f * f);
+    const float dt = 1.0f / AUDIO_SAMPLE_RATE_EXACT;
     hpfAlpha = rc / (rc + dt);
 }
 
@@ -99,18 +158,24 @@ void AudioSynthSupersaw::update(void) {
         float sample = 0.0f;
 
         for (int i = 0; i < SUPERSAW_VOICES; ++i) {
-            float s = 2.0f * phases[i] - 1.0f;
+            // naive saw: -1..+1
+            const float s = 2.0f * phases[i] - 1.0f;
             sample += s * gains[i];
+
             phases[i] += phaseInc[i];
             if (phases[i] >= 1.0f) phases[i] -= 1.0f;
         }
 
+        // HPF
         float hpOut = hpfAlpha * (hpfPrevOut + sample - hpfPrevIn);
         hpfPrevIn = sample;
         hpfPrevOut = hpOut;
 
+        // Clamp to avoid int16 wrap, then apply outputGain
         hpOut = fmaxf(-1.0f, fminf(1.0f, hpOut));
-        block->data[n] = (int16_t)(hpOut * outputGain * 32767.0f);
+
+        const float out = hpOut * outputGain;
+        block->data[n] = (int16_t)(fmaxf(-1.0f, fminf(1.0f, out)) * 32767.0f);
     }
 
     transmit(block);
