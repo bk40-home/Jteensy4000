@@ -110,8 +110,13 @@ void AudioSynthSupersaw::setHpfCutoff(float cutoff) {
 // “noteOn” should reset phases in a repeatable hardware-like way.
 // (If you want “free-running” behaviour, make this a no-op.)
 void AudioSynthSupersaw::noteOn() {
+    // Randomise phases at note on to avoid cancellation when detune=0 and mix is low.
+    // The JT‑4000 uses free‑running oscillators so each note should begin with
+    // unpredictable phase relationships.  Using fixed offsets can cause
+    // destructive interference at mix=0 when all voices share the same
+    // frequency.  Random phases ensure the centre oscillator is audible.
     for (int i = 0; i < SUPERSAW_VOICES; ++i) {
-        phases[i] = kPhaseOffsets[i];
+        phases[i] = (float)rand() / (float)RAND_MAX;
     }
 }
 
@@ -154,14 +159,19 @@ void AudioSynthSupersaw::calculateIncrements() {
 }
 
 void AudioSynthSupersaw::calculateGains() {
-    // Your existing gain law (kept intact)
-    const float centerGain = -0.55366f * mixAmt + 0.99785f;
-    const float sideGain   = -0.73764f * mixAmt * mixAmt + 1.2841f * mixAmt + 0.044372f;
+    // Linearly cross‑fade the gain between the centre oscillator and the six side
+    // oscillators.  When mix=0 the centre voice is full volume and the
+    // side voices are silent.  When mix=1 the centre voice is silent and
+    // all seven oscillators share the output evenly.  This behaviour
+    // matches the JT‑4000 where the mix knob blends in the detuned voices.
+    const float centerGain = 1.0f - mixAmt;
+    const float sideGain   = mixAmt;
 
     for (int i = 0; i < SUPERSAW_VOICES; ++i) {
         if (i == (SUPERSAW_VOICES / 2)) {
             gains[i] = amp * centerGain;
         } else {
+            // distribute the side gain across all non‑centre voices
             gains[i] = amp * (sideGain / (SUPERSAW_VOICES - 1));
         }
     }
