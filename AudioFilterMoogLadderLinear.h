@@ -50,3 +50,4 @@ private:
     return 1.0f - expf(-1.0f / (tau * _fs));
   }
 };
+
