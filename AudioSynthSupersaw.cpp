@@ -1,6 +1,5 @@
 #include "AudioSynthSupersaw.h"
-#include <math.h>   // powf, fminf, fmaxf, fabsf
-#include <stdlib.h> // rand
+#include <math.h>   // powf, fminf, fmaxf
 
 // -----------------------------------------------------------------------------
 // Reverse-engineered / Szabó-derived per-voice frequency offsets
@@ -46,20 +45,10 @@ AudioSynthSupersaw::AudioSynthSupersaw()
       hpfPrevOut(0.0f),
       hpfAlpha(0.0f)
 {
-    // Initialise phase offsets and per‑voice LFOs
+    // Fixed initial phase (matches hardware-like repeatability)
     for (int i = 0; i < SUPERSAW_VOICES; ++i) {
-        // repeatable start phases (matches original hardware)
         phases[i] = kPhaseOffsets[i];
-        // random initial drift LFO phase in [0,1)
-        lfoPhases[i] = (float)rand() / (float)RAND_MAX;
-        // choose a slow LFO frequency between 0.02 Hz and 0.08 Hz
-        float lfoHz = 0.02f + ((float)rand() / (float)RAND_MAX) * 0.06f;
-        lfoInc[i] = lfoHz / AUDIO_SAMPLE_RATE_EXACT;
     }
-    // default flags
-    oversample2x = false;
-    driftAmt     = 0.0f;
-    hpfCutoff    = 30.0f;
 
     calculateIncrements();
     calculateGains();
@@ -93,30 +82,11 @@ void AudioSynthSupersaw::setOutputGain(float gain) {
     outputGain = clampf(gain, 0.0f, 1.5f);
 }
 
-void AudioSynthSupersaw::setOversample(bool enable) {
-    oversample2x = enable;
-}
-
-void AudioSynthSupersaw::setDriftAmount(float amount) {
-    driftAmt = clampf(amount, 0.0f, 1.0f);
-}
-
-void AudioSynthSupersaw::setHpfCutoff(float cutoff) {
-    // Clamp cutoff to reasonable range and apply immediately
-    hpfCutoff = clampf(cutoff, 1.0f, 2000.0f);
-    calculateHPF();
-}
-
 // “noteOn” should reset phases in a repeatable hardware-like way.
 // (If you want “free-running” behaviour, make this a no-op.)
 void AudioSynthSupersaw::noteOn() {
-    // Randomise phases at note on to avoid cancellation when detune=0 and mix is low.
-    // The JT‑4000 uses free‑running oscillators so each note should begin with
-    // unpredictable phase relationships.  Using fixed offsets can cause
-    // destructive interference at mix=0 when all voices share the same
-    // frequency.  Random phases ensure the centre oscillator is audible.
     for (int i = 0; i < SUPERSAW_VOICES; ++i) {
-        phases[i] = (float)rand() / (float)RAND_MAX;
+        phases[i] = kPhaseOffsets[i];
     }
 }
 
@@ -159,28 +129,24 @@ void AudioSynthSupersaw::calculateIncrements() {
 }
 
 void AudioSynthSupersaw::calculateGains() {
-    // Linearly cross‑fade the gain between the centre oscillator and the six side
-    // oscillators.  When mix=0 the centre voice is full volume and the
-    // side voices are silent.  When mix=1 the centre voice is silent and
-    // all seven oscillators share the output evenly.  This behaviour
-    // matches the JT‑4000 where the mix knob blends in the detuned voices.
-    const float centerGain = 1.0f - mixAmt;
-    const float sideGain   = mixAmt;
+    // Your existing gain law (kept intact)
+    const float centerGain = -0.55366f * mixAmt + 0.99785f;
+    const float sideGain   = -0.73764f * mixAmt * mixAmt + 1.2841f * mixAmt + 0.044372f;
 
     for (int i = 0; i < SUPERSAW_VOICES; ++i) {
         if (i == (SUPERSAW_VOICES / 2)) {
             gains[i] = amp * centerGain;
         } else {
-            // distribute the side gain across all non‑centre voices
             gains[i] = amp * (sideGain / (SUPERSAW_VOICES - 1));
         }
     }
 }
 
 void AudioSynthSupersaw::calculateHPF() {
-    // 1-pole high-pass filter.  Use hpfCutoff (Hz) rather than note frequency
-    const float fc = fmaxf(hpfCutoff, 1.0f);
-    const float rc = 1.0f / (6.2831853f * fc);
+    // Simple 1-pole HPF; you were tying cutoff to freq.
+    // Keep as-is but clamp freq so RC doesn’t go crazy at 0Hz.
+    const float f = fmaxf(freq, 1.0f);
+    const float rc = 1.0f / (6.2831853f * f);
     const float dt = 1.0f / AUDIO_SAMPLE_RATE_EXACT;
     hpfAlpha = rc / (rc + dt);
 }
@@ -189,82 +155,28 @@ void AudioSynthSupersaw::update(void) {
     audio_block_t *block = allocate();
     if (!block) return;
 
-    if (!oversample2x) {
-        // Normal (1×) rendering
-        for (int n = 0; n < AUDIO_BLOCK_SAMPLES; ++n) {
-            float sample = 0.0f;
+    for (int n = 0; n < AUDIO_BLOCK_SAMPLES; ++n) {
+        float sample = 0.0f;
 
-            for (int i = 0; i < SUPERSAW_VOICES; ++i) {
-                // generate a triangular LFO value in [-1,1] without heavy trig
-                float phase = lfoPhases[i];
-                float tri = (phase < 0.5f) ? (phase * 2.0f) : (2.0f - 2.0f * phase);
-                tri = tri * 2.0f - 1.0f;
-                float driftScale = 1.0f + (driftAmt * 0.005f) * tri;
-                float inc = phaseInc[i] * driftScale;
+        for (int i = 0; i < SUPERSAW_VOICES; ++i) {
+            // naive saw: -1..+1
+            const float s = 2.0f * phases[i] - 1.0f;
+            sample += s * gains[i];
 
-                // naive saw: -1..+1
-                const float s = 2.0f * phases[i] - 1.0f;
-                sample += s * gains[i];
-
-                phases[i] += inc;
-                if (phases[i] >= 1.0f) phases[i] -= 1.0f;
-
-                // advance LFO phase and wrap
-                phase += lfoInc[i];
-                if (phase >= 1.0f) phase -= 1.0f;
-                lfoPhases[i] = phase;
-            }
-
-            // High-pass filter to remove DC/low-frequency bias
-            float hpOut = hpfAlpha * (hpfPrevOut + sample - hpfPrevIn);
-            hpfPrevIn = sample;
-            hpfPrevOut = hpOut;
-
-            // Clamp output and apply outputGain
-            hpOut = fmaxf(-1.0f, fminf(1.0f, hpOut));
-            float out = hpOut * outputGain;
-            out = fmaxf(-1.0f, fminf(1.0f, out));
-            block->data[n] = (int16_t)(out * 32767.0f);
+            phases[i] += phaseInc[i];
+            if (phases[i] >= 1.0f) phases[i] -= 1.0f;
         }
-    } else {
-        // 2× oversampled rendering
-        // Precompute driftScale for each voice once per output sample
-        for (int n = 0; n < AUDIO_BLOCK_SAMPLES; ++n) {
-            float driftScale[SUPERSAW_VOICES];
-            for (int i = 0; i < SUPERSAW_VOICES; ++i) {
-                float phase = lfoPhases[i];
-                float tri = (phase < 0.5f) ? (phase * 2.0f) : (2.0f - 2.0f * phase);
-                tri = tri * 2.0f - 1.0f;
-                driftScale[i] = 1.0f + (driftAmt * 0.005f) * tri;
-            }
-            float accum = 0.0f;
-            // two internal sub-samples
-            for (int os = 0; os < 2; ++os) {
-                float sample = 0.0f;
-                for (int i = 0; i < SUPERSAW_VOICES; ++i) {
-                    float inc = phaseInc[i] * driftScale[i] * 0.5f;
-                    const float s = 2.0f * phases[i] - 1.0f;
-                    sample += s * gains[i];
-                    phases[i] += inc;
-                    if (phases[i] >= 1.0f) phases[i] -= 1.0f;
-                    // advance LFO phase for oversampled step
-                    float lfoStep = lfoInc[i] * 0.5f;
-                    float phase = lfoPhases[i] + lfoStep;
-                    if (phase >= 1.0f) phase -= 1.0f;
-                    lfoPhases[i] = phase;
-                }
-                accum += sample;
-            }
-            float sample = accum * 0.5f;
-            // high-pass filter
-            float hpOut = hpfAlpha * (hpfPrevOut + sample - hpfPrevIn);
-            hpfPrevIn = sample;
-            hpfPrevOut = hpOut;
-            hpOut = fmaxf(-1.0f, fminf(1.0f, hpOut));
-            float out = hpOut * outputGain;
-            out = fmaxf(-1.0f, fminf(1.0f, out));
-            block->data[n] = (int16_t)(out * 32767.0f);
-        }
+
+        // HPF
+        float hpOut = hpfAlpha * (hpfPrevOut + sample - hpfPrevIn);
+        hpfPrevIn = sample;
+        hpfPrevOut = hpOut;
+
+        // Clamp to avoid int16 wrap, then apply outputGain
+        hpOut = fmaxf(-1.0f, fminf(1.0f, hpOut));
+
+        const float out = hpOut * outputGain;
+        block->data[n] = (int16_t)(fmaxf(-1.0f, fminf(1.0f, out)) * 32767.0f);
     }
 
     transmit(block);
