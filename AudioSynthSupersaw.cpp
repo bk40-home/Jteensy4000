@@ -1,6 +1,6 @@
 #include "AudioSynthSupersaw.h"
-#include <math.h>   // powf, fminf, fmaxf
-#include <stdlib.h>  // rand
+#include <math.h>   // powf, fminf, fmaxf, fabsf
+#include <stdlib.h> // rand
 
 // -----------------------------------------------------------------------------
 // Reverse-engineered / Szabó-derived per-voice frequency offsets
@@ -44,21 +44,22 @@ AudioSynthSupersaw::AudioSynthSupersaw()
       outputGain(1.0f),
       hpfPrevIn(0.0f),
       hpfPrevOut(0.0f),
-      hpfAlpha(0.0f),
-      oversample2x(false),
-      driftAmt(0.0f),
-      hpfCutoff(30.0f)
+      hpfAlpha(0.0f)
 {
-    // Fixed initial phase (matches hardware-like repeatability)
+    // Initialise phase offsets and per‑voice LFOs
     for (int i = 0; i < SUPERSAW_VOICES; ++i) {
+        // repeatable start phases (matches original hardware)
         phases[i] = kPhaseOffsets[i];
-
-        // Initialise per‑voice drift LFO phases randomly between 0 and 1
+        // random initial drift LFO phase in [0,1)
         lfoPhases[i] = (float)rand() / (float)RAND_MAX;
-        // Give each voice its own slow LFO rate between 0.02 Hz and 0.08 Hz
+        // choose a slow LFO frequency between 0.02 Hz and 0.08 Hz
         float lfoHz = 0.02f + ((float)rand() / (float)RAND_MAX) * 0.06f;
         lfoInc[i] = lfoHz / AUDIO_SAMPLE_RATE_EXACT;
     }
+    // default flags
+    oversample2x = false;
+    driftAmt     = 0.0f;
+    hpfCutoff    = 30.0f;
 
     calculateIncrements();
     calculateGains();
@@ -101,7 +102,7 @@ void AudioSynthSupersaw::setDriftAmount(float amount) {
 }
 
 void AudioSynthSupersaw::setHpfCutoff(float cutoff) {
-    // Clamp cutoff to a reasonable range and apply immediately
+    // Clamp cutoff to reasonable range and apply immediately
     hpfCutoff = clampf(cutoff, 1.0f, 2000.0f);
     calculateHPF();
 }
@@ -167,10 +168,7 @@ void AudioSynthSupersaw::calculateGains() {
 }
 
 void AudioSynthSupersaw::calculateHPF() {
-    // 1-pole high‑pass filter. The cutoff is fixed via hpfCutoff (in Hz)
-    // rather than tied to the oscillator frequency. This preserves the
-    // fundamental and low beating frequencies instead of high‑passing
-    // everything below the note pitch.
+    // 1-pole high-pass filter.  Use hpfCutoff (Hz) rather than note frequency
     const float fc = fmaxf(hpfCutoff, 1.0f);
     const float rc = 1.0f / (6.2831853f * fc);
     const float dt = 1.0f / AUDIO_SAMPLE_RATE_EXACT;
@@ -180,17 +178,18 @@ void AudioSynthSupersaw::calculateHPF() {
 void AudioSynthSupersaw::update(void) {
     audio_block_t *block = allocate();
     if (!block) return;
+
     if (!oversample2x) {
-        // Standard 1× rendering
+        // Normal (1×) rendering
         for (int n = 0; n < AUDIO_BLOCK_SAMPLES; ++n) {
             float sample = 0.0f;
 
             for (int i = 0; i < SUPERSAW_VOICES; ++i) {
-                // Compute a small drift modulation for this voice. The drift
-                // amount is scaled by ±0.5 % of the base increment and then
-                // further scaled by the user‑controlled driftAmt. The sine
-                // function produces smooth LFO movement.
-                float driftScale = 1.0f + (driftAmt * 0.005f) * sinf(2.0f * 3.14159265f * lfoPhases[i]);
+                // generate a triangular LFO value in [-1,1] without heavy trig
+                float phase = lfoPhases[i];
+                float tri = (phase < 0.5f) ? (phase * 2.0f) : (2.0f - 2.0f * phase);
+                tri = tri * 2.0f - 1.0f;
+                float driftScale = 1.0f + (driftAmt * 0.005f) * tri;
                 float inc = phaseInc[i] * driftScale;
 
                 // naive saw: -1..+1
@@ -200,53 +199,61 @@ void AudioSynthSupersaw::update(void) {
                 phases[i] += inc;
                 if (phases[i] >= 1.0f) phases[i] -= 1.0f;
 
-                // Advance the drift LFO phase and wrap
-                lfoPhases[i] += lfoInc[i];
-                if (lfoPhases[i] >= 1.0f) lfoPhases[i] -= 1.0f;
+                // advance LFO phase and wrap
+                phase += lfoInc[i];
+                if (phase >= 1.0f) phase -= 1.0f;
+                lfoPhases[i] = phase;
             }
 
-            // HPF
+            // High-pass filter to remove DC/low-frequency bias
             float hpOut = hpfAlpha * (hpfPrevOut + sample - hpfPrevIn);
             hpfPrevIn = sample;
             hpfPrevOut = hpOut;
 
-            // Clamp to avoid int16 wrap, then apply outputGain
+            // Clamp output and apply outputGain
             hpOut = fmaxf(-1.0f, fminf(1.0f, hpOut));
-
-            const float out = hpOut * outputGain;
-            block->data[n] = (int16_t)(fmaxf(-1.0f, fminf(1.0f, out)) * 32767.0f);
+            float out = hpOut * outputGain;
+            out = fmaxf(-1.0f, fminf(1.0f, out));
+            block->data[n] = (int16_t)(out * 32767.0f);
         }
     } else {
-        // 2× oversampled rendering. Two internal sub‑samples are generated per
-        // output sample, low‑passed and then decimated. Drift modulation is
-        // applied on each internal tick.
+        // 2× oversampled rendering
+        // Precompute driftScale for each voice once per output sample
         for (int n = 0; n < AUDIO_BLOCK_SAMPLES; ++n) {
-            // Accumulate two internal samples
+            float driftScale[SUPERSAW_VOICES];
+            for (int i = 0; i < SUPERSAW_VOICES; ++i) {
+                float phase = lfoPhases[i];
+                float tri = (phase < 0.5f) ? (phase * 2.0f) : (2.0f - 2.0f * phase);
+                tri = tri * 2.0f - 1.0f;
+                driftScale[i] = 1.0f + (driftAmt * 0.005f) * tri;
+            }
             float accum = 0.0f;
+            // two internal sub-samples
             for (int os = 0; os < 2; ++os) {
                 float sample = 0.0f;
                 for (int i = 0; i < SUPERSAW_VOICES; ++i) {
-                    float driftScale = 1.0f + (driftAmt * 0.005f) * sinf(2.0f * 3.14159265f * lfoPhases[i]);
-                    float inc = phaseInc[i] * driftScale * 0.5f; // half step for 2× OS
+                    float inc = phaseInc[i] * driftScale[i] * 0.5f;
                     const float s = 2.0f * phases[i] - 1.0f;
                     sample += s * gains[i];
                     phases[i] += inc;
                     if (phases[i] >= 1.0f) phases[i] -= 1.0f;
-                    // update drift
-                    lfoPhases[i] += lfoInc[i] * 0.5f;
-                    if (lfoPhases[i] >= 1.0f) lfoPhases[i] -= 1.0f;
+                    // advance LFO phase for oversampled step
+                    float lfoStep = lfoInc[i] * 0.5f;
+                    float phase = lfoPhases[i] + lfoStep;
+                    if (phase >= 1.0f) phase -= 1.0f;
+                    lfoPhases[i] = phase;
                 }
                 accum += sample;
             }
-            // Simple 2-tap FIR low-pass for decimation
-            float sample = 0.5f * accum;
-
+            float sample = accum * 0.5f;
+            // high-pass filter
             float hpOut = hpfAlpha * (hpfPrevOut + sample - hpfPrevIn);
             hpfPrevIn = sample;
             hpfPrevOut = hpOut;
             hpOut = fmaxf(-1.0f, fminf(1.0f, hpOut));
-            const float out = hpOut * outputGain;
-            block->data[n] = (int16_t)(fmaxf(-1.0f, fminf(1.0f, out)) * 32767.0f);
+            float out = hpOut * outputGain;
+            out = fmaxf(-1.0f, fminf(1.0f, out));
+            block->data[n] = (int16_t)(out * 32767.0f);
         }
     }
 
