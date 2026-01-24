@@ -52,6 +52,9 @@ AudioSynthSupersaw::AudioSynthSupersaw()
     calculateIncrements();
     calculateGains();
     calculateHPF();
+
+    // default oversampling off
+    oversample2x = false;
 }
 
 void AudioSynthSupersaw::setFrequency(float f) {
@@ -79,6 +82,10 @@ void AudioSynthSupersaw::setAmplitude(float a) {
 
 void AudioSynthSupersaw::setOutputGain(float gain) {
     outputGain = clampf(gain, 0.0f, 1.5f);
+}
+
+void AudioSynthSupersaw::setOversample(bool enable) {
+    oversample2x = enable;
 }
 
 // “noteOn” should reset phases in a repeatable hardware-like way.
@@ -128,10 +135,12 @@ void AudioSynthSupersaw::calculateIncrements() {
 }
 
 void AudioSynthSupersaw::calculateGains() {
-    // Your existing gain law (kept intact)
-    const float centerGain = -0.55366f * mixAmt + 0.99785f;
-    const float sideGain   = -0.73764f * mixAmt * mixAmt + 1.2841f * mixAmt + 0.044372f;
-
+    // Linear mix: cross-fade between the centre oscillator and the side
+    // oscillators. When mix=0 the centre voice is at full amplitude and
+    // the side voices are silent. When mix=1 the centre voice is silent and
+    // all six side voices share the amplitude equally.
+    const float centerGain = 1.0f - mixAmt;
+    const float sideGain   = mixAmt;
     for (int i = 0; i < SUPERSAW_VOICES; ++i) {
         if (i == (SUPERSAW_VOICES / 2)) {
             gains[i] = amp * centerGain;
@@ -154,28 +163,53 @@ void AudioSynthSupersaw::update(void) {
     audio_block_t *block = allocate();
     if (!block) return;
 
-    for (int n = 0; n < AUDIO_BLOCK_SAMPLES; ++n) {
-        float sample = 0.0f;
-
-        for (int i = 0; i < SUPERSAW_VOICES; ++i) {
-            // naive saw: -1..+1
-            const float s = 2.0f * phases[i] - 1.0f;
-            sample += s * gains[i];
-
-            phases[i] += phaseInc[i];
-            if (phases[i] >= 1.0f) phases[i] -= 1.0f;
+    if (!oversample2x) {
+        // Standard (44.1 kHz) rendering
+        for (int n = 0; n < AUDIO_BLOCK_SAMPLES; ++n) {
+            float sample = 0.0f;
+            for (int i = 0; i < SUPERSAW_VOICES; ++i) {
+                // naive saw: -1..+1
+                const float s = 2.0f * phases[i] - 1.0f;
+                sample += s * gains[i];
+                phases[i] += phaseInc[i];
+                if (phases[i] >= 1.0f) phases[i] -= 1.0f;
+            }
+            // high-pass filter
+            float hpOut = hpfAlpha * (hpfPrevOut + sample - hpfPrevIn);
+            hpfPrevIn = sample;
+            hpfPrevOut = hpOut;
+            // clip and apply output gain
+            hpOut = fmaxf(-1.0f, fminf(1.0f, hpOut));
+            float out = hpOut * outputGain;
+            out = fmaxf(-1.0f, fminf(1.0f, out));
+            block->data[n] = (int16_t)(out * 32767.0f);
         }
-
-        // HPF
-        float hpOut = hpfAlpha * (hpfPrevOut + sample - hpfPrevIn);
-        hpfPrevIn = sample;
-        hpfPrevOut = hpOut;
-
-        // Clamp to avoid int16 wrap, then apply outputGain
-        hpOut = fmaxf(-1.0f, fminf(1.0f, hpOut));
-
-        const float out = hpOut * outputGain;
-        block->data[n] = (int16_t)(fmaxf(-1.0f, fminf(1.0f, out)) * 32767.0f);
+    } else {
+        // 2× oversampled rendering. Two internal sub-samples per output sample
+        for (int n = 0; n < AUDIO_BLOCK_SAMPLES; ++n) {
+            float accum = 0.0f;
+            // Generate two sub-samples and average them
+            for (int os = 0; os < 2; ++os) {
+                float sample = 0.0f;
+                for (int i = 0; i < SUPERSAW_VOICES; ++i) {
+                    const float s = 2.0f * phases[i] - 1.0f;
+                    sample += s * gains[i];
+                    // advance phase at half rate for oversampling
+                    phases[i] += phaseInc[i] * 0.5f;
+                    if (phases[i] >= 1.0f) phases[i] -= 1.0f;
+                }
+                accum += sample;
+            }
+            float sample = accum * 0.5f;
+            // high-pass filter
+            float hpOut = hpfAlpha * (hpfPrevOut + sample - hpfPrevIn);
+            hpfPrevIn = sample;
+            hpfPrevOut = hpOut;
+            hpOut = fmaxf(-1.0f, fminf(1.0f, hpOut));
+            float out = hpOut * outputGain;
+            out = fmaxf(-1.0f, fminf(1.0f, out));
+            block->data[n] = (int16_t)(out * 32767.0f);
+        }
     }
 
     transmit(block);
