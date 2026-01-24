@@ -53,7 +53,7 @@ static constexpr uint8_t ccMap[NUM_PAGES][PARAMS_PER_PAGE] = {
 
 static constexpr const char* ccNames[NUM_PAGES][PARAMS_PER_PAGE] = {
     {"OSC1 Wave", "OSC1 Pitch", "OSC1 Fine", "OSC1 Det"},
-    {"Osc1 Mix", "SupSaw Det1", "SupSaw Mix1", "-"},
+    {"Osc1 Mix", "Osc1 Bal" ,"SupSaw Det1", "SupSaw Mix1"},
     {"Freq DC1", "Shape DC1", "Ring Mix1", "-"},
 
     {"OSC2 Wave", "OSC2 Pitch", "OSC2 Fine", "OSC2 Det"},
