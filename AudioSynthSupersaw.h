@@ -15,30 +15,28 @@ public:
     void setMix(float mix);
     void setOutputGain(float gain);
     /**
-     * Enable or disable internal 2× oversampling. When enabled the supersaw
-     * renders twice as many internal samples and low‑pass filters before
-     * decimating to the audio engine sample rate. This reduces aliasing
-     * artifacts, especially at high detune settings. Disabled by default.
+     * Enable or disable 2× oversampling of the supersaw.  When enabled,
+     * the oscillator generates two internal samples for each output sample
+     * and low-pass averages them.  This reduces aliasing at the cost of
+     * CPU.  Disabled by default.
      */
     void setOversample(bool enable);
 
     /**
-     * Set the amount of slow, per‑voice pitch drift. A value of 0.0f (the
-     * default) disables drift entirely. Increasing this value introduces a
-     * gentle, independent LFO on each oscillator’s frequency, giving
-     * additional beating and liveliness at low detune amounts. Values
-     * typically range from 0.0f to 1.0f. Internally this scales a maximum
-     * drift of around ±0.5 % of the base frequency.
+     * Set the amount of slow per‑voice pitch drift (0..1).  A value of
+     * 0 disables drift.  Increasing this value introduces subtle
+     * low‑frequency modulation on each oscillator’s frequency to recreate
+     * the beating and movement of real analogue oscillators.  Internally
+     * this scales a triangular LFO to ±0.5 % of the base frequency.
      */
     void setDriftAmount(float amount);
 
     /**
-     * Set the cutoff frequency of the one‑pole high‑pass filter used to
-     * remove DC and low‑frequency bias from the summed waveform. By default
-     * this cutoff is fixed at 30 Hz, preserving the fundamental and low
-     * beating frequencies. The value is clamped to the range 1 Hz to
-     * 2000 Hz. Note that extremely high cutoff values will drastically
-     * brighten the sound and remove the fundamental. The cutoff is applied
+     * Set the high‑pass filter cutoff frequency in Hz.  This filter
+     * removes DC and very low frequency rumble from the summed saws.  The
+     * default is 30 Hz.  Values below 1 Hz and above 2000 Hz are
+     * clamped.  Setting this cutoff too high will remove the fundamental
+     * of low notes.  When changed, the filter coefficient is updated
      * immediately.
      */
     void setHpfCutoff(float cutoff);
@@ -59,16 +57,16 @@ private:
     float hpfPrevOut;
     float hpfAlpha;
 
-    // Flag controlling whether 2× internal oversampling is active.
-    bool oversample2x;
-    // Amount of per‑voice frequency drift. 0.0f disables drift.
-    float driftAmt;
-    // Per‑voice LFO phase for drift modulation.
+    // Whether 2× internal oversampling is active
+    bool oversample2x = false;
+    // Amount of per‑voice drift (0..1)
+    float driftAmt = 0.0f;
+    // Per‑voice drift LFO phase (0..1)
     float lfoPhases[SUPERSAW_VOICES];
-    // Per‑voice LFO increment per sample.
+    // Per‑voice drift LFO increment per sample
     float lfoInc[SUPERSAW_VOICES];
-    // High‑pass filter cutoff in Hz.
-    float hpfCutoff;
+    // HPF cutoff frequency
+    float hpfCutoff = 30.0f;
 
     float detuneCurve(float x);
     void calculateIncrements();
