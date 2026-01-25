@@ -10,7 +10,14 @@ public:
   // NOTE: now 3 inputs to support mod buses
   AudioFilterMoogLadderLinear() : AudioStream(3, _inQ) {}
 
-  void frequency(float hz) { _fcTarget = constrain(hz, 5.0f, AUDIO_SAMPLE_RATE_EXACT*0.45f); }
+  // Set the target cutoff frequency in Hz.  The value is constrained
+  // between 5 Hz and the maximum allowed by _maxCutoffFraction.  Raising
+  // _maxCutoffFraction via setMaxCutoffFraction() increases the top end
+  // of the filter when fully open.
+  void frequency(float hz) {
+    float maxHz = AUDIO_SAMPLE_RATE_EXACT * _maxCutoffFraction;
+    _fcTarget = constrain(hz, 5.0f, maxHz);
+  }
   void resonance(float k)  { _k = max(0.0f, k); }          // self-osc ~ k≈4
   void portamento(float ms){ _portaMs = max(0.0f, ms); }
 
@@ -43,6 +50,44 @@ private:
   // Mod scaling
   float _modOct      = 0.0f; // octaves per +1 on In1
   float _resModDepth = 0.0f; // k units per +1 on In2
+
+  // Maximum cutoff frequency as a fraction of the sampling rate.  The default
+  // 0.45 corresponds to allowing the cutoff to sweep up to 45% of fs,
+  // similar to the maximum permitted by frequency().  Raising this
+  // fraction increases high‑frequency content when the filter is wide open.
+  float _maxCutoffFraction = 0.45f;
+
+  // Enable high‑frequency compensation.  When true, the filter cross‑fades
+  // between a 4‑pole and a 2‑pole response as the cutoff approaches
+  // the top of its range.  This behaviour mimics the JP‑8000’s filter,
+  // which does not fully attenuate high frequencies when the cutoff is
+  // wide open.  Disable for a pure 4‑pole Moog ladder.
+  bool _hfCompensation = false;
+
+public:
+  // Set the maximum cutoff frequency as a fraction of the sampling rate.
+  // The argument should be in the range (0.0, 0.5].  Values closer to 0.5
+  // allow more high‑frequency content when the filter is wide open.  The
+  // default is 0.45f.
+  void setMaxCutoffFraction(float fraction) {
+    // clamp to a sensible range to avoid instability
+    if (fraction < 0.01f) fraction = 0.01f;
+    if (fraction > 0.5f)  fraction = 0.5f;
+    _maxCutoffFraction = fraction;
+    // Adjust the target cutoff if it exceeds the new maximum
+    if (_fcTarget > AUDIO_SAMPLE_RATE_EXACT * _maxCutoffFraction) {
+      _fcTarget = AUDIO_SAMPLE_RATE_EXACT * _maxCutoffFraction;
+    }
+  }
+
+  // Enable or disable high‑frequency compensation.  When enabled the
+  // filter will gradually reduce the order of the ladder from 4 poles to
+  // 2 poles as the cutoff approaches the maximum, resulting in a more
+  // open sound above 10 kHz.  When disabled (default) the filter remains
+  // a 4‑pole ladder at all frequencies.
+  void setHighFreqCompensation(bool enable) {
+    _hfCompensation = enable;
+  }
 
   inline float cutoffAlpha() const {
     if (_portaMs <= 0.0f) return 1.0f;
