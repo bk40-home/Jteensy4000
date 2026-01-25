@@ -33,7 +33,12 @@ void AudioFilterMoogLadderLinear::update(void)
     float fcBase = _fc;
     float fcInst = hasCutMod ? (fcBase * exp2f( (mcf->data[i] * (1.0f/32768.0f)) * _modOct )) : fcBase;
     if (fcInst < 5.0f)      fcInst = 5.0f;
-    if (fcInst > 0.33f*fs)  fcInst = 0.33f*fs;
+    // Determine the maximum cutoff frequency based on the userâset
+    // _maxCutoffFraction.  This allows the filter to pass more high
+    // frequency content when fully open.  We clamp fcInst to this limit
+    // instead of the previously hardâcoded 0.33*fs.
+    float fcMax = _maxCutoffFraction * fs;
+    if (fcInst > fcMax)     fcInst = fcMax;
 
     const float g  = tanf(PI * fcInst / fs);
     const float gg = g / (1.0f + g);
@@ -126,9 +131,26 @@ void AudioFilterMoogLadderLinear::update(void)
       y4 = y4f;
     }
 
+    // Highâfrequency compensation: when enabled and the cutoff is near
+    // the top of its range, blend the 4âpole output (y4) with the 2âpole
+    // output (y2) to emulate the JPâ8000âs more open filter response.
+    float yOut = y4;
+    if (_hfCompensation) {
+      // Determine the current maximum cutoff in Hz.  This mirrors the
+      // clamp applied earlier.  We reuse fcInst from this iteration.
+      float fcMax = _maxCutoffFraction * fs;
+      float threshold = 0.33f * fs;
+      if (fcInst > threshold) {
+        float w = (fcInst - threshold) / (fcMax - threshold);
+        if (w < 0.0f) w = 0.0f;
+        if (w > 1.0f) w = 1.0f;
+        yOut = (1.0f - w) * y4 + w * y2;
+      }
+    }
+
     // final soft clip for output; this suppresses spurious spikes and
-    // encourages a sineâlike waveform when the filter self oscillates.
-    float o = tanhf(y4);
+    // encourages a sineâlike waveform when the filter selfâoscillates.
+    float o = tanhf(yOut);
     out->data[i] = (int16_t)(o * 32767.0f);
   }
 
