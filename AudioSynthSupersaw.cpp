@@ -51,7 +51,7 @@ static inline float saw_polyblep(float phase, float phaseInc)
 // -----------------------------------------------------------------------------
 // Reverse-engineered / Szabó-derived per-voice frequency offsets
 // These are ratios relative to the center oscillator: f_i = f * (1 + offset_i)
-// -----------------------------------------------------------------------------static const float kFreqOffsetsMax[SUPERSAW_VOICES] = {
+static const float kFreqOffsetsMax[SUPERSAW_VOICES] = {
     -0.11002313f,
     -0.06288439f,
     -0.01952356f,
