@@ -12,13 +12,16 @@
 
 // ---------------------- Audio endpoints ----------------------
 AudioOutputI2S2 i2sOut;                 // I2S audio out (to SGTL5000 / PCM path)
+AudioInputUSB usbIn;                 // USB audio in
 AudioOutputUSB usbOut;                 // USB audio out
 AudioControlSGTL5000 audioShield;      // Audio shield control
 AudioScopeTap scopeTap;                    // ➋ create the tap (always-on)
 
 // Patch-cord pointers (kept alive for the program lifetime)
-AudioConnection* patchAmpI2SL = nullptr;
-AudioConnection* patchAmpI2SR = nullptr;
+AudioConnection* patchMixerI2SL = nullptr;
+AudioConnection* patchMixerI2SR = nullptr;
+AudioConnection* patchUSBINMixerI2SL = nullptr;
+AudioConnection* patchUSBINMixerI2SR = nullptr;
 AudioConnection* patchOutL    = nullptr;
 AudioConnection* patchOutR    = nullptr;
 
@@ -34,11 +37,12 @@ SynthEngine synth;
 HardwareInterface hw;
 UIManager ui;
 
-// Split to 2 independent paths with their own amps (objects, not functions)
-AudioAmplifier  ampI2SL;
-AudioAmplifier  ampI2SR;
+// Split to 2 independent paths 
+AudioMixer4  mixerI2SL;
+AudioMixer4  mixerI2SR;
 AudioAmplifier  ampUSBL;
 AudioAmplifier  ampUSBR;
+
 
 // ---------------------- USB Host MIDI ------------------------
 USBHost myusb;
@@ -152,16 +156,20 @@ void setup() {
   // - For actual objects (ampI2SL/ampI2SR/i2sOut/usbOut), pass the object (NO parentheses).
 
   // FX L/R -> I2S amp L/R
-  patchAmpI2SL = new AudioConnection(synth.getFXOutL(), 0, ampI2SL, 0);
-  patchAmpI2SR = new AudioConnection(synth.getFXOutR(), 0, ampI2SR, 0);
+  patchMixerI2SL = new AudioConnection(synth.getFXOutL(), 0, mixerI2SL, 0);
+  patchMixerI2SR = new AudioConnection(synth.getFXOutR(), 0, mixerI2SR, 0);
 
   // FX L/R -> USB amp L/R
   patchAmpUSBL = new AudioConnection(synth.getFXOutL(), 0, ampUSBL, 0);
   patchAmpUSBR = new AudioConnection(synth.getFXOutR(), 0, ampUSBR, 0);
 
+  // USB Audio
+  patchUSBINMixerI2SL = new AudioConnection(usbIn, 0, mixerI2SL, 1);
+  patchUSBINMixerI2SR = new AudioConnection(usbIn, 1, mixerI2SR, 1);
+
   // I2S amp L/R -> I2S out L/R
-  patchOutL    = new AudioConnection(ampI2SL, 0, i2sOut, 0);
-  patchOutR    = new AudioConnection(ampI2SR, 0, i2sOut, 1);
+  patchOutL    = new AudioConnection(mixerI2SL, 0, i2sOut, 0);
+  patchOutR    = new AudioConnection(mixerI2SR, 0, i2sOut, 1);
 
   // USB amp L/R -> USB out L/R
   patchOutUSBL = new AudioConnection(ampUSBL, 0, usbOut, 0);
@@ -179,10 +187,12 @@ synth.setNotifier(onParam);
 
 
   // Split-path gains (will later map to a master volume)
-  ampI2SL.gain(0.3f);
-  ampI2SR.gain(0.3f);
-  ampUSBL.gain(0.3f);
-  ampUSBR.gain(0.3f);
+  mixerI2SL.gain(0, 0.4f);
+  mixerI2SR.gain(0, 0.4f);
+  mixerI2SL.gain(1, 0.4f);
+  mixerI2SR.gain(1, 0.4f);
+  ampUSBL.gain(0.4f);
+  ampUSBR.gain(0.4f);
 
   int page = ui.getCurrentPage();
   for (int i = 0; i < 4; ++i) {
