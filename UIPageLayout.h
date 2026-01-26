@@ -15,7 +15,7 @@ namespace UIPage {
 // arbitrary waveform selection page.  We now have
 // 18 pages: the original 16 plus a Dry/Glide page and an extra page for
 // ARB Bank/Table controls.
-static constexpr int NUM_PAGES       = 18;
+static constexpr int NUM_PAGES       = 20;
 static constexpr int PARAMS_PER_PAGE = 4;
 
 static constexpr uint8_t ccMap[NUM_PAGES][PARAMS_PER_PAGE] = {
@@ -30,7 +30,9 @@ static constexpr uint8_t ccMap[NUM_PAGES][PARAMS_PER_PAGE] = {
     {CC::SUB_MIX,          255,                   255,                  255},                // 6
 
     {CC::FILTER_CUTOFF,    CC::FILTER_RESONANCE,  CC::FILTER_ENV_AMOUNT, CC::FILTER_KEY_TRACK}, // 7
-    {255,                  CC::FILTER_OCTAVE_CONTROL,                   255,                 255}, // 8
+    {CC::FILTER_OCTAVE_CONTROL, CC::FILTER_OBXA_RES_MOD_DEPTH,  CC::FILTER_OBXA_MULTIMODE, 255}, // 8
+    {CC::FILTER_OBXA_TWO_POLE, CC::FILTER_OBXA_BP_BLEND_2_POLE,  CC::FILTER_OBXA_PUSH_2_POLE, 255}, // 8
+    {CC::FILTER_OBXA_XPANDER_4_POLE, CC::FILTER_OBXA_XPANDER_MODE,  255, 255}, // 8
 
     {CC::AMP_ATTACK,       CC::AMP_DECAY,         CC::AMP_SUSTAIN,       CC::AMP_RELEASE},    // 9
     {CC::FILTER_ENV_ATTACK, CC::FILTER_ENV_DECAY, CC::FILTER_ENV_SUSTAIN, CC::FILTER_ENV_RELEASE}, // 10
@@ -63,7 +65,9 @@ static constexpr const char* ccNames[NUM_PAGES][PARAMS_PER_PAGE] = {
     {"Sub Mix", "-", "-", "-"},
 
     {"Cutoff", "Resonance", "Filt Env Amt", "Key Track"},
-    {"-", "Oct Ctrl", "-", "-"},
+    {"Oct Ctrl", "Q Depth", "Multimode"},
+    {"2 Pole", "Blend 2p", "Push 2p", "-"},
+    {"Xpander", "XpMode", "-", "-"},
 
     {"Amp Att", "Amp Dec", "Amp Sus", "Amp Rel"},
     {"Filt Att", "Filt Dec", "Filt Sus", "Filt Rel"},

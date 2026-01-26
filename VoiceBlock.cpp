@@ -214,6 +214,43 @@ void VoiceBlock::setFilterKeyTrackAmount(float amt) {
     }
 }
 
+void VoiceBlock::setMultimode(float amount) {
+    _multimode = amount;
+    _filter.setMultimode(amount);
+
+}
+
+void VoiceBlock::setTwoPole(bool enabled) {
+    _useTwoPole = enabled;
+    _filter.setTwoPole(enabled);
+}
+
+void VoiceBlock::setXpander4Pole(bool enabled) {
+    _xpander4Pole = enabled;
+    _filter.setXpander4Pole(enabled);
+}
+
+void VoiceBlock::setXpanderMode(uint8_t amount) {
+    _xpanderMode = amount;
+    _filter.setXpanderMode(amount);
+}
+
+void VoiceBlock::setBPBlend2Pole(bool enabled) {
+    _bpBlend2Pole = enabled;
+    _filter.setBPBlend2Pole(enabled);
+}
+
+void VoiceBlock::setPush2Pole(bool enabled) {
+    _push2Pole = enabled;
+    _filter.setPush2Pole(enabled);
+}
+
+void VoiceBlock::setResonanceModDepth(float amount) {
+    _resonanceModDepth = amount;
+    _filter.setResonanceModDepth(amount);
+}
+
+
 
 // --- Amp Envelope ---
 void VoiceBlock::setAmpAttack(float a) { _ampEnvelope.setAttackTime(a); }

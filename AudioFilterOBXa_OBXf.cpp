@@ -370,7 +370,7 @@ AudioFilterOBXa::AudioFilterOBXa()
     _core = new Core();
     _core->setSampleRate(AUDIO_SAMPLE_RATE_EXACT);
     _core->setResonance(_res01Target);
-    _core->setMultimode(_multimode01);
+    _core->setMultimode(_multimode);
 
 #if OBXA_DEBUG
     _core->setHook(&AudioFilterOBXa::coreHookThunk, this);
@@ -394,11 +394,11 @@ void AudioFilterOBXa::resonance(float r01)
     _core->setResonance(r01);
 }
 
-void AudioFilterOBXa::multimode(float m01)
+void AudioFilterOBXa::SetMultimode(float m01)
 {
     if (m01 < 0.f) m01 = 0.f;
     if (m01 > 1.f) m01 = 1.f;
-    _multimode01 = m01;
+    _multimode = m01;
     _core->setMultimode(m01);
 }
 
@@ -432,7 +432,7 @@ void AudioFilterOBXa::setPush2Pole(bool enabled)
     _core->push2Pole = enabled;
 }
 
-void AudioFilterOBXa::setCutoffModOctaves(float oct)
+void AudioFilterOBXa::setOctaveControl(float oct)
 {
     if (oct < 0.f) oct = 0.f;
     if (oct > 8.f) oct = 8.f;
@@ -446,7 +446,7 @@ void AudioFilterOBXa::setResonanceModDepth(float depth01)
     _resModDepth = depth01;
 }
 
-void AudioFilterOBXa::setKeyTrack(float amount01)
+void AudioFilterOBXa::setKeyTrackAmount(float amount01)
 {
     if (amount01 < 0.f) amount01 = 0.f;
     if (amount01 > 1.f) amount01 = 1.f;

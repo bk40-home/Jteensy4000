@@ -202,31 +202,21 @@ synth.setNotifier(onParam);
 }
 
 void loop() {
-  // USB device MIDI
-  usbMIDI.read();
+  // ----------------- MIDI handling (consistent callback flow) -----------------
+  // USB host stack + host MIDI (USBHost_t36)
+  myusb.Task();
+  while (midiHost.read()) {
+    // Handlers registered in setup() do the routing.
+  }
+
+  // USB device MIDI (Teensy as a USB-MIDI device)
+  while (usbMIDI.read()) {
+    // Handlers registered in setup() do the routing.
+  }
 
   // Engine + hardware
   synth.update();
   hw.update();
-
-  // USB host stack and MIDI host
-  myusb.Task();
-  midiHost.read();
-
-  // Process USB device MIDI manually (if needed by your flow)
-  while (usbMIDI.read()) {
-    byte type  = usbMIDI.getType();
-    byte data1 = usbMIDI.getData1();
-    byte data2 = usbMIDI.getData2();
-
-    if (type == usbMIDI.NoteOn && data2 > 0) {
-      handleNoteOn(usbMIDI.getChannel(), data1, data2);
-    } else if (type == usbMIDI.NoteOff || (type == usbMIDI.NoteOn && data2 == 0)) {
-      handleNoteOff(usbMIDI.getChannel(), data1, data2);
-    } else if (type == usbMIDI.ControlChange) {
-      handleControlChange(usbMIDI.getChannel(), data1, data2);
-    }
-  }
 
   // UI input polling (encoder + 4 pots)
   ui.pollInputs(hw, synth);

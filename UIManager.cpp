@@ -146,6 +146,13 @@ int UIManager::ccToDisplayValue(byte cc, SynthEngine& synth) {
         case CC::FILTER_ENV_AMOUNT:     return norm_to_cc((synth.getFilterEnvAmount() + 1.0f) * 0.5f);
         case CC::FILTER_KEY_TRACK:      return norm_to_cc((synth.getFilterKeyTrackAmount() + 1.0f) * 0.5f);
         case CC::FILTER_OCTAVE_CONTROL: return norm_to_cc(synth.getFilterOctaveControl() / 8.0f);
+        case CC::FILTER_OBXA_MULTIMODE:         return obxa_xpander_mode_to_cc(synth.getFilterMultimode());
+        case CC::FILTER_OBXA_TWO_POLE:          return bool_to_cc(synth.getFilterTwoPole()); 
+        case CC::FILTER_OBXA_XPANDER_4_POLE:    return bool_to_cc(synth.getFilterXpander4Pole());
+        case CC::FILTER_OBXA_XPANDER_MODE:      return obxa_multimode_to_cc(synth.getFilterXpanderMode());
+        case CC::FILTER_OBXA_BP_BLEND_2_POLE:   return bool_to_cc(synth.getFilterBPBlend2Pole());
+        case CC::FILTER_OBXA_PUSH_2_POLE:       return bool_to_cc(synth.getFilterPush2Pole());
+        case CC::FILTER_OBXA_RES_MOD_DEPTH:      return norm_to_cc(synth.getFilterResonanceModDepth());
 
         // ---------------- FX (use SynthEngine getters for display) -----------
         case CC::FX_REVERB_SIZE: {

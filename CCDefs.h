@@ -87,6 +87,13 @@ namespace CC {
     static constexpr uint8_t FILTER_ENV_AMOUNT  = 48; // Envelope amount (–1..1)
     static constexpr uint8_t FILTER_KEY_TRACK   = 50; // Key tracking amount (–1..1)
     static constexpr uint8_t FILTER_OCTAVE_CONTROL = 84; // Filter octave control (0..10)
+    static constexpr uint8_t FILTER_OBXA_MULTIMODE = 103; 
+    static constexpr uint8_t FILTER_OBXA_TWO_POLE = 104; 
+    static constexpr uint8_t FILTER_OBXA_XPANDER_4_POLE = 105; 
+    static constexpr uint8_t FILTER_OBXA_XPANDER_MODE = 106; 
+    static constexpr uint8_t FILTER_OBXA_BP_BLEND_2_POLE = 107; 
+    static constexpr uint8_t FILTER_OBXA_PUSH_2_POLE = 108; 
+    static constexpr uint8_t FILTER_OBXA_RES_MOD_DEPTH = 109; 
 
     // -------------------------------------------------------------------------
     // Low frequency oscillators (LFO)
@@ -258,6 +265,16 @@ namespace CC {
             case OSC2_ARB_BANK:       return "Osc2 Bank";
             case OSC1_ARB_INDEX:      return "Osc1 Table";
             case OSC2_ARB_INDEX:      return "Osc2 Table";
+
+
+            case FILTER_OBXA_MULTIMODE:         return "Multimode";
+            case FILTER_OBXA_TWO_POLE:          return "2 Pole"; 
+            case FILTER_OBXA_XPANDER_4_POLE:    return "Xpander";
+            case FILTER_OBXA_XPANDER_MODE:      return "XpMode";
+            case FILTER_OBXA_BP_BLEND_2_POLE:   return "Blend 2p";
+            case FILTER_OBXA_PUSH_2_POLE:       return "Push 2p";
+            case FILTER_OBXA_RES_MOD_DEPTH:      return "Q Depth";
+
 
             default:                  return nullptr;
         }

@@ -120,6 +120,42 @@ void SynthEngine::setFilterOctaveControl(float octaves) {
     for (int i = 0; i < MAX_VOICES; ++i) _voices[i].setFilterOctaveControl(octaves);
 }
 
+void SynthEngine::setFilterMultimode(float amount) {
+    _filterMultimode = amount;
+    for (int i = 0; i < MAX_VOICES; ++i) _voices[i].setMultimode(amount);
+}
+
+void SynthEngine::setFilterTwoPole(bool enabled) {
+    _filterUseTwoPole = enabled;
+    for (int i = 0; i < MAX_VOICES; ++i) _voices[i].setTwoPole(enabled);
+}
+
+void SynthEngine::setFilterXpander4Pole(bool enabled) {
+    _filterXpander4Pole = enabled;
+    for (int i = 0; i < MAX_VOICES; ++i) _voices[i].setXpander4Pole(enabled);
+
+}
+
+void SynthEngine::setFilterXpanderMode(uint8_t amount) {
+    _filterXpanderMode = amount;
+    for (int i = 0; i < MAX_VOICES; ++i) _voices[i].setXpanderMode(amount);
+}
+
+void SynthEngine::setFilterBPBlend2Pole(bool enabled) {
+    _filterBpBlend2Pole = enabled;
+    for (int i = 0; i < MAX_VOICES; ++i) _voices[i].setBPBlend2Pole(enabled);
+}
+
+void SynthEngine::setFilterPush2Pole(bool enabled) {
+    _filterPush2Pole = enabled;
+    for (int i = 0; i < MAX_VOICES; ++i) _voices[i].setPush2Pole(enabled);
+}
+
+void SynthEngine::setFilterResonanceModDepth(float amount) {
+    _filterResonaceModDepth = amount;
+    for (int i = 0; i < MAX_VOICES; ++i) _voices[i].setResonanceModDepth(amount);
+}
+
 float SynthEngine::getFilterCutoff() const         { return _filterCutoffHz; }
 float SynthEngine::getFilterResonance() const      { return _filterResonance; }
 float SynthEngine::getFilterEnvAmount() const      { return _filterEnvAmount; }
@@ -624,6 +660,14 @@ void SynthEngine::handleControlChange(byte /*channel*/, byte control, byte value
             setFilterOctaveControl(o);
             JT_LOGF("[CC %u:%s] Filter Octave = %.3f\n", control, ccName, o);
         } break;
+
+            case CC::FILTER_OBXA_MULTIMODE:  {setFilterMultimode(cc_to_obxa_multimode(norm));} break;      
+            case CC::FILTER_OBXA_TWO_POLE:    {setFilterTwoPole(cc_to_obxa_two_pole(norm));} break;       
+            case CC::FILTER_OBXA_XPANDER_4_POLE: {setFilterXpander4Pole(cc_to_obxa_multimode(norm));} break;   
+            case CC::FILTER_OBXA_XPANDER_MODE:  {setFilterXpanderMode(cc_to_obxa_xpander_mode(norm));} break;  
+            case CC::FILTER_OBXA_BP_BLEND_2_POLE: {setFilterBPBlend2Pole(cc_to_obxa_bpblend_2pole(norm));} break;  
+            case CC::FILTER_OBXA_PUSH_2_POLE:  {setFilterPush2Pole(cc_to_obxa_push_2pole(norm) );} break;     
+            case CC::FILTER_OBXA_RES_MOD_DEPTH:  {setFilterResonanceModDepth(norm);} break;    
 
         // ------------------- LFO1 -------------------
         case CC::LFO1_FREQ:        { float hz = JT4000Map::cc_to_lfo_hz(value); setLFO1Frequency(hz); JT_LOGF("[CC %u:%s] LFO1 Freq = %.4f Hz\n", control, ccName, hz); } break;

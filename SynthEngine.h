@@ -99,6 +99,13 @@ public:
     void setFilterResonance(float value); // 0..1
     void setFilterKeyTrackAmount(float amt);  // -1..+1
     void setFilterOctaveControl(float octaves);
+    void setFilterMultimode(float _multimode);        // 0..1 (when xpander4Pole=false)   void setMultimode(float _multimode);        // 0..1 (when xpander4Pole=false)
+    void setFilterTwoPole(bool enabled);
+    void setFilterXpander4Pole(bool enabled);
+    void setFilterXpanderMode(uint8_t mode);   // 0..14
+    void setFilterBPBlend2Pole(bool enabled);
+    void setFilterPush2Pole(bool enabled);
+    void setFilterResonanceModDepth(float depth01);
 
     // Getters used by UI/Patch
     float getFilterCutoff() const;
@@ -106,6 +113,13 @@ public:
     float getFilterEnvAmount() const;
     float getFilterKeyTrackAmount() const;
     float getFilterOctaveControl() const;
+    float getFilterMultimode() const { return _filterMultimode; }
+    bool getFilterTwoPole() const { return _filterUseTwoPole; }
+    bool getFilterXpander4Pole() const { return _filterXpander4Pole; }
+    uint8_t getFilterXpanderMode() const { return _filterXpanderMode; }
+    bool getFilterBPBlend2Pole() const { return _filterBpBlend2Pole; } 
+    bool getFilterPush2Pole() const { return _filterPush2Pole; }
+    float getFilterResonanceModDepth() const { return _filterResonaceModDepth; }   
 
     float getAmpAttack() const;
     float getAmpDecay() const;
@@ -262,6 +276,15 @@ private:
     float _filterEnvAmount = 0.0f;     // -1..+1
     float _filterKeyTrack = 0.0f;      // -1..+1
     float _filterOctaves = 0.0f;
+    float _filterMultimode = 0.0f;
+    
+    bool    _filterUseTwoPole   = false;
+    bool    _filterXpander4Pole = false;
+    uint8_t _filterXpanderMode  = 0;
+    bool    _filterBpBlend2Pole = false;
+    bool    _filterPush2Pole    = false;
+    float _filterResModDepth = 0.0f;
+    float _filterResonaceModDepth = 0.0f;
 
     // Glide
     bool  _glideEnabled = false;

@@ -13,7 +13,7 @@ FilterBlock::FilterBlock() {
     _modMixer.gain(2, 0.0f);
     _modMixer.gain(3, 0.0f);
 
-    _filter.setCutoffModOctaves(_octaveControl);
+    _filter.setOctaveControl(_octaveControl);
    // _filter.passbandGain(_passbandGain);
 }
 
@@ -40,7 +40,7 @@ void FilterBlock::setResonance(float amount) {
 
 void FilterBlock::setOctaveControl(float octaves) {
     _octaveControl = octaves;
-    _filter.setCutoffModOctaves(octaves);
+    _filter.setOctaveControl(octaves);
     // Serial.printf("[FilterBlock] Set Octave Control: %.2f\n", octaves);
 }
 
@@ -63,6 +63,47 @@ void FilterBlock::setKeyTrackAmount(float amount) {
      Serial.printf("[FilterBlock] Key Track Amount: %.2f\n", amount);
 }
 
+void FilterBlock::setMultimode(float amount) {
+    _multimode = amount;
+    _filter.SetMultimode(amount);
+     Serial.printf("[FilterBlock] Multimode: %.2f\n", amount);
+}
+
+void FilterBlock::setTwoPole(bool enabled) {
+    _useTwoPole = enabled;
+    _filter.setTwoPole(enabled);
+     Serial.printf("[FilterBlock] setTwoPole: %.2f\n", enabled);
+}
+
+void FilterBlock::setXpander4Pole(bool enabled) {
+    _xpander4Pole = enabled;
+    _filter.setXpander4Pole(enabled);
+     Serial.printf("[FilterBlock] setXpander4Pole: %.2f\n", enabled);
+}
+
+void FilterBlock::setXpanderMode(uint8_t amount) {
+    _xpanderMode = amount;
+    _filter.setXpanderMode(amount);
+     Serial.printf("[FilterBlock] setXpanderMode: %.2f\n", amount);
+}
+
+void FilterBlock::setBPBlend2Pole(bool enabled) {
+    _bpBlend2Pole = enabled;
+    _filter.setBPBlend2Pole(enabled);
+     Serial.printf("[FilterBlock] setBPBlend2Pole: %.2f\n", enabled);
+}
+
+void FilterBlock::setPush2Pole(bool enabled) {
+    _push2Pole = enabled;
+    _filter.setPush2Pole(enabled);
+     Serial.printf("[FilterBlock] setPush2Pole: %.2f\n", enabled);
+}
+
+void FilterBlock::setResonanceModDepth(float amount) {
+    _resonanceModDepth = amount;
+    _filter.setResonanceModDepth(amount);
+     Serial.printf("[FilterBlock] setResonanceModDepth: %.2f\n", amount);
+}
 
 float FilterBlock::getCutoff() const { return _cutoff; }
 float FilterBlock::getResonance() const { return _resonance; }

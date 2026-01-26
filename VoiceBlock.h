@@ -68,6 +68,13 @@ public:
     // void setFilterPassbandGain(float gain);
     void setFilterEnvAmount(float amt) ;
     void setFilterKeyTrackAmount(float amt);
+    void setMultimode(float _multimode);        // 0..1 (when xpander4Pole=false)   void setMultimode(float _multimode);        // 0..1 (when xpander4Pole=false)
+    void setTwoPole(bool enabled);
+    void setXpander4Pole(bool enabled);
+    void setXpanderMode(uint8_t mode);   // 0..14
+    void setBPBlend2Pole(bool enabled);
+    void setPush2Pole(bool enabled);
+    void setResonanceModDepth(float depth01);
 
 
  
@@ -117,6 +124,14 @@ public:
     // float getFilterPassbandGain() const;
     float getFilterEnvAmount() const; 
     float getFilterKeyTrackAmount() const; 
+
+    float getMultimode() const { return _multimode; }
+    bool getTwoPole() const { return _useTwoPole; }
+    bool getXpander4Pole() const { return _xpander4Pole; }
+    uint8_t getXpanderMode() const { return _xpanderMode; }
+    bool getBPBlend2Pole() const { return _bpBlend2Pole; } 
+    bool getPush2Pole() const { return _push2Pole; }
+    float getResonanceModDepth() const { return _resonanceModDepth; }   
     
     float getAmpAttack() const;
     float getAmpDecay() const;
@@ -164,6 +179,13 @@ private:
     float _filterEnvAmount = 0.0f;
     float _filterLfoAmount = 0.0f;
     float _filterKeyTrackAmount = 0.5f;
+    float _multimode = 0.0f;
+    float _resonanceModDepth = 0.0f;
+    bool    _useTwoPole   = false;
+    bool    _xpander4Pole = false;
+    uint8_t _xpanderMode  = 0;
+    bool    _bpBlend2Pole = false;
+    bool    _push2Pole    = false;
 
 
     float _currentFreq = 0.0f;

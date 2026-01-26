@@ -52,8 +52,8 @@ public:
     // --- Core controls (match Teensy style) ---
     void frequency(float hz);
     void resonance(float r01);        // 0..1
-    void multimode(float m01);        // 0..1 (when xpander4Pole=false)
-
+    void SetMultimode(float _multimode);        // 0..1 (when xpander4Pole=false)
+    float getMultimode() const { return _multimode; }
     // --- Runtime mode toggles ---
     void setTwoPole(bool enabled);
     bool getTwoPole() const { return _useTwoPole; }
@@ -73,8 +73,8 @@ public:
 
     // --- Modulation scaling (Audio input busses) ---
     // Cutoff modulation amount in octaves per +1.0 on input1
-    void setCutoffModOctaves(float oct);
-    float getCutoffModOctaves() const { return _cutoffModOct; }
+    void setOctaveControl(float oct);
+    float getOctaveControl() const { return _cutoffModOct; }
 
     // Resonance modulation depth in resonance-01 units per +1.0 on input2
     void setResonanceModDepth(float depth01);
@@ -82,8 +82,8 @@ public:
 
     // --- Control-rate modulation (optional) ---
     // Key tracking: octaves per octave (0..1 typical). Uses current midiNote.
-    void setKeyTrack(float amount01);
-    float getKeyTrack() const { return _keyTrack; }
+    void setKeyTrackAmount(float amount01);
+    float getKeyTrackAmount() const { return _keyTrack; }
 
     // Envelope modulation: octaves per +1 envelope value (0..1 env typical).
     void setEnvModOctaves(float oct);
@@ -111,7 +111,7 @@ private:
     // Internal control state
     float _cutoffHzTarget = 1000.0f;
     float _res01Target    = 0.0f;
-    float _multimode01    = 0.0f;
+    float _multimode    = 0.0f;
 
     bool    _useTwoPole   = false;
     bool    _xpander4Pole = false;
