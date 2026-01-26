@@ -187,8 +187,8 @@ synth.setNotifier(onParam);
 
 
   // Split-path gains (will later map to a master volume)
-  mixerI2SL.gain(0, 0.4f);
-  mixerI2SR.gain(0, 0.4f);
+  mixerI2SL.gain(0, 0.6f);
+  mixerI2SR.gain(0, 0.6f);
   mixerI2SL.gain(1, 0.4f);
   mixerI2SR.gain(1, 0.4f);
   ampUSBL.gain(0.4f);

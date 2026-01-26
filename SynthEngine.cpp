@@ -495,14 +495,14 @@ void SynthEngine::handleControlChange(byte /*channel*/, byte control, byte value
 
         // ------------------- Filter main -------------------
         case CC::FILTER_CUTOFF: {
-            float hz = JT4000Map::cc_to_cutoff_hz(value);
+            float hz = JT4000Map::cc_to_obxa_cutoff_hz(value);
             hz = fminf(fmaxf(hz, CUTOFF_MIN_HZ), CUTOFF_MAX_HZ);
             setFilterCutoff(hz);
             JT_LOGF("[CC %u:%s] Cutoff = %.2f Hz\n", control, ccName, hz);
         } break;
 
         case CC::FILTER_RESONANCE: {
-            float r = JT4000Map::cc_to_res_k(value);
+            float r = JT4000Map::cc_to_obxa_res01(value);
             setFilterResonance(r);
             JT_LOGF("[CC %u:%s] Resonance (k) = %.4f\n", control, ccName, r);
         } break;

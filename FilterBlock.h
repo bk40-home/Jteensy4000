@@ -1,6 +1,6 @@
 #pragma once
 #include <Audio.h>
-#include "AudioFilterMoogLadderLinear.h"
+#include "AudioFilterOBXa_OBXf.h"
 
 
 class FilterBlock {
@@ -30,7 +30,7 @@ public:
     AudioMixer4& modMixer();
 
 private:
-    AudioFilterMoogLadderLinear _filter;
+    AudioFilterOBXa _filter;
     AudioMixer4 _modMixer;
     AudioSynthWaveformDc _envModDc; // going to patch this to the input of the Filter envelope
     AudioSynthWaveformDc _keyTrackDc;

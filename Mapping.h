@@ -14,6 +14,8 @@ namespace JT4000Map {
     static constexpr float CUTOFF_MIN_HZ = 20.0f;
     static constexpr float CUTOFF_MAX_HZ = 20000.0f;
 
+    static constexpr int   OBXA_NUM_XPANDER_MODES = 15;
+
     // ----- Optional JT byte -> CC helpers (kept for preset import paths) -----
     enum class Xform : uint8_t {
         Raw_0_127,
@@ -84,6 +86,86 @@ namespace JT4000Map {
     const float t = (float)cc / 127.0f;
     return msMin * powf(msMax / msMin, t);
 }
+    // =================== OBXa (OB-Xf) helpers ===================
+    //
+    // The OBXa core becomes numerically fragile near:
+    //  - very high cutoff (bilinear tan() gets extreme)
+    //  - resonance exactly 1.0 (full feedback)
+    //
+    // In your log, failure occurred at:
+    //   cutoff=10584 Hz, res=1.000, fs=44100
+    // 10584 is ~0.24 * 44100, which matches the usual practical cutoff clamp.
+    //
+    // Use THESE mappings for the OBXa filter block / CC mapping.
+
+    // Clamp cutoff for OBXa core stability (0.24 * 44100 = 10584)
+    static constexpr float OBXA_CUTOFF_MAX_HZ = 10584.0f;
+    static constexpr float OBXA_CUTOFF_MIN_HZ = CUTOFF_MIN_HZ;
+
+    inline float cc_to_obxa_cutoff_hz(uint8_t cc)
+    {
+        float hz = cc_to_cutoff_hz(cc); // reuse your exponential cutoff curve
+        if (hz < OBXA_CUTOFF_MIN_HZ) hz = OBXA_CUTOFF_MIN_HZ;
+        if (hz > OBXA_CUTOFF_MAX_HZ) hz = OBXA_CUTOFF_MAX_HZ;
+        return hz;
+    }
+
+    inline uint8_t obxa_cutoff_hz_to_cc(float hz)
+    {
+        if (hz < OBXA_CUTOFF_MIN_HZ) hz = OBXA_CUTOFF_MIN_HZ;
+        if (hz > OBXA_CUTOFF_MAX_HZ) hz = OBXA_CUTOFF_MAX_HZ;
+        return cutoff_hz_to_cc(hz); // inverse of your shared curve (with clamp)
+    }
+
+    // Resonance for OBXa is 0..1. To avoid "exactly 1.0" edge cases, clamp slightly below 1.
+    static constexpr float OBXA_RES_MAX = 0.995f; // tweak 0.99..0.999 as needed
+
+    inline float cc_to_obxa_res01(uint8_t cc)
+    {
+        float r = cc_to_norm(cc);       // 0..1
+        if (r > OBXA_RES_MAX) r = OBXA_RES_MAX;
+        if (r < 0.0f) r = 0.0f;
+        return r;
+    }
+
+    inline uint8_t obxa_res01_to_cc(float r)
+    {
+        if (r > OBXA_RES_MAX) r = OBXA_RES_MAX;
+        if (r < 0.0f) r = 0.0f;
+        // keep UI stable: map OBXA_RES_MAX back to 127 as well
+        float n = (OBXA_RES_MAX > 0.0f) ? (r / OBXA_RES_MAX) : 0.0f;
+        return norm_to_cc(n);
+    }
+
+    // OBXa multimode is 0..1 (selects pole outputs / blends)
+    inline float cc_to_obxa_multimode(uint8_t cc) { return cc_to_norm(cc); }
+    inline uint8_t obxa_multimode_to_cc(float m)  { return norm_to_cc(m); }
+
+    // OBXa Xpander mode: 0..14
+    inline uint8_t cc_to_obxa_xpander_mode(uint8_t cc)
+    {
+        // spread 0..127 across 0..14
+        const uint16_t mode = (uint16_t)cc * (uint16_t)(OBXA_NUM_XPANDER_MODES) / 128u;
+        return (mode >= OBXA_NUM_XPANDER_MODES) ? (OBXA_NUM_XPANDER_MODES - 1) : (uint8_t)mode;
+    }
+
+    inline uint8_t obxa_xpander_mode_to_cc(uint8_t mode)
+    {
+        if (mode >= OBXA_NUM_XPANDER_MODES) mode = OBXA_NUM_XPANDER_MODES - 1;
+        // return midpoint CC for that bucket (stable round-trip)
+        const uint16_t start = (uint16_t)mode * 128u / (uint16_t)OBXA_NUM_XPANDER_MODES;
+        const uint16_t end   = (uint16_t)(mode + 1) * 128u / (uint16_t)OBXA_NUM_XPANDER_MODES;
+        return (uint8_t)((start + end) / 2u);
+    }
+
+    // 2-pole feature toggles if you expose them via CC:
+    // (use Bool_0_127 convention: 0=off, 127=on)
+    inline bool cc_to_bool(uint8_t cc) { return cc >= 64; }
+    inline uint8_t bool_to_cc(bool b)  { return b ? 127 : 0; }
+
+    inline bool cc_to_obxa_two_pole(uint8_t cc)     { return cc_to_bool(cc); }
+    inline bool cc_to_obxa_bpblend_2pole(uint8_t cc){ return cc_to_bool(cc); }
+    inline bool cc_to_obxa_push_2pole(uint8_t cc)   { return cc_to_bool(cc); }
 
 inline uint8_t time_ms_to_cc(float ms) {
     if (ms <= msMin) return 0;

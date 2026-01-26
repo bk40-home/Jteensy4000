@@ -57,8 +57,8 @@ int UIManager::ccToDisplayValue(byte cc, SynthEngine& synth) {
         case CC::OSC2_WAVE: return ccFromWaveform((WaveformType)synth.getOsc2Waveform());
 
         // ---------------- Filter core --------------
-        case CC::FILTER_CUTOFF:    return cutoff_hz_to_cc(synth.getFilterCutoff());
-        case CC::FILTER_RESONANCE: return resonance_to_cc(synth.getFilterResonance());
+        case CC::FILTER_CUTOFF:    return obxa_cutoff_hz_to_cc(synth.getFilterCutoff());
+        case CC::FILTER_RESONANCE: return obxa_res01_to_cc(synth.getFilterResonance());
 
         // ---------------- Amp env ------------------
         case CC::AMP_ATTACK:  return time_ms_to_cc(synth.getAmpAttack());

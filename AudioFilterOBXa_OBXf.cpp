@@ -1,4 +1,4 @@
-#include "AudioFilterOBXa.h"
+#include "AudioFilterOBXa_OBXf.h"
 
 // Keep math constants local
 static constexpr float OBXA_PI = 3.14159265358979323846f;
@@ -59,7 +59,7 @@ struct AudioFilterOBXa::Core
 
     // Parameters mirrored from wrapper
     bool bpBlend2Pole{false};
-    bool push2Pole{false};
+    bool push2Pole{true};
     bool xpander4Pole{false};
     uint8_t xpanderMode{0};
     float multimode01{0.f};
