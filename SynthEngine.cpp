@@ -661,13 +661,13 @@ void SynthEngine::handleControlChange(byte /*channel*/, byte control, byte value
             JT_LOGF("[CC %u:%s] Filter Octave = %.3f\n", control, ccName, o);
         } break;
 
-            case CC::FILTER_OBXA_MULTIMODE:  {setFilterMultimode(cc_to_obxa_multimode(norm));} break;      
-            case CC::FILTER_OBXA_TWO_POLE:    {setFilterTwoPole(cc_to_obxa_two_pole(norm));} break;       
-            case CC::FILTER_OBXA_XPANDER_4_POLE: {setFilterXpander4Pole(cc_to_obxa_multimode(norm));} break;   
-            case CC::FILTER_OBXA_XPANDER_MODE:  {setFilterXpanderMode(cc_to_obxa_xpander_mode(norm));} break;  
-            case CC::FILTER_OBXA_BP_BLEND_2_POLE: {setFilterBPBlend2Pole(cc_to_obxa_bpblend_2pole(norm));} break;  
-            case CC::FILTER_OBXA_PUSH_2_POLE:  {setFilterPush2Pole(cc_to_obxa_push_2pole(norm) );} break;     
-            case CC::FILTER_OBXA_RES_MOD_DEPTH:  {setFilterResonanceModDepth(norm);} break;    
+            case CC::FILTER_OBXA_MULTIMODE:  {setFilterMultimode(cc_to_obxa_multimode(norm));  JT_LOGF("[CC %u:%s] FILTER_OBXA_MULTIMODE = %.3f\n", control, ccName, norm);} break;      
+            case CC::FILTER_OBXA_TWO_POLE:    {setFilterTwoPole(cc_to_obxa_two_pole(norm));JT_LOGF("[CC %u:%s] FILTER_OBXA_TWO_POLE  = %.3f\n", control, ccName, norm);} break;         
+            case CC::FILTER_OBXA_XPANDER_4_POLE: {setFilterXpander4Pole(cc_to_obxa_multimode(norm));JT_LOGF("[CC %u:%s] FILTER_OBXA_XPANDER_4_POLE  = %.3f\n", control, ccName, norm);} break;    
+            case CC::FILTER_OBXA_XPANDER_MODE:  {setFilterXpanderMode(cc_to_obxa_xpander_mode(norm));JT_LOGF("[CC %u:%s] FILTER_OBXA_XPANDER_MODE  = %.3f\n", control, ccName, norm);} break;   
+            case CC::FILTER_OBXA_BP_BLEND_2_POLE: {setFilterBPBlend2Pole(cc_to_obxa_bpblend_2pole(norm));JT_LOGF("[CC %u:%s] FILTER_OBXA_BP_BLEND_2_POLE  = %.3f\n", control, ccName, norm);} break;  
+            case CC::FILTER_OBXA_PUSH_2_POLE:  {setFilterPush2Pole(cc_to_obxa_push_2pole(norm) );JT_LOGF("[CC %u:%s] FILTER_OBXA_PUSH_2_POLE  = %.3f\n", control, ccName, norm);} break;      
+            case CC::FILTER_OBXA_RES_MOD_DEPTH:  {setFilterResonanceModDepth(norm);JT_LOGF("[CC %u:%s] FILTER_OBXA_RES_MOD_DEPTH  = %.3f\n", control, ccName, norm);} break;    
 
         // ------------------- LFO1 -------------------
         case CC::LFO1_FREQ:        { float hz = JT4000Map::cc_to_lfo_hz(value); setLFO1Frequency(hz); JT_LOGF("[CC %u:%s] LFO1 Freq = %.4f Hz\n", control, ccName, hz); } break;
