@@ -13,6 +13,17 @@ static inline float obxa_tpt_process(float &state, float input, float g)
     return y;
 }
 
+inline static float tpt_process_scaled_cutoff(float &state, float input,
+                                              float cutoff_over_onepluscutoff)
+{
+    double v = (input - state) * cutoff_over_onepluscutoff;
+    double res = v + state;
+
+    state = res + v;
+
+    return res;
+}
+
 static inline bool obxa_is_huge(float x)
 {
     return fabsf(x) > OBXA_HUGE_THRESHOLD;
@@ -43,7 +54,7 @@ struct AudioFilterOBXa::Core
         {0, -1,  3, -6,  4}, // 14: PH3+LP1
     };
 
-    struct State
+    struct state
     {
         float pole1{0.f}, pole2{0.f}, pole3{0.f}, pole4{0.f};
         float res2Pole{1.f};
@@ -52,157 +63,24 @@ struct AudioFilterOBXa::Core
         float resCorrectionInv{1.f};
         float multimodeXfade{0.f};
         int   multimodePole{0};
-    } st;
+    } state;
 
     float fs{AUDIO_SAMPLE_RATE_EXACT};
     float fsInv{1.f / AUDIO_SAMPLE_RATE_EXACT};
 
     // Parameters mirrored from wrapper
     bool bpBlend2Pole{false};
-    bool push2Pole{true};
+    bool push2Pole{false};
     bool xpander4Pole{false};
     uint8_t xpanderMode{0};
     float multimode01{0.f};
 
-#if OBXA_DEBUG
-    struct CoreDebugEvent
-    {
-        uint32_t ms = 0;
-        float fs = 0.0f;
-        float cutoffHz = 0.0f;
-        float resonance01 = 0.0f;
-        float x = 0.0f;
 
-        float g = 0.0f;
-        float lpc = 0.0f;
-        float res4Pole = 0.0f;
-        float S = 0.0f;
-        float G = 0.0f;
-        float denom = 0.0f;
-
-        float y0 = 0.0f, y1 = 0.0f, y2 = 0.0f, y3 = 0.0f, y4 = 0.0f;
-        float out = 0.0f;
-
-        float pole1 = 0.0f, pole2 = 0.0f, pole3 = 0.0f, pole4 = 0.0f;
-
-        uint8_t reason = 0;
-        uint8_t stage  = 0;
-    };
-
-    // Pre-event snapshot (cheap)
-    struct PreEvent
-    {
-        uint32_t ms = 0;
-        float x = 0.0f;
-        float cutoffHz = 0.0f;
-        float resonance01 = 0.0f;
-        float g = 0.0f;
-        float lpc = 0.0f;
-        float p1 = 0.0f, p2 = 0.0f, p3 = 0.0f, p4 = 0.0f;
-    };
-
-    static constexpr int PRE_CAP = 64;
-    PreEvent pre[PRE_CAP]{};
-    uint8_t  preHead = 0;
-    uint8_t  preDecim = 0;       // count down
-    uint8_t  preDecimN = 2;      // snapshot every N samples
-
-    // Fault latch in core: we only forward one event per "fault burst"
-    bool faultLatched = false;
-    uint16_t faultClearCountdown = 0; // needs N good samples to clear
-
-    // Hook (wrapper thunk)
-    void (*hook)(void *ctx, const void *evt) = nullptr;
-    void *hookCtx = nullptr;
-
-    float dbgRes01 = 0.0f;
-
-    void setHook(void (*h)(void*, const void*), void *ctx) { hook = h; hookCtx = ctx; }
-
-    void pushPre(float x, float cutoffHz, float g, float lpc)
-    {
-        if (preDecim++ < preDecimN) return;
-        preDecim = 0;
-
-        PreEvent &p = pre[preHead];
-        p.ms = millis();
-        p.x = x;
-        p.cutoffHz = cutoffHz;
-        p.resonance01 = dbgRes01;
-        p.g = g;
-        p.lpc = lpc;
-        p.p1 = st.pole1; p.p2 = st.pole2; p.p3 = st.pole3; p.p4 = st.pole4;
-
-        preHead = (uint8_t)((preHead + 1) % PRE_CAP);
-    }
-
-    bool shouldEmit(bool faultNow)
-    {
-        // rising-edge latch with "good sample" hysteresis to avoid spam
-        if (faultNow)
-        {
-            faultClearCountdown = 64; // require 64 good samples to clear
-            if (!faultLatched)
-            {
-                faultLatched = true;
-                return true;
-            }
-            return false;
-        }
-        else
-        {
-            if (faultClearCountdown > 0) faultClearCountdown--;
-            if (faultClearCountdown == 0) faultLatched = false;
-            return false;
-        }
-    }
-
-    void emit(uint8_t stage, uint8_t reason,
-              float cutoffHzRequested, float x,
-              float g, float lpc,
-              float y0, float y1, float y2, float y3, float y4, float out)
-    {
-        if (!hook) return;
-
-        float ml = 1.f / (1.f + g);
-        float S =
-            (lpc * (lpc * (lpc * st.pole1 + st.pole2) + st.pole3) + st.pole4) * ml;
-        float G = lpc * lpc * lpc * lpc;
-        float denom = 1.f + st.res4Pole * G;
-
-        CoreDebugEvent e;
-        e.ms = millis();
-        e.fs = fs;
-        e.cutoffHz = cutoffHzRequested;
-        e.resonance01 = dbgRes01;
-        e.x = x;
-
-        e.g = g;
-        e.lpc = lpc;
-        e.res4Pole = st.res4Pole;
-        e.S = S;
-        e.G = G;
-        e.denom = denom;
-
-        e.y0 = y0; e.y1 = y1; e.y2 = y2; e.y3 = y3; e.y4 = y4;
-        e.out = out;
-
-        e.pole1 = st.pole1; e.pole2 = st.pole2; e.pole3 = st.pole3; e.pole4 = st.pole4;
-
-        e.reason = reason;
-        e.stage = stage;
-
-        hook(hookCtx, &e);
-    }
-#endif // OBXA_DEBUG
 
     void reset()
     {
-        st.pole1 = st.pole2 = st.pole3 = st.pole4 = 0.f;
-#if OBXA_DEBUG
-        // also clear pre buffer index (optional)
-        // preHead = 0;
-#endif
+        state.pole1 = state.pole2 = state.pole3 = state.pole4 = 0.f;
+
     }
 
     void setSampleRate(float sr)
@@ -210,24 +88,22 @@ struct AudioFilterOBXa::Core
         fs = sr;
         fsInv = 1.f / fs;
         float rcRate = sqrtf(44000.0f / fs);
-        st.resCorrection = (970.f / 44000.f) * rcRate;
-        st.resCorrectionInv = 1.f / st.resCorrection;
+        state.resCorrection = (970.f / 44000.f) * rcRate;
+        state.resCorrectionInv = 1.f / state.resCorrection;
     }
 
     void setResonance(float r01)
     {
-        st.res2Pole = 1.f - r01;
-        st.res4Pole = 3.5f * r01;
-#if OBXA_DEBUG
-        dbgRes01 = r01;
-#endif
+        state.res2Pole = 1.f - r01;
+        state.res4Pole = 3.5f * r01;
+
     }
 
     void setMultimode(float m01)
     {
         multimode01 = m01;
-        st.multimodePole = (int)(multimode01 * 3.0f);
-        st.multimodeXfade = (multimode01 * 3.0f) - st.multimodePole;
+        state.multimodePole = (int)(multimode01 * 3.0f);
+        state.multimodeXfade = (multimode01 * 3.0f) - state.multimodePole;
     }
 
     inline float diodePairResistanceApprox(float x)
@@ -238,14 +114,14 @@ struct AudioFilterOBXa::Core
     inline float resolveFeedback2Pole(float sample, float g)
     {
         float push = -1.f - (push2Pole ? 0.035f : 0.0f);
-        float tCfb = diodePairResistanceApprox(st.pole1 * 0.0876f) + push;
+        float tCfb = diodePairResistanceApprox(state.pole1 * 0.0876f) + push;
 
         float y = (sample
-                   - 2.f * (st.pole1 * (st.res2Pole + tCfb))
-                   - g * st.pole1
-                   - st.pole2)
+                   - 2.f * (state.pole1 * (state.res2Pole + tCfb))
+                   - g * state.pole1
+                   - state.pole2)
                   /
-                  (1.f + g * (2.f * (st.res2Pole + tCfb) + g));
+                  (1.f + g * (2.f * (state.res2Pole + tCfb) + g));
 
         return y;
     }
@@ -255,11 +131,11 @@ struct AudioFilterOBXa::Core
         float g = tanf(cutoffHz * fsInv * OBXA_PI);
         float v = resolveFeedback2Pole(x, g);
 
-        float y1 = v * g + st.pole1;
-        st.pole1 = v * g + y1;
+        float y1 = v * g + state.pole1;
+        state.pole1 = v * g + y1;
 
-        float y2 = y1 * g + st.pole2;
-        st.pole2 = y1 * g + y2;
+        float y2 = y1 * g + state.pole2;
+        state.pole2 = y1 * g + y2;
 
         float out;
         if (bpBlend2Pole)
@@ -278,10 +154,10 @@ struct AudioFilterOBXa::Core
     {
         float ml = 1.f / (1.f + g);
         float S =
-            (lpc * (lpc * (lpc * st.pole1 + st.pole2) + st.pole3) + st.pole4) * ml;
+            (lpc * (lpc * (lpc * state.pole1 + state.pole2) + state.pole3) + state.pole4) * ml;
         float G = lpc * lpc * lpc * lpc;
 
-        float y = (sample - st.res4Pole * S) / (1.f + st.res4Pole * G);
+        float y = (sample - state.res4Pole * S) / (1.f + state.res4Pole * G);
         return y;
     }
 
@@ -293,23 +169,21 @@ struct AudioFilterOBXa::Core
         float g = tanf(cutoffHz * fsInv * OBXA_PI);
         float lpc = g / (1.f + g);
 
-#if OBXA_DEBUG
-        pushPre(x, cutoffHzRequested, g, lpc);
-#endif
+
 
         float y0 = resolveFeedback4Pole(x, g, lpc);
 
         // Inline first pole with nonlinearity
-        double v = (y0 - st.pole1) * lpc;
-        double res = v + st.pole1;
-        st.pole1 = (float)(res + v);
+        double v = (y0 - state.pole1) * lpc;
+        double res = v + state.pole1;
+        state.pole1 = (float)(res + v);
 
-        st.pole1 = atanf(st.pole1 * st.resCorrection) * st.resCorrectionInv;
+        state.pole1 = atanf(state.pole1 * state.resCorrection) * state.resCorrectionInv;
 
         float y1 = (float)res;
-        float y2 = obxa_tpt_process(st.pole2, y1, g);
-        float y3 = obxa_tpt_process(st.pole3, y2, g);
-        float y4 = obxa_tpt_process(st.pole4, y3, g);
+        float y2 = tpt_process_scaled_cutoff(state.pole2, y1, lpc);
+        float y3 = tpt_process_scaled_cutoff(state.pole3, y2, lpc);
+        float y4 = tpt_process_scaled_cutoff(state.pole4, y3, lpc);
 
         float out = 0.f;
 
@@ -320,11 +194,11 @@ struct AudioFilterOBXa::Core
         }
         else
         {
-            switch (st.multimodePole)
+            switch (state.multimodePole)
             {
-            case 0: out = (1.f - st.multimodeXfade) * y4 + st.multimodeXfade * y3; break;
-            case 1: out = (1.f - st.multimodeXfade) * y3 + st.multimodeXfade * y2; break;
-            case 2: out = (1.f - st.multimodeXfade) * y2 + st.multimodeXfade * y1; break;
+            case 0: out = (1.f - state.multimodeXfade) * y4 + state.multimodeXfade * y3; break;
+            case 1: out = (1.f - state.multimodeXfade) * y3 + state.multimodeXfade * y2; break;
+            case 2: out = (1.f - state.multimodeXfade) * y2 + state.multimodeXfade * y1; break;
             case 3: out = y1; break;
             default: out = 0.f; break;
             }
@@ -333,29 +207,16 @@ struct AudioFilterOBXa::Core
         // Detect anomalies
         bool nonfinite =
             (!isfinite(y0) || !isfinite(y1) || !isfinite(y2) || !isfinite(y3) || !isfinite(y4) || !isfinite(out) ||
-             !isfinite(st.pole1) || !isfinite(st.pole2) || !isfinite(st.pole3) || !isfinite(st.pole4) ||
+             !isfinite(state.pole1) || !isfinite(state.pole2) || !isfinite(state.pole3) || !isfinite(state.pole4) ||
              !isfinite(g) || !isfinite(lpc));
 
         bool huge =
-            (obxa_is_huge(st.pole1) || obxa_is_huge(st.pole2) ||
-             obxa_is_huge(st.pole3) || obxa_is_huge(st.pole4) ||
+            (obxa_is_huge(state.pole1) || obxa_is_huge(state.pole2) ||
+             obxa_is_huge(state.pole3) || obxa_is_huge(state.pole4) ||
              obxa_is_huge(out) || obxa_is_huge(y0));
 
-        float G = lpc * lpc * lpc * lpc;
-        float denom = 1.f + st.res4Pole * G;
-        bool denomSmall = (fabsf(denom) < 1.0e-6f);
-
-#if OBXA_DEBUG
-        bool faultNow = nonfinite || huge || denomSmall;
-        if (shouldEmit(faultNow))
-        {
-            uint8_t reason = nonfinite ? 1 : (huge ? 2 : 3);
-            emit(20, reason, cutoffHzRequested, x, g, lpc, y0, y1, y2, y3, y4, out);
-        }
-#endif
-
         // Resonance-dependent volume compensation
-        return out * (1.f + st.res4Pole * 0.45f);
+        return out * (1.f + state.res4Pole * 0.45f);
     }
 };
 
@@ -370,11 +231,9 @@ AudioFilterOBXa::AudioFilterOBXa()
     _core = new Core();
     _core->setSampleRate(AUDIO_SAMPLE_RATE_EXACT);
     _core->setResonance(_res01Target);
-    _core->setMultimode(_multimode);
+    _core->setMultimode(_multimode01);
 
-#if OBXA_DEBUG
-    _core->setHook(&AudioFilterOBXa::coreHookThunk, this);
-#endif
+
 }
 
 void AudioFilterOBXa::frequency(float hz)
@@ -394,11 +253,11 @@ void AudioFilterOBXa::resonance(float r01)
     _core->setResonance(r01);
 }
 
-void AudioFilterOBXa::SetMultimode(float m01)
+void AudioFilterOBXa::multimode(float m01)
 {
     if (m01 < 0.f) m01 = 0.f;
     if (m01 > 1.f) m01 = 1.f;
-    _multimode = m01;
+    _multimode01 = m01;
     _core->setMultimode(m01);
 }
 
@@ -432,7 +291,7 @@ void AudioFilterOBXa::setPush2Pole(bool enabled)
     _core->push2Pole = enabled;
 }
 
-void AudioFilterOBXa::setOctaveControl(float oct)
+void AudioFilterOBXa::setCutoffModOctaves(float oct)
 {
     if (oct < 0.f) oct = 0.f;
     if (oct > 8.f) oct = 8.f;
@@ -446,7 +305,7 @@ void AudioFilterOBXa::setResonanceModDepth(float depth01)
     _resModDepth = depth01;
 }
 
-void AudioFilterOBXa::setKeyTrackAmount(float amount01)
+void AudioFilterOBXa::setKeyTrack(float amount01)
 {
     if (amount01 < 0.f) amount01 = 0.f;
     if (amount01 > 1.f) amount01 = 1.f;
@@ -474,110 +333,6 @@ void AudioFilterOBXa::setEnvValue(float env01)
     _envValue = env01;
 }
 
-#if OBXA_DEBUG
-void AudioFilterOBXa::dbgPush(const DebugEvent &e)
-{
-    uint8_t next = (uint8_t)((_dbgWrite + 1) % DBG_RING_SIZE);
-    if (next == _dbgRead)
-    {
-        _dbgRead = (uint8_t)((_dbgRead + 1) % DBG_RING_SIZE);
-    }
-    _dbgRing[_dbgWrite] = e;
-    _dbgWrite = next;
-}
-
-void AudioFilterOBXa::coreHookThunk(void *ctx, const void *evt)
-{
-    auto *self = (AudioFilterOBXa *)ctx;
-    if (self) self->onCoreEvent(evt);
-}
-
-void AudioFilterOBXa::onCoreEvent(const void *evt)
-{
-    const Core::CoreDebugEvent &ce = *(const Core::CoreDebugEvent *)evt;
-
-    // Rising-edge latch at wrapper level too (belt & braces)
-    if (_faultLatched) return;
-    _faultLatched = true;
-
-    DebugEvent e;
-    e.ms = ce.ms;
-    e.twoPole = _useTwoPole;
-
-    e.fs = ce.fs;
-    e.cutoffHz = ce.cutoffHz;
-    e.resonance01 = ce.resonance01;
-
-    e.x = ce.x;
-    e.out = ce.out;
-
-    e.g = ce.g;
-    e.lpc = ce.lpc;
-    e.res4Pole = ce.res4Pole;
-    e.denom = ce.denom;
-    e.S = ce.S;
-    e.G = ce.G;
-
-    e.y0 = ce.y0; e.y1 = ce.y1; e.y2 = ce.y2; e.y3 = ce.y3; e.y4 = ce.y4;
-
-    e.pole1 = ce.pole1; e.pole2 = ce.pole2; e.pole3 = ce.pole3; e.pole4 = ce.pole4;
-
-    e.reason = ce.reason;
-    e.stage  = ce.stage;
-
-    dbgPush(e);
-}
-
-void AudioFilterOBXa::debugClearFault()
-{
-    _faultLatched = false;
-    if (_core) _core->faultLatched = false;
-}
-
-void AudioFilterOBXa::debugFlush(Stream &s)
-{
-    // Print any fault events that were captured (usually 1)
-    while (_dbgRead != _dbgWrite)
-    {
-        DebugEvent e = _dbgRing[_dbgRead];
-        _dbgRead = (uint8_t)((_dbgRead + 1) % DBG_RING_SIZE);
-
-        s.printf("\n[OBXA] t=%lu ms  mode=%s  stage=%u  reason=%u\n",
-                 (unsigned long)e.ms, e.twoPole ? "2P" : "4P", e.stage, e.reason);
-
-        s.printf("  fs=%.1f cutoff=%.2f res=%.3f x=%.6f out=%.6f\n",
-                 e.fs, e.cutoffHz, e.resonance01, e.x, e.out);
-
-        s.printf("  g=%.6f lpc=%.6f res4=%.6f denom=%.10f S=%.6f G=%.6f\n",
-                 e.g, e.lpc, e.res4Pole, e.denom, e.S, e.G);
-
-        s.printf("  poles: p1=%.6f p2=%.6f p3=%.6f p4=%.6f\n",
-                 e.pole1, e.pole2, e.pole3, e.pole4);
-
-        s.printf("  y0=%.6f y1=%.6f y2=%.6f y3=%.6f y4=%.6f\n",
-                 e.y0, e.y1, e.y2, e.y3, e.y4);
-
-        // Dump pre-events (cheap snapshot ring inside core)
-        if (_core)
-        {
-            s.printf("  --- pre-events (oldest->newest), decim=%u, count=%u ---\n",
-                     (unsigned)_core->preDecimN, (unsigned)Core::PRE_CAP);
-
-            for (int i = 0; i < Core::PRE_CAP; ++i)
-            {
-                const auto &p = _core->pre[(_core->preHead + i) % Core::PRE_CAP];
-                s.printf("  pre[%02d] t=%lu x=%.6f cutoff=%.2f res=%.3f g=%.6f lpc=%.6f "
-                         "p1=%.6f p2=%.6f p3=%.6f p4=%.6f\n",
-                         i, (unsigned long)p.ms, p.x, p.cutoffHz, p.resonance01,
-                         p.g, p.lpc, p.p1, p.p2, p.p3, p.p4);
-            }
-        }
-    }
-
-    // Allow new fault to be logged after we've flushed (optional)
-    _faultLatched = false;
-}
-#endif // OBXA_DEBUG
 
 void AudioFilterOBXa::update(void)
 {
@@ -611,6 +366,7 @@ void AudioFilterOBXa::update(void)
         // Audio-rate mods
         float cutMod = in1 ? ((float)in1->data[i] * (1.0f / 32768.0f)) : 0.0f;  // -1..+1
         float resMod = in2 ? ((float)in2->data[i] * (1.0f / 32768.0f)) : 0.0f;  // -1..+1
+
 
         // Convert cutoff mods to a multiplier in octaves:
         float modOct = (cutMod * _cutoffModOct) + (_envValue * _envModOct);
@@ -651,16 +407,13 @@ void AudioFilterOBXa::update(void)
 #if OBXA_STATE_GUARD
         // Recovery: if output goes non-finite or runaway, reset and cool down.
         if (!isfinite(y) || obxa_is_huge(y) ||
-            obxa_is_huge(_core->st.pole1) || obxa_is_huge(_core->st.pole2) ||
-            obxa_is_huge(_core->st.pole3) || obxa_is_huge(_core->st.pole4))
+            obxa_is_huge(_core->state.pole1) || obxa_is_huge(_core->state.pole2) ||
+            obxa_is_huge(_core->state.pole3) || obxa_is_huge(_core->state.pole4))
         {
             _core->reset();
             _cooldownBlocks = 2; // mute 2 blocks after reset
             y = 0.0f;
-#if OBXA_DEBUG
-            // allow a new fault to be captured after recovery
-            _faultLatched = false;
-#endif
+
         }
 #endif
 

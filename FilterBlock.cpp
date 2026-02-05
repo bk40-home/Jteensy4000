@@ -13,7 +13,7 @@ FilterBlock::FilterBlock() {
     _modMixer.gain(2, 0.0f);
     _modMixer.gain(3, 0.0f);
 
-    _filter.setOctaveControl(_octaveControl);
+    _filter.setCutoffModOctaves(_octaveControl);
    // _filter.passbandGain(_passbandGain);
 }
 
@@ -40,7 +40,7 @@ void FilterBlock::setResonance(float amount) {
 
 void FilterBlock::setOctaveControl(float octaves) {
     _octaveControl = octaves;
-    _filter.setOctaveControl(octaves);
+    _filter.setCutoffModOctaves(octaves);
     // Serial.printf("[FilterBlock] Set Octave Control: %.2f\n", octaves);
 }
 
@@ -65,7 +65,7 @@ void FilterBlock::setKeyTrackAmount(float amount) {
 
 void FilterBlock::setMultimode(float amount) {
     _multimode = amount;
-    _filter.SetMultimode(amount);
+    _filter.multimode(amount);
      Serial.printf("[FilterBlock] Multimode: %.2f\n", amount);
 }
 

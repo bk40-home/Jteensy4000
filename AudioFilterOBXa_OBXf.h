@@ -27,9 +27,7 @@
 #include <math.h>
 #include "AudioStream.h"
 
-#ifndef OBXA_DEBUG
-#define OBXA_DEBUG 1
-#endif
+
 
 // When enabled, auto-resets internal poles when NaN/Inf or runaway values occur.
 #ifndef OBXA_STATE_GUARD
@@ -52,8 +50,8 @@ public:
     // --- Core controls (match Teensy style) ---
     void frequency(float hz);
     void resonance(float r01);        // 0..1
-    void SetMultimode(float _multimode);        // 0..1 (when xpander4Pole=false)
-    float getMultimode() const { return _multimode; }
+    void multimode(float m01);        // 0..1 (when xpander4Pole=false)
+
     // --- Runtime mode toggles ---
     void setTwoPole(bool enabled);
     bool getTwoPole() const { return _useTwoPole; }
@@ -73,8 +71,8 @@ public:
 
     // --- Modulation scaling (Audio input busses) ---
     // Cutoff modulation amount in octaves per +1.0 on input1
-    void setOctaveControl(float oct);
-    float getOctaveControl() const { return _cutoffModOct; }
+    void setCutoffModOctaves(float oct);
+    float getCutoffModOctaves() const { return _cutoffModOct; }
 
     // Resonance modulation depth in resonance-01 units per +1.0 on input2
     void setResonanceModDepth(float depth01);
@@ -82,8 +80,8 @@ public:
 
     // --- Control-rate modulation (optional) ---
     // Key tracking: octaves per octave (0..1 typical). Uses current midiNote.
-    void setKeyTrackAmount(float amount01);
-    float getKeyTrackAmount() const { return _keyTrack; }
+    void setKeyTrack(float amount01);
+    float getKeyTrack() const { return _keyTrack; }
 
     // Envelope modulation: octaves per +1 envelope value (0..1 env typical).
     void setEnvModOctaves(float oct);
@@ -95,13 +93,20 @@ public:
     void setEnvValue(float env01);   // 0..1 (latest envelope sample)
     float getEnvValue() const { return _envValue; }
 
-#if OBXA_DEBUG
-    // Flush captured debug events (fault + pre-events) to a Stream.
-    void debugFlush(Stream &s);
+    // ---- Compatibility aliases (older sketches / naming) ----
+    // Keep these so older project code and test sketches compile unchanged.
+    void setKeytrack(float amt01)            { setKeyTrack(amt01); }
+    float getKeytrack() const               { return getKeyTrack(); }
 
-    // Optional: clear latched fault without waiting for stable samples.
-    void debugClearFault();
-#endif
+    void setCutoffModOct(float oct)          { setCutoffModOctaves(oct); }
+    float getCutoffModOct() const            { return getCutoffModOctaves(); }
+
+    void setEnvModOct(float oct)             { setEnvModOctaves(oct); }
+    float getEnvModOct() const               { return getEnvModOctaves(); }
+
+
+
+
 
     virtual void update(void) override;
 
@@ -111,7 +116,7 @@ private:
     // Internal control state
     float _cutoffHzTarget = 1000.0f;
     float _res01Target    = 0.0f;
-    float _multimode    = 0.0f;
+    float _multimode01    = 0.0f;
 
     bool    _useTwoPole   = false;
     bool    _xpander4Pole = false;
@@ -134,46 +139,5 @@ private:
     struct Core;
     Core *_core = nullptr;
 
-#if OBXA_DEBUG
-    // Wrapper-side debug event ring (small, ISR-safe)
-    struct DebugEvent
-    {
-        uint32_t ms = 0;
-        bool twoPole = false;
 
-        float fs = 0.0f;
-        float cutoffHz = 0.0f;
-        float resonance01 = 0.0f;
-
-        float x = 0.0f;
-        float out = 0.0f;
-
-        float g = 0.0f;
-        float lpc = 0.0f;
-        float res4Pole = 0.0f;
-        float denom = 0.0f;
-        float S = 0.0f;
-        float G = 0.0f;
-
-        float y0 = 0.0f, y1 = 0.0f, y2 = 0.0f, y3 = 0.0f, y4 = 0.0f;
-        float pole1 = 0.0f, pole2 = 0.0f, pole3 = 0.0f, pole4 = 0.0f;
-
-        uint8_t reason = 0; // 1=nonfinite, 2=huge, 3=denom-small
-        uint8_t stage  = 0;
-    };
-
-    static constexpr uint8_t DBG_RING_SIZE = 32;
-    DebugEvent _dbgRing[DBG_RING_SIZE]{};
-    volatile uint8_t _dbgWrite = 0;
-    volatile uint8_t _dbgRead  = 0;
-
-    inline void dbgPush(const DebugEvent &e);
-
-    // "Fault latch" so we only emit once per fault burst.
-    volatile bool _faultLatched = false;
-
-    // Core hook thunks
-    static void coreHookThunk(void *ctx, const void *evt);
-    void onCoreEvent(const void *evt);
-#endif
 };
