@@ -187,6 +187,8 @@ private:
     bool    _bpBlend2Pole = false;
     bool    _push2Pole    = false;
 
+    bool _isActive = false;
+
 
     float _currentFreq = 0.0f;
     float _osc1PitchOffset = 0.0f;        // unmodulated offsets

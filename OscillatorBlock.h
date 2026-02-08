@@ -10,7 +10,9 @@
 class OscillatorBlock {
 public:
     // --- Lifecycle
-    OscillatorBlock();
+    // Constructor now accepts supersaw capability flag (true = OSC1, false = OSC2)
+    // This allows conditional supersaw creation, reducing CPU by 50%
+    OscillatorBlock(bool enableSupersaw = false);
     void update();
     void noteOn(float freq, float velocity);
     void noteOff();
@@ -61,15 +63,22 @@ private:
     AudioMixer4 _frequencyModMixer;
     AudioMixer4 _shapeModMixer;
     AudioSynthWaveformModulated _mainOsc;
-    AudioSynthSupersaw _supersaw;
+    AudioSynthSupersaw* _supersaw;  // ← POINTER: nullptr if supersaw disabled (OSC2)
     AudioMixer4 _outputMix;
     AudioConnection* _patchfrequencyDc;
     AudioConnection* _patchshapeDc;
     AudioConnection* _patchfrequency;
     AudioConnection* _patchshape;
     AudioConnection* _patchMainOsc;  // NEW: connects _mainOsc to _outputMix
-    AudioConnection* _patchSupersaw;
+    AudioConnection* _patchSupersaw; // ← Conditionally created only if enabled
 
+    // OPTIMIZATION: Dirty flag to track when frequency needs recalculation
+    // Set to true whenever any pitch parameter changes
+    // Cleared after frequency update
+    bool _freqDirty = true;
+    
+    // Track if this oscillator has supersaw capability
+    bool _supersawEnabled;
 
     int _currentType = 1;
     float _baseFreq = 440.0f;

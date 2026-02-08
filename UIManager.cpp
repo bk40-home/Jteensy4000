@@ -146,61 +146,65 @@ int UIManager::ccToDisplayValue(byte cc, SynthEngine& synth) {
         case CC::FILTER_ENV_AMOUNT:     return norm_to_cc((synth.getFilterEnvAmount() + 1.0f) * 0.5f);
         case CC::FILTER_KEY_TRACK:      return norm_to_cc((synth.getFilterKeyTrackAmount() + 1.0f) * 0.5f);
         case CC::FILTER_OCTAVE_CONTROL: return norm_to_cc(synth.getFilterOctaveControl() / 8.0f);
-        case CC::FILTER_OBXA_MULTIMODE:         return obxa_xpander_mode_to_cc(synth.getFilterMultimode());
-        case CC::FILTER_OBXA_TWO_POLE:          return bool_to_cc(synth.getFilterTwoPole()); 
-        case CC::FILTER_OBXA_XPANDER_4_POLE:    return bool_to_cc(synth.getFilterXpander4Pole());
-        case CC::FILTER_OBXA_XPANDER_MODE:      return obxa_multimode_to_cc(synth.getFilterXpanderMode());
-        case CC::FILTER_OBXA_BP_BLEND_2_POLE:   return bool_to_cc(synth.getFilterBPBlend2Pole());
-        case CC::FILTER_OBXA_PUSH_2_POLE:       return bool_to_cc(synth.getFilterPush2Pole());
-        case CC::FILTER_OBXA_RES_MOD_DEPTH:      return norm_to_cc(synth.getFilterResonanceModDepth());
 
-        // ---------------- FX (use SynthEngine getters for display) -----------
-        case CC::FX_REVERB_SIZE: {
-            // Room size is 0..1 → map linearly to CC
-            return norm_to_cc(synth.getFXReverbRoomSize());
-        }
-        case CC::FX_REVERB_DAMP: {
-            // High damping (legacy mapping).  Use separate getter for hi damping.
-            return norm_to_cc(synth.getFXReverbHiDamping());
-        }
-        case CC::FX_REVERB_LODAMP: {
-            // Low damping
-            return norm_to_cc(synth.getFXReverbLoDamping());
-        }
-        case CC::FX_DELAY_TIME: {
-            // Delay time in ms (0..2000).  Map linearly to CC 0..127.
-            float ms = synth.getFXDelayTimeMs();
-            if (ms < 0.0f) ms = 0.0f;
-            if (ms > 2000.0f) ms = 2000.0f;
-            return (uint8_t)constrain(lroundf((ms / 2000.0f) * 127.0f), 0, 127);
-        }
-        case CC::FX_DELAY_FEEDBACK: {
-            return norm_to_cc(synth.getFXDelayFeedback());
-        }
-        case CC::FX_DRY_MIX: {
-            return norm_to_cc(synth.getFXDryMix());
-        }
-        case CC::FX_REVERB_MIX: {
-            return norm_to_cc(synth.getFXReverbMix());
-        }
-        case CC::FX_DELAY_MIX: {
-            return norm_to_cc(synth.getFXDelayMix());
-        }
-        case CC::FX_DELAY_MOD_RATE: {
-            return norm_to_cc(synth.getFXDelayModRate());
-        }
-        case CC::FX_DELAY_MOD_DEPTH: {
-            return norm_to_cc(synth.getFXDelayModDepth());
-        }
-        case CC::FX_DELAY_INERTIA: {
-            return norm_to_cc(synth.getFXDelayInertia());
-        }
-        case CC::FX_DELAY_TREBLE: {
-            return norm_to_cc(synth.getFXDelayTreble());
-        }
-        case CC::FX_DELAY_BASS: {
-            return norm_to_cc(synth.getFXDelayBass());
-        }
+        
+   case CC::FX_MOD_EFFECT:   return synth.getFXModEffectName();
+   case CC::FX_DELAY_EFFECT: return synth.getFXDelayEffectName();
+ 
+   // JPFX tone (map -12..+12 dB to 0..127)
+   case CC::FX_BASS_GAIN: {
+       float dB = synth.getFXBassGain();
+       return (uint8_t)constrain((dB + 12.0f)   127.0f / 24.0f, 0, 127);
+   }
+   case CC::FX_TREBLE_GAIN: {
+       float dB = synth.getFXTrebleGain();
+       return (uint8_t)constrain((dB + 12.0f)   127.0f / 24.0f, 0, 127);
+   }
+   
+   // JPFX modulation effect (map -1..10 to 0..127)
+   case CC::FX_MOD_EFFECT: {
+       int8_t var = synth.getFXModEffect();
+       if (var < 0) return 0;
+       return (uint8_t)constrain((var   127) / 10, 0, 127);
+   }
+   
+   // JPFX delay effect (map -1..4 to 0..127)
+   case CC::FX_DELAY_EFFECT: {
+       int8_t var = synth.getFXDelayEffect();
+       if (var < 0) return 0;
+       return (uint8_t)constrain((var   127) / 4, 0, 127);
+   }
+   
+   // JPFX normalized params (0..1)
+   case CC::FX_MOD_MIX:
+   case CC::FX_DELAY_MIX:
+   case CC::FX_DRY_MIX:
+       return norm_to_cc(/* appropriate getter */);
+       
+   // JPFX time/rate params
+   case CC::FX_MOD_RATE: {
+       float hz = synth.getFXModRate();
+       return (uint8_t)constrain((hz   127.0f) / 20.0f, 0, 127);
+   }
+   case CC::FX_DELAY_TIME: {
+       float ms = synth.getFXDelayTime();
+       return (uint8_t)constrain((ms   127.0f) / 1500.0f, 0, 127);
+   }
+   
+   // JPFX feedback params (map -1..0.99 to 0..127)
+   case CC::FX_MOD_FEEDBACK: {
+       float fb = synth.getFXModFeedback();
+       if (fb < 0.0f) return 0;
+       return (uint8_t)constrain((fb   127.0f) / 0.99f, 0, 127);
+   }
+   case CC::FX_DELAY_FEEDBACK: {
+       float fb = synth.getFXDelayFeedback();
+       if (fb < 0.0f) return 0;
+       return (uint8_t)constrain((fb   127.0f) / 0.99f, 0, 127);
+   }
+
+
+
 
         // ---------------- Glide / AmpModDC --------------------------
         case CC::GLIDE_ENABLE:        return synth.getGlideEnabled() ? 127 : 0;
@@ -255,6 +259,9 @@ int UIManager::ccToDisplayValue(byte cc, SynthEngine& synth) {
 void UIManager::pollInputs(HardwareInterface& hw, SynthEngine& synth) {
     if (hw.isButtonPressed()) {
         _scopeOn = !_scopeOn;
+        // Mode change requires a full redraw of whichever view becomes active.
+        markFullDirty();
+        markScopeDirty();
         if (!_scopeOn) {
             for (int i = 0; i < 4; ++i) setParameterLabel(i, UIPage::ccNames[_currentPage][i]);
             syncFromEngine(synth);
@@ -271,6 +278,8 @@ void UIManager::pollInputs(HardwareInterface& hw, SynthEngine& synth) {
             _currentPreset = wrapIndex(_currentPreset + (delta > 0 ? 1 : -1), total);
             Presets::presets_loadByGlobalIndex(synth, _currentPreset, 1);
             syncFromEngine(synth);
+            // Force an immediate scope refresh so the name/number updates.
+            markScopeDirty();
         }
         // Quick cutoff/res while scoping
         if (hw.potChanged(0,1)) {
@@ -278,12 +287,14 @@ void UIManager::pollInputs(HardwareInterface& hw, SynthEngine& synth) {
             synth.handleControlChange(1, CC::FILTER_CUTOFF, v);
             setParameterValue(0, v);
             _valueText[0] = nullptr;
+            markScopeDirty();
         }
         if (hw.potChanged(1,1)) {
             uint8_t v = (hw.readPot(1) >> 3);
             synth.handleControlChange(1, CC::FILTER_RESONANCE, v);
             setParameterValue(1, v);
             _valueText[1] = nullptr;
+            markScopeDirty();
         }
         return;
     }
@@ -347,27 +358,68 @@ void UIManager::begin() {
 
 // ---------- public UI control ----------
 void UIManager::updateDisplay(SynthEngine& synth) {
-    if (_scopeOn) renderScope();
-    else          renderPage();
+    // ------------------------------------------------------------------
+    // NOTE: The OLED flush (_display.display()) is expensive over I2C.
+    // We suppress redraws unless something has changed or a throttled
+    // refresh is due (scope view).
+    // ------------------------------------------------------------------
+    const uint32_t nowMs = millis();
+
+    if (_scopeOn) {
+        // Scope view is animated, but we still throttle.
+        // If the scope is silent for a while, we slow refresh further.
+        const uint32_t fastMs = 33;   // ~30 fps
+        const uint32_t slowMs = 120;  // ~8 fps when silent
+        const uint32_t interval = (_scopeSilentFrames > 15) ? slowMs : fastMs;
+
+        // Allow an immediate refresh when something explicitly changed.
+        if ((nowMs < _nextScopeMs) && ((_dirtyFlags & DIRTY_SCOPE) == 0)) return;
+        _nextScopeMs = nowMs + interval;
+        renderScope();
+        return;
+    }
+
+    // Text/pages: only draw when something is marked dirty.
+    if (_dirtyFlags == DIRTY_NONE) return;
+
+    // Throttle page flush rate to reduce I2C bandwidth and CPU.
+    if (nowMs < _nextFlushMs) return;
+    _nextFlushMs = nowMs + 50; // 20 fps max for text UI
+
+    renderPage();
 }
 
 void UIManager::setPage(int page) {
     if (page < 0) page = 0;
     if (page >= UIPage::NUM_PAGES) page = UIPage::NUM_PAGES - 1;
-    _currentPage = page;
+    if (_currentPage != page) {
+        _currentPage = page;
+        // Page changed -> full redraw required.
+        markFullDirty();
+    }
 }
 
 int UIManager::getCurrentPage() const { return _currentPage; }
 void UIManager::highlightParameter(int index) { _highlightIndex = index; }
 
 void UIManager::setParameterLabel(int index, const char* label) {
-    if (index >= 0 && index < 4) _labels[index] = label ? label : "";
+    if (index < 0 || index >= 4) return;
+    const char* newLabel = label ? label : "";
+    if (_labels[index] != newLabel) {
+        _labels[index] = newLabel;
+        // Label change only affects this row.
+        markRowDirty(index);
+    }
 }
 
 void UIManager::setParameterValue(int index, int value) {
     if (index < 0 || index >= 4) return;
     if (value < 0) value = 0; else if (value > 127) value = 127;
-    _values[index] = value;
+    if (_values[index] != value) {
+        _values[index] = value;
+        // Value change only affects this row.
+        markRowDirty(index);
+    }
 }
 
 int UIManager::getParameterValue(int index) const {
@@ -378,28 +430,64 @@ AudioRecordQueue& UIManager::scopeIn() { return _scopeQueue; }
 
 // ---------- draw routines ----------
 void UIManager::renderPage() {
-    _display.clearDisplay();
+    // ------------------------------------------------------------------
+    // Dirty-region redraw strategy
+    //
+    // - If DIRTY_FULL is set: redraw all rows.
+    // - Otherwise: redraw only the dirty rows.
+    //
+    // IMPORTANT: SSD1306 uses a full framebuffer; we still have to flush the
+    // entire buffer when we call _display.display(). However, skipping redraw
+    // work and skipping the flush entirely when nothing changes saves CPU.
+    // ------------------------------------------------------------------
+    const bool full = (_dirtyFlags & DIRTY_FULL) != 0;
+
     _display.setTextSize(1);
     _display.setTextColor(SSD1306_WHITE);
 
-    const int rowH = 16;
-    for (int i = 0; i < 4; ++i) {
-        int y = i * rowH;
-
-        // left: label
-        _display.setCursor(0, y);
-        _display.print(_labels[i]);
-
-        // right: value (text if available, else numeric 0..127)
-        if (_valueText[i]) {
-            drawRightAligned(String(_valueText[i]), y);
-        } else {
-            char buf[8];
-            snprintf(buf, sizeof(buf), "%3d", _values[i]);
-            drawRightAligned(buf, y);
+    if (full) {
+        // Full redraw (page change / mode change).
+        _display.clearDisplay();
+        for (int i = 0; i < 4; ++i) {
+            renderRow(i);
+        }
+    } else {
+        // Partial redraw: only touch rows that changed.
+        for (int i = 0; i < 4; ++i) {
+            const uint16_t rowFlag = (DIRTY_ROW0 << i);
+            if ((_dirtyFlags & rowFlag) == 0) continue;
+            renderRow(i);
         }
     }
+
+    // Flush once.
     _display.display();
+
+    // Clear row/full dirty flags after flush.
+    _dirtyFlags &= ~(DIRTY_FULL | DIRTY_ROW0 | DIRTY_ROW1 | DIRTY_ROW2 | DIRTY_ROW3);
+}
+
+void UIManager::renderRow(int row) {
+    // Draw one row (label on left, value on right).
+    // Clears only the row region before drawing.
+    const int rowH = 16;
+    const int y = row * rowH;
+
+    // Clear this row area (black).
+    _display.fillRect(0, y, 128, rowH, SSD1306_BLACK);
+
+    // Left: label
+    _display.setCursor(0, y);
+    _display.print(_labels[row]);
+
+    // Right: value (text if available, else numeric 0..127)
+    if (_valueText[row]) {
+        drawRightAligned(_valueText[row], y);
+    } else {
+        char buf[8];
+        snprintf(buf, sizeof(buf), "%3d", _values[row]);
+        drawRightAligned(buf, y);
+    }
 }
 
 void UIManager::renderScope() {
@@ -501,6 +589,14 @@ void UIManager::renderScope() {
         int16_t a = col[x] < 0 ? -col[x] : col[x];
         if (a > peak) peak = a;
     }
+
+    // Track silence to reduce scope refresh rate when nothing is happening.
+    // This reduces idle CPU usage without affecting play-time behavior.
+    if (peak < 32) {
+        if (_scopeSilentFrames < 60000) _scopeSilentFrames++;
+    } else {
+        _scopeSilentFrames = 0;
+    }
     int shift = 10;
     if      (peak < 1024) shift = 6;
     else if (peak < 2048) shift = 7;
@@ -529,14 +625,24 @@ void UIManager::renderScope() {
     _display.print(AudioMemoryUsage());
 
     _display.display();
+
+    // Scope redraw consumed; clear explicit scope dirty flag.
+    _dirtyFlags &= ~DIRTY_SCOPE;
 }
 
 
-void UIManager::drawRightAligned(const String& text, int y) {
+void UIManager::drawRightAligned(const char* text, int y) {
+    // Avoid Arduino String heap allocations in the hot UI path.
+    if (!text) text = "";
     int16_t x1, y1; uint16_t w, h;
     _display.getTextBounds(text, 0, 0, &x1, &y1, &w, &h);
-    _display.setCursor(128 - w, y);
+    _display.setCursor((int)(128 - w), y);
     _display.print(text);
+}
+
+void UIManager::drawRightAligned(const String& text, int y) {
+    // Legacy overload kept so existing call sites still compile.
+    drawRightAligned(text.c_str(), y);
 }
 
 // ---------- engine → UI sync (use inverse curves so UI matches engine) ----------
@@ -544,13 +650,23 @@ void UIManager::syncFromEngine(SynthEngine& synth) {
     for (int i = 0; i < 4; ++i) {
         const byte cc = UIPage::ccMap[_currentPage][i];
         if (cc == 255) {
-            _valueText[i] = nullptr;
+            // Empty slot.
+            if (_valueText[i] != nullptr) {
+                _valueText[i] = nullptr;
+                markRowDirty(i);
+            }
             setParameterValue(i, 0);
             continue;
         }
         const int v = ccToDisplayValue(cc, synth);
         setParameterValue(i, v);
-        _valueText[i] = ccToDisplayText(cc, synth); // may be nullptr
+        // Update display text (may be nullptr for numeric fields).
+        const char* newText = ccToDisplayText(cc, synth);
+        if (_valueText[i] != newText) {
+            _valueText[i] = newText;
+            // Text/numeric mode change affects this row.
+            markRowDirty(i);
+        }
         // (If you keep a last-CC cache for pot hysteresis, update it here.)
     }
 }

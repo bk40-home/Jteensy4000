@@ -31,25 +31,25 @@ static constexpr uint8_t ccMap[NUM_PAGES][PARAMS_PER_PAGE] = {
 
     {CC::FILTER_CUTOFF,    CC::FILTER_RESONANCE,  CC::FILTER_ENV_AMOUNT, CC::FILTER_KEY_TRACK}, // 7
     {CC::FILTER_OCTAVE_CONTROL, CC::FILTER_OBXA_RES_MOD_DEPTH,  CC::FILTER_OBXA_MULTIMODE, 255}, // 8
-    {CC::FILTER_OBXA_TWO_POLE, CC::FILTER_OBXA_BP_BLEND_2_POLE,  CC::FILTER_OBXA_PUSH_2_POLE, 255}, // 8
-    {CC::FILTER_OBXA_XPANDER_4_POLE, CC::FILTER_OBXA_XPANDER_MODE,  255, 255}, // 8
+    {CC::FILTER_OBXA_TWO_POLE, CC::FILTER_OBXA_BP_BLEND_2_POLE,  CC::FILTER_OBXA_PUSH_2_POLE, 255}, // 9
+    {CC::FILTER_OBXA_XPANDER_4_POLE, CC::FILTER_OBXA_XPANDER_MODE,  255, 255}, // 10
 
-    {CC::AMP_ATTACK,       CC::AMP_DECAY,         CC::AMP_SUSTAIN,       CC::AMP_RELEASE},    // 9
-    {CC::FILTER_ENV_ATTACK, CC::FILTER_ENV_DECAY, CC::FILTER_ENV_SUSTAIN, CC::FILTER_ENV_RELEASE}, // 10
+    {CC::AMP_ATTACK,       CC::AMP_DECAY,         CC::AMP_SUSTAIN,       CC::AMP_RELEASE},    // 11
+    {CC::FILTER_ENV_ATTACK, CC::FILTER_ENV_DECAY, CC::FILTER_ENV_SUSTAIN, CC::FILTER_ENV_RELEASE}, // 12
 
-    {CC::LFO1_FREQ,        CC::LFO1_DEPTH,        CC::LFO1_DESTINATION,  CC::LFO1_WAVEFORM}, // 11
-    {CC::LFO2_FREQ,        CC::LFO2_DEPTH,        CC::LFO2_DESTINATION,  CC::LFO2_WAVEFORM}, // 12
-
-    // Page 13: Delay parameters (part 1)
-    {CC::FX_DELAY_TIME,     CC::FX_DELAY_FEEDBACK, CC::FX_DELAY_MOD_RATE,  CC::FX_DELAY_MOD_DEPTH}, // 13
-    // Page 14: Delay parameters (part 2)
-    {CC::FX_DELAY_INERTIA,  CC::FX_DELAY_TREBLE,   CC::FX_DELAY_BASS,      CC::FX_DELAY_MIX},      // 14
-    // Page 15: Reverb parameters
-    {CC::FX_REVERB_SIZE,    CC::FX_REVERB_DAMP,    CC::FX_REVERB_LODAMP,   CC::FX_REVERB_MIX},     // 15
-    // Page 16: Dry mix and global controls (moved Glide from original page 15)
-    {CC::FX_DRY_MIX,        CC::GLIDE_ENABLE,      CC::GLIDE_TIME,         CC::AMP_MOD_FIXED_LEVEL}, // 16
+    {CC::LFO1_FREQ,        CC::LFO1_DEPTH,        CC::LFO1_DESTINATION,  CC::LFO1_WAVEFORM}, // 13
+    {CC::LFO2_FREQ,        CC::LFO2_DEPTH,        CC::LFO2_DESTINATION,  CC::LFO2_WAVEFORM}, // 14
+    
+    // Page 15: JPFX Tone + Modulation selection
+    {CC::FX_BASS_GAIN, CC::FX_TREBLE_GAIN, CC::FX_MOD_EFFECT, CC::FX_MOD_MIX},    
+    // Page 16: JPFX Modulation parameters
+    {CC::FX_MOD_RATE, CC::FX_MOD_FEEDBACK, CC::FX_DELAY_EFFECT, CC::FX_DELAY_MIX},     
+    // Page 17: JPFX Delay parameters
+    {CC::FX_DELAY_FEEDBACK, CC::FX_DELAY_TIME, CC::FX_DRY_MIX, 255},
+    // Page 18: Dry mix and global controls (moved Glide from original page 15)
+    {255,        CC::GLIDE_ENABLE,      CC::GLIDE_TIME,         CC::AMP_MOD_FIXED_LEVEL}, // 18
     // Page 17: Arbitrary waveform bank/table selection for both oscillators
-    {CC::OSC1_ARB_BANK,     CC::OSC1_ARB_INDEX,    CC::OSC2_ARB_BANK,      CC::OSC2_ARB_INDEX},     // 17
+    {CC::OSC1_ARB_BANK,     CC::OSC1_ARB_INDEX,    CC::OSC2_ARB_BANK,      CC::OSC2_ARB_INDEX},     // 19
     // Note: no sentinel row; NUM_PAGES defines exactly the number of active pages.
 };
 
@@ -68,17 +68,16 @@ static constexpr const char* ccNames[NUM_PAGES][PARAMS_PER_PAGE] = {
     {"Oct Ctrl", "Q Depth", "Multimode"},
     {"2 Pole", "Blend 2p", "Push 2p", "-"},
     {"Xpander", "XpMode", "-", "-"},
-
     {"Amp Att", "Amp Dec", "Amp Sus", "Amp Rel"},
     {"Filt Att", "Filt Dec", "Filt Sus", "Filt Rel"},
 
     {"LFO1 Freq", "LFO1 Depth", "LFO1 Dest", "LFO1 Wave"},
     {"LFO2 Freq", "LFO2 Depth", "LFO2 Dest", "LFO2 Wave"},
 
-    {"Delay Time", "Delay FB", "Dly ModRate", "Dly ModDepth"},
-    {"Dly Inertia", "Dly Treble", "Dly Bass", "Dly Mix"},
-    {"Rev Size", "Rev HiDamp", "Rev LoDamp", "Rev Mix"},
-    {"Dry Mix", "Glide En", "Glide Time", "Amp Mod DC"},
+    {"Bass", "Treble", "Mod FX", "Mod Mix"},
+    {"Mod Rate", "Mod FB", "Dly FX", "Dly Mix"},
+    {"Dly FB", "Dly Time", "Dry Mix", "-"},
+    {"-", "Glide En", "Glide Time", "Amp Mod DC"},
     {"OSC1 Bank", "OSC1 Table", "OSC2 Bank", "OSC2 Table"},
     // No sentinel row; the last page (ARB bank/table) is fully used.
 };

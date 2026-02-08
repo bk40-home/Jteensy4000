@@ -1,107 +1,121 @@
 /*
  * FXChainBlock.h
  *
- * Revised FX chain for the JT‑4000.  This version replaces the old multi‑tap
- * delay and Freeverb with the stereo modulated ping‑pong delay and plate
- * reverb from the hexefx_audiolib_i16 library.  Audio flows in parallel:
- * the amplifier feeds directly into the delay and reverb, and the wet
- * outputs of each effect are mixed alongside the dry signal.  When an
- * effect’s mix level is zero its internal processing is bypassed to save
- * CPU time.  Additional setters expose modulation rate, modulation depth,
- * inertia and tone controls for the delay, and separate high/low damping
- * controls for the reverb.
+ * JP-8000 style FX chain for the JT-4000 using AudioEffectJPFX.
+ * Provides tone control (bass/treble), modulation effects (chorus/flanger/phaser)
+ * and delay effects with preset variations.
+ *
+ * ARCHITECTURE:
+ * - Audio flows: amplifier → JPFX → dry/wet mixer → stereo outputs
+ * - JPFX internally processes tone → modulation → delay
+ * - When an effect's mix is zero, JPFX bypasses that stage (CPU efficient)
+ * - Single mono input, stereo output for wider spatial effects
+ *
+ * PERFORMANCE NOTES:
+ * - JPFX shares a single delay buffer for modulation effects (CPU efficient)
+ * - Separate delay buffer for delay effects (max 1500ms)
+ * - All processing in single update() call (no multiple AudioStream hops)
+ * - Bypass unnecessary processing when mix = 0
  */
 
 #pragma once
 
 #include <Audio.h>
-
-// Pull in the hexefx effect headers.  These must be installed in the
-// Arduino/library search path (e.g. lib/hexefx_audiolib_i16/src).  If you
-// encounter build errors, verify the include paths match your project.
-#include "effect_delaystereo_i16.h"
-#include "effect_platereverb_i16.h"
+#include "AudioEffectJPFX.h"  // JP-8000 FX engine
 
 class FXChainBlock {
 public:
     FXChainBlock();
 
-    // --- Reverb controls ---
-    void setReverbRoomSize(float size);            // 0..1
-    void setReverbHiDamping(float damping);        // 0..1 (high frequencies)
-    void setReverbLoDamping(float damping);        // 0..1 (low frequencies)
-    float getReverbRoomSize() const;
-    float getReverbHiDamping() const;
-    float getReverbLoDamping() const;
+    // --- Tone controls (±12dB shelving filters) ---
+    // Positive values boost, negative values cut
+    void setBassGain(float dB);          // -12..+12 dB
+    void setTrebleGain(float dB);        // -12..+12 dB
+    float getBassGain() const;
+    float getTrebleGain() const;
 
-    // --- Delay controls ---
-    void setDelayTimeMs(float ms);                 // absolute time in ms, clipped
-    float getDelayTimeMs() const;
-    void setDelayFeedback(float feedback);         // 0..1
+    // --- Modulation effects (11 JP-8000 variations) ---
+    // Variations: CHORUS1-3, FLANGER1-3, PHASER1-4, CHORUS_DEEP
+    // Pass -1 to disable modulation
+    void setModEffect(int8_t variation);  // -1=off, 0..10=preset
+    void setModMix(float mix);            // 0..1 wet/dry
+    void setModRate(float hz);            // LFO rate override (0=use preset)
+    void setModFeedback(float fb);        // 0..0.99 feedback override (-1=use preset)
+    
+    int8_t getModEffect() const;
+    float getModMix() const;
+    float getModRate() const;
+    float getModFeedback() const;
+    const char* getModEffectName() const; // Returns human-readable name
+
+    // --- Delay effects (5 JP-8000 variations) ---
+    // Variations: SHORT, LONG, PINGPONG1-3
+    // Pass -1 to disable delay
+    void setDelayEffect(int8_t variation); // -1=off, 0..4=preset
+    void setDelayMix(float mix);           // 0..1 wet/dry
+    void setDelayFeedback(float fb);       // 0..0.99 feedback override (-1=use preset)
+    void setDelayTime(float ms);           // Time override (0=use preset, 5..1500ms)
+    
+    int8_t getDelayEffect() const;
+    float getDelayMix() const;
     float getDelayFeedback() const;
-    void setDelayModRate(float rate);              // 0..1
-    void setDelayModDepth(float depth);            // 0..1
-    void setDelayInertia(float inertia);           // 0..1
-    void setDelayTreble(float treble);             // 0..1
-    void setDelayBass(float bass);                 // 0..1
-    float getDelayModRate() const;
-    float getDelayModDepth() const;
-    float getDelayInertia() const;
-    float getDelayTreble() const;
-    float getDelayBass() const;
+    float getDelayTime() const;
+    const char* getDelayEffectName() const; // Returns human-readable name
 
-    // --- Mix controls ---
-    void setDryMix(float levelL, float levelR);    // 0..1 per channel
-    void setReverbMix(float levelL, float levelR); // 0..1 per channel
-    void setDelayMix(float levelL, float levelR);  // 0..1 per channel
+    // --- Global mix ---
+    void setDryMix(float levelL, float levelR); // 0..1 per channel
     float getDryMixL() const { return _dryMixL; }
     float getDryMixR() const { return _dryMixR; }
-    float getReverbMixL() const { return _reverbMixL; }
-    float getReverbMixR() const { return _reverbMixR; }
-    float getDelayMixL() const { return _delayMixL; }
-    float getDelayMixR() const { return _delayMixR; }
 
-    // Outputs for patching into the synth engine
+    // --- Output access for patching ---
     AudioMixer4& getOutputLeft();
     AudioMixer4& getOutputRight();
 
-    // Amplifier input for the summed voices
+    // --- Amplifier input for summed voices ---
     AudioAmplifier _ampIn;
 
 private:
-    // Maximum delay time in milliseconds.  Increase if you need longer echoes.
-    static constexpr float _maxDelayMs = 2000.0f;
+    // JP-8000 effect engine
+    AudioEffectJPFX _jpfx;
 
-    // Audio effects
-    AudioEffectDelayStereo_i16 _pingPongDelay{2000, true};
-    AudioEffectPlateReverb_i16 _plateReverb;
-
-    // Final mix
+    // Final stereo mix
     AudioMixer4 _mixerOutL;
     AudioMixer4 _mixerOutR;
 
-    // Patch cords (allocated in ctor)
-    AudioConnection* _patchAmpToDelay;
-    AudioConnection* _patchAmpToReverb;
+    // Patch cords
+    AudioConnection* _patchAmpToJPFX;
     AudioConnection* _patchAmpToMixL;
     AudioConnection* _patchAmpToMixR;
-    AudioConnection* _patchDelayToMixL;
-    AudioConnection* _patchDelayToMixR;
-    AudioConnection* _patchReverbToMixL;
-    AudioConnection* _patchReverbToMixR;
+    AudioConnection* _patchJPFXToMixL;
+    AudioConnection* _patchJPFXToMixR;
 
-    // Internal state for UI and CC access
-    float _roomSize = 0.5f;
-    float _reverbHiDamp = 0.5f;
-    float _reverbLoDamp = 0.5f;
-    float _delayTimeMs  = 400.0f;
-    float _delayFeedback = 0.5f;
-    float _delayModRate = 0.0f;
-    float _delayModDepth = 0.0f;
-    float _delayInertia = 0.0f;
-    float _delayTreble = 0.5f;
-    float _delayBass = 0.5f;
-    float _dryMixL = 1.0f, _dryMixR = 1.0f;
-    float _reverbMixL = 0.0f, _reverbMixR = 0.0f;
-    float _delayMixL = 0.0f, _delayMixR = 0.0f;
+    // Cached parameters for UI/preset readback
+    float _bassGain = 0.0f;
+    float _trebleGain = 0.0f;
+    
+    int8_t _modEffect = -1;       // -1 = off
+    float _modMix = 0.5f;
+    float _modRate = 0.0f;        // 0 = use preset
+    float _modFeedback = -1.0f;   // -1 = use preset
+    
+    int8_t _delayEffect = -1;     // -1 = off
+    float _delayMix = 0.5f;
+    float _delayFeedback = -1.0f; // -1 = use preset
+    float _delayTime = 0.0f;      // 0 = use preset
+    
+    float _dryMixL = 1.0f;
+    float _dryMixR = 1.0f;
+
+    // Effect variation name lookup tables
+    static constexpr const char* MOD_EFFECT_NAMES[] = {
+        "Chorus 1", "Chorus 2", "Chorus 3",
+        "Flanger 1", "Flanger 2", "Flanger 3",
+        "Phaser 1", "Phaser 2", "Phaser 3", "Phaser 4",
+        "Chorus Deep"
+    };
+    
+    static constexpr const char* DELAY_EFFECT_NAMES[] = {
+        "Short", "Long",
+        "PingPong 1", "PingPong 2", "PingPong 3"
+    };
 };

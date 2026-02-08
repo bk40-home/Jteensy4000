@@ -2,23 +2,27 @@
 
 FilterBlock::FilterBlock() {
     _patchCables[0] = new AudioConnection(_modMixer, 0, _filter, 1);
-    //_patchCables[1] = new AudioConnection(_envModDc, 0, _modMixer, 0);
     _patchCables[1] = new AudioConnection(_keyTrackDc, 0, _modMixer,0);
 
     _envModDc.amplitude(0.0f);
     _keyTrackDc.amplitude(0.0f);
 
-    _modMixer.gain(0, 1.0f);
-    _modMixer.gain(1, 1.0f);
-    _modMixer.gain(2, 0.0f);
-    _modMixer.gain(3, 0.0f);
+
+static constexpr float KEY_TRACK_GAIN = 1.0f;
+static constexpr float ENV_MOD_GAIN = 1.0f;
+static constexpr float LFO1_GAIN_INIT = 0.0f;
+static constexpr float LFO2_GAIN_INIT = 0.0f;
+
+_modMixer.gain(0, KEY_TRACK_GAIN);
+_modMixer.gain(1, ENV_MOD_GAIN);
+_modMixer.gain(2, LFO1_GAIN_INIT);
+_modMixer.gain(3, LFO2_GAIN_INIT);
 
     _filter.setCutoffModOctaves(_octaveControl);
-   // _filter.passbandGain(_passbandGain);
+
 }
 
 void FilterBlock::setCutoff(float freqHz) {
-    //freqHz = constrain(freqHz, 0.0f, 16500.0f);  // Allow full audio-range cutoff
     if (freqHz != _cutoff) {
         _cutoff = freqHz;
         _filter.frequency(freqHz);
@@ -27,28 +31,19 @@ void FilterBlock::setCutoff(float freqHz) {
 }
 
 void FilterBlock::setResonance(float amount) {
-    //_resonance = constrain(amount, 0.0f, 1.5f);
+    _resonance = amount;  
     _filter.resonance(amount);
     Serial.printf("[FilterBlock] Set Resonance: %.2f\n", amount);
 }
 
-// void FilterBlock::setDrive(float amount) {
-//     _drive = amount;
-//     _filter.inputDrive(_drive);
-//     // Serial.printf("[FilterBlock] Set Drive: %.2f\n", _drive);
-// }
+
 
 void FilterBlock::setOctaveControl(float octaves) {
     _octaveControl = octaves;
     _filter.setCutoffModOctaves(octaves);
-    // Serial.printf("[FilterBlock] Set Octave Control: %.2f\n", octaves);
+     Serial.printf("[FilterBlock] Set Octave Control: %.2f\n", octaves);
 }
 
-// void FilterBlock::setPassbandGain(float gain) {
-//     _passbandGain = gain;
-//     _filter.passbandGain(gain);
-//     // Serial.printf("[FilterBlock] Set Passband Gain: %.2f\n", gain);
-// }
 
 void FilterBlock::setEnvModAmount(float amount) {
     _envModAmount = amount;
@@ -107,9 +102,7 @@ void FilterBlock::setResonanceModDepth(float amount) {
 
 float FilterBlock::getCutoff() const { return _cutoff; }
 float FilterBlock::getResonance() const { return _resonance; }
-// float FilterBlock::getDrive() const { return _drive; }
 float FilterBlock::getOctaveControl() const { return _octaveControl; }
-// float FilterBlock::getPassbandGain() const { return _passbandGain; }
 float FilterBlock::getEnvModAmount() const { return _envModAmount; }
 float FilterBlock::getKeyTrackAmount() const { return _keyTrackAmount; }
 

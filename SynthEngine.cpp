@@ -22,7 +22,9 @@ SynthEngine::SynthEngine() {
         _voicePatchLFO2Filter[i] = new AudioConnection(_lfo2.output(), 0, _voices[i].filterModMixer(), 3);
         _voiceMixer.gain(i, 1.0f / MAX_VOICES);
     }
-    for (int i = 0; i < 128; ++i) _noteToVoice[i] = 255;
+    
+    for (int i = 0; i < 128; ++i) _noteToVoice[i] = VOICE_NONE;
+
     for (int i = 0; i < MAX_VOICES; ++i) _noteTimestamps[i] = 0;
 
     _ampModFixedDc.amplitude(_ampModFixedLevel);
@@ -55,7 +57,7 @@ void SynthEngine::noteOn(byte note, float velocity) {
     float freq = 440.0f * powf(2.0f, (note - 69) / 12.0f);
     _lastNoteFreq = freq;
 
-    if (_noteToVoice[note] != 255) {
+    if (_noteToVoice[note] != VOICE_NONE) {
         int v = _noteToVoice[note];
         _voices[v].noteOn(freq, velocity);
         _noteTimestamps[v] = _clock++;
@@ -100,6 +102,8 @@ void SynthEngine::update() {
 
 // ---- Filter / Env ----
 void SynthEngine::setFilterCutoff(float value) {
+    // Validate range
+    value = constrain(value, CUTOFF_MIN_HZ, CUTOFF_MAX_HZ);
     _filterCutoffHz = value;
     for (int i = 0; i < MAX_VOICES; ++i) _voices[i].setFilterCutoff(value);
 }
@@ -364,89 +368,71 @@ const char* SynthEngine::getLFO2DestinationName() const {
 }
 
 
-// ---- FX (store + hand off to FXChainBlock as needed) ----
-// The new FX API splits reverb damping into high/low bands and adds
-// additional parameters for delay modulation and tone.  Each setter caches
-// the value for UI readback and forwards it to FXChainBlock.
 
-void SynthEngine::setFXReverbRoomSize(float v) {
-    if (v < 0.0f) v = 0.0f; if (v > 1.0f) v = 1.0f;
-    _fxReverbRoomSize = v;
-    _fxChain.setReverbRoomSize(v);
-}
-
-void SynthEngine::setFXReverbHiDamping(float v) {
-    if (v < 0.0f) v = 0.0f; if (v > 1.0f) v = 1.0f;
-    _fxReverbHiDamping = v;
-    _fxChain.setReverbHiDamping(v);
-}
-
-void SynthEngine::setFXReverbLoDamping(float v) {
-    if (v < 0.0f) v = 0.0f; if (v > 1.0f) v = 1.0f;
-    _fxReverbLoDamping = v;
-    _fxChain.setReverbLoDamping(v);
-}
-
-void SynthEngine::setFXDelayTimeMs(float ms) {
-    // clamp only below zero; FXChainBlock enforces its own maximum internally
-    if (ms < 0.0f) ms = 0.0f;
-    _fxDelayTimeMs = ms;
-    _fxChain.setDelayTimeMs(ms);
-}
-
-void SynthEngine::setFXDelayFeedback(float v) {
-    if (v < 0.0f) v = 0.0f; if (v > 1.0f) v = 1.0f;
-    _fxDelayFeedback = v;
-    _fxChain.setDelayFeedback(v);
-}
-
-void SynthEngine::setFXDelayModRate(float v) {
-    if (v < 0.0f) v = 0.0f; if (v > 1.0f) v = 1.0f;
-    _fxDelayModRate = v;
-    _fxChain.setDelayModRate(v);
-}
-
-void SynthEngine::setFXDelayModDepth(float v) {
-    if (v < 0.0f) v = 0.0f; if (v > 1.0f) v = 1.0f;
-    _fxDelayModDepth = v;
-    _fxChain.setDelayModDepth(v);
-}
-
-void SynthEngine::setFXDelayInertia(float v) {
-    if (v < 0.0f) v = 0.0f; if (v > 1.0f) v = 1.0f;
-    _fxDelayInertia = v;
-    _fxChain.setDelayInertia(v);
-}
-
-void SynthEngine::setFXDelayTreble(float v) {
-    if (v < 0.0f) v = 0.0f; if (v > 1.0f) v = 1.0f;
-    _fxDelayTreble = v;
-    _fxChain.setDelayTreble(v);
-}
-
-void SynthEngine::setFXDelayBass(float v) {
-    if (v < 0.0f) v = 0.0f; if (v > 1.0f) v = 1.0f;
-    _fxDelayBass = v;
-    _fxChain.setDelayBass(v);
-}
-
-void SynthEngine::setFXDryMix(float v) {
-    if (v < 0.0f) v = 0.0f; if (v > 1.0f) v = 1.0f;
-    _fxDryMix = v;
-    _fxChain.setDryMix(v, v);
-}
-
-void SynthEngine::setFXReverbMix(float v) {
-    if (v < 0.0f) v = 0.0f; if (v > 1.0f) v = 1.0f;
-    _fxReverbMix = v;
-    _fxChain.setReverbMix(v, v);
-}
-
-void SynthEngine::setFXDelayMix(float v) {
-    if (v < 0.0f) v = 0.0f; if (v > 1.0f) v = 1.0f;
-    _fxDelayMix = v;
-    _fxChain.setDelayMix(v, v);
-}
+   }
+   void SynthEngine::setFXTrebleGain(float dB) {
+       _fxTrebleGain = dB;
+       _fxChain.setTrebleGain(dB);
+   }
+   float SynthEngine::getFXBassGain() const { return _fxBassGain; }
+   float SynthEngine::getFXTrebleGain() const { return _fxTrebleGain; }
+ 
+   // --- JPFX Modulation ---
+   void SynthEngine::setFXModEffect(int8_t var) {
+       _fxModEffect = var;
+       _fxChain.setModEffect(var);
+   }
+   void SynthEngine::setFXModMix(float mix) {
+       _fxModMix = mix;
+       _fxChain.setModMix(mix);
+   }
+   void SynthEngine::setFXModRate(float hz) {
+       _fxModRate = hz;
+       _fxChain.setModRate(hz);
+   }
+   void SynthEngine::setFXModFeedback(float fb) {
+       _fxModFeedback = fb;
+       _fxChain.setModFeedback(fb);
+   }
+   int8_t SynthEngine::getFXModEffect() const { return _fxModEffect; }
+   float SynthEngine::getFXModMix() const { return _fxModMix; }
+   float SynthEngine::getFXModRate() const { return _fxModRate; }
+   float SynthEngine::getFXModFeedback() const { return _fxModFeedback; }
+   const char* SynthEngine::getFXModEffectName() const {
+       return _fxChain.getModEffectName();
+   }
+ *
+   // --- JPFX Delay ---
+   void SynthEngine::setFXDelayEffect(int8_t var) {
+       _fxDelayEffect = var;
+       _fxChain.setDelayEffect(var);
+   }
+   void SynthEngine::setFXDelayMix(float mix) {
+       _fxDelayMix = mix;
+       _fxChain.setDelayMix(mix);
+   }
+   void SynthEngine::setFXDelayFeedback(float fb) {
+       _fxDelayFeedback = fb;
+       _fxChain.setDelayFeedback(fb);
+   }
+   void SynthEngine::setFXDelayTime(float ms) {
+       _fxDelayTime = ms;
+       _fxChain.setDelayTime(ms);
+   }
+   int8_t SynthEngine::getFXDelayEffect() const { return _fxDelayEffect; }
+   float SynthEngine::getFXDelayMix() const { return _fxDelayMix; }
+   float SynthEngine::getFXDelayFeedback() const { return _fxDelayFeedback; }
+   float SynthEngine::getFXDelayTime() const { return _fxDelayTime; }
+   const char* SynthEngine::getFXDelayEffectName() const {
+       return _fxChain.getDelayEffectName();
+   }
+ 
+   // --- JPFX Dry Mix ---
+   void SynthEngine::setFXDryMix(float level) {
+       _fxDryMix = level;
+       _fxChain.setDryMix(level, level);  // Stereo
+   }
+   float SynthEngine::getFXDryMix() const { return _fxDryMix; }
 
 
 // ---- UI helper getters ----
@@ -482,22 +468,7 @@ float SynthEngine::getOsc2ShapeDc() const     { return _osc2ShapeDc; }
 bool  SynthEngine::getGlideEnabled() const { return _glideEnabled; }
 float SynthEngine::getGlideTimeMs()  const { return _glideTimeMs; }
 
-// ---- FX getters ----
-float SynthEngine::getFXDelayTimeMs() const      { return _fxDelayTimeMs; }
-float SynthEngine::getFXReverbHiDamping() const { return _fxReverbHiDamping; }
-float SynthEngine::getFXReverbLoDamping() const { return _fxReverbLoDamping; }
-float SynthEngine::getFXDelayModRate() const    { return _fxDelayModRate; }
-float SynthEngine::getFXDelayModDepth() const   { return _fxDelayModDepth; }
-float SynthEngine::getFXDelayInertia() const    { return _fxDelayInertia; }
-float SynthEngine::getFXDelayTreble() const     { return _fxDelayTreble; }
-float SynthEngine::getFXDelayBass() const       { return _fxDelayBass; }
-float SynthEngine::getFXDelayFeedback() const   { return _fxDelayFeedback; }
-float SynthEngine::getFXReverbRoomSize() const  { return _fxReverbRoomSize; }
 
-// Additional FX getters
-float SynthEngine::getFXDryMix() const     { return _fxDryMix; }
-float SynthEngine::getFXDelayMix() const   { return _fxDelayMix; }
-float SynthEngine::getFXReverbMix() const  { return _fxReverbMix; }
 
 // ---- MIDI CC dispatcher with JT_LOGF tracing --------------------------------
 // ---- MIDI CC dispatcher: now using CCDefs.h names consistently ----
@@ -661,13 +632,13 @@ void SynthEngine::handleControlChange(byte /*channel*/, byte control, byte value
             JT_LOGF("[CC %u:%s] Filter Octave = %.3f\n", control, ccName, o);
         } break;
 
-            case CC::FILTER_OBXA_MULTIMODE:  {setFilterMultimode(cc_to_obxa_multimode(norm));  JT_LOGF("[CC %u:%s] FILTER_OBXA_MULTIMODE = %.3f\n", control, ccName, norm);} break;      
-            case CC::FILTER_OBXA_TWO_POLE:    {setFilterTwoPole(cc_to_obxa_two_pole(norm));JT_LOGF("[CC %u:%s] FILTER_OBXA_TWO_POLE  = %.3f\n", control, ccName, norm);} break;         
-            case CC::FILTER_OBXA_XPANDER_4_POLE: {setFilterXpander4Pole(cc_to_obxa_multimode(norm));JT_LOGF("[CC %u:%s] FILTER_OBXA_XPANDER_4_POLE  = %.3f\n", control, ccName, norm);} break;    
-            case CC::FILTER_OBXA_XPANDER_MODE:  {setFilterXpanderMode(cc_to_obxa_xpander_mode(norm));JT_LOGF("[CC %u:%s] FILTER_OBXA_XPANDER_MODE  = %.3f\n", control, ccName, norm);} break;   
-            case CC::FILTER_OBXA_BP_BLEND_2_POLE: {setFilterBPBlend2Pole(cc_to_obxa_bpblend_2pole(norm));JT_LOGF("[CC %u:%s] FILTER_OBXA_BP_BLEND_2_POLE  = %.3f\n", control, ccName, norm);} break;  
-            case CC::FILTER_OBXA_PUSH_2_POLE:  {setFilterPush2Pole(cc_to_obxa_push_2pole(norm) );JT_LOGF("[CC %u:%s] FILTER_OBXA_PUSH_2_POLE  = %.3f\n", control, ccName, norm);} break;      
-            case CC::FILTER_OBXA_RES_MOD_DEPTH:  {setFilterResonanceModDepth(norm);JT_LOGF("[CC %u:%s] FILTER_OBXA_RES_MOD_DEPTH  = %.3f\n", control, ccName, norm);} break;    
+            case CC::FILTER_OBXA_MULTIMODE:  {setFilterMultimode((value));  JT_LOGF("[CC %u:%s] FILTER_OBXA_MULTIMODE = %.3f\n", control, ccName, value);} break;      
+            case CC::FILTER_OBXA_TWO_POLE:    {setFilterTwoPole((value));JT_LOGF("[CC %u:%s] FILTER_OBXA_TWO_POLE  = %.3f\n", control, ccName, value);} break;         
+            case CC::FILTER_OBXA_XPANDER_4_POLE: {setFilterXpander4Pole((value));JT_LOGF("[CC %u:%s] FILTER_OBXA_XPANDER_4_POLE  = %.3f\n", control, ccName, value);} break;    
+            case CC::FILTER_OBXA_XPANDER_MODE:  {setFilterXpanderMode((value));JT_LOGF("[CC %u:%s] FILTER_OBXA_XPANDER_MODE  = %.3f\n", control, ccName, value);} break;   
+            case CC::FILTER_OBXA_BP_BLEND_2_POLE: {setFilterBPBlend2Pole((value));JT_LOGF("[CC %u:%s] FILTER_OBXA_BP_BLEND_2_POLE  = %.3f\n", control, ccName, value);} break;  
+            case CC::FILTER_OBXA_PUSH_2_POLE:  {setFilterPush2Pole((value) );JT_LOGF("[CC %u:%s] FILTER_OBXA_PUSH_2_POLE  = %.3f\n", control, ccName, value);} break;      
+            case CC::FILTER_OBXA_RES_MOD_DEPTH:  {setFilterResonanceModDepth(value);JT_LOGF("[CC %u:%s] FILTER_OBXA_RES_MOD_DEPTH  = %.3f\n", control, ccName, value);} break;    
 
         // ------------------- LFO1 -------------------
         case CC::LFO1_FREQ:        { float hz = JT4000Map::cc_to_lfo_hz(value); setLFO1Frequency(hz); JT_LOGF("[CC %u:%s] LFO1 Freq = %.4f Hz\n", control, ccName, hz); } break;
@@ -809,7 +780,7 @@ void SynthEngine::handleControlChange(byte /*channel*/, byte control, byte value
         } break;
 
         //AMP_MOD_FIXED_LEVEL
-        case CC::AMP_MOD_FIXED_LEVEL: { SetAmpModFixedLevel(norm); JT_LOGF("[CC %u:%s] Ring1 Mix = %.3f\n", control, ccName, norm); } break;
+        case CC::AMP_MOD_FIXED_LEVEL: { SetAmpModFixedLevel(norm); JT_LOGF("[CC %u:%s] Amp mod fixed level = %.3f\n", control, ccName, norm); } break;
 
         // ------------------- Fallback -------------------
         default:

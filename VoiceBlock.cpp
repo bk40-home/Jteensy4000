@@ -2,7 +2,8 @@
 //#include "usb_serial.h"
 #include "VoiceBlock.h"
 
-VoiceBlock::VoiceBlock() {
+VoiceBlock::VoiceBlock() : _osc1(true), _osc2(false)    // ← OSC1: supersaw enabled ← OSC2: supersaw disabled (saves CPU) 
+{
     _patchCables[0] = new AudioConnection(_osc1.output(), 0, _oscMixer, 0);
     _patchCables[1] = new AudioConnection(_osc2.output(), 0, _oscMixer, 1);
     _patchCables[2] = new AudioConnection(_osc1.output(), 0, _ring1, 0);
@@ -45,18 +46,13 @@ VoiceBlock::VoiceBlock() {
 void VoiceBlock::noteOn(float freq, float velocity) {
     
     Serial.printf("noteOn voice: freq %.1f velocity %.1f\n", freq, velocity);
+    _isActive = true;
     setAmplitude(_on);
     _osc1.noteOn(freq, velocity);
     _osc2.noteOn(freq, velocity);
     _subOsc.setFrequency(freq);
     _filterEnvelope.noteOn();
     _ampEnvelope.noteOn();
-    //_filter.setKeyTrackAmount(log2f(freq / 440.0f));
-    // Compute key tracking modulation.  deltaOct is the number of
-    // octaves above or below the reference (A4=440 Hz).  We normalise
-    // this by the filter’s octave-control setting, scale it by the
-    // user’s key‑tracking depth (0–1), and clamp to ±1.
-
     float deltaOct   = log2f(freq / 440.0f);
     float octaveCtrl = _filter.getOctaveControl();
     float norm       = (octaveCtrl > 0.0f) ? (deltaOct / octaveCtrl) : 0.0f;
@@ -71,6 +67,7 @@ void VoiceBlock::noteOn(float freq, float velocity) {
 }
 
 void VoiceBlock::noteOff() {
+    _isActive = false;
     _filterEnvelope.noteOff();
     _ampEnvelope.noteOff();
 }
@@ -279,8 +276,11 @@ void VoiceBlock::setOsc2FineTune(float cents) { _osc2.setFineTune(cents); }
 
 void VoiceBlock::update() {
 
-    _osc1.update();
-    _osc2.update();
+   // Only update oscillators for active voices
+    if (_isActive) {
+        _osc1.update();
+        _osc2.update();
+    }
 
 }
 

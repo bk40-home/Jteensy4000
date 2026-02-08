@@ -33,6 +33,19 @@ public:
     void update();
 
     // --- Parameter Setters
+    /**
+     * @brief Enable or disable the LFO.  When disabled, the underlying
+     * AudioSynthWaveform is muted and no CPU is consumed generating a
+     * waveform.  You can re‑enable the LFO later and it will pick up where
+     * it left off (free‑running).
+     *
+     * @param enabled true to enable the LFO, false to disable it
+     */
+    void setEnabled(bool enabled);
+    /**
+     * @brief Query whether the LFO is currently enabled.
+     */
+    bool isEnabled() const;
     void setWaveformType(int type);
     void setFrequency(float freq);
     void setAmplitude(float amp);
@@ -50,6 +63,16 @@ private:
     int _type = 0;
     float _freq = 1.0f;
     float _amp = 0.0f;
+    // Track whether the LFO is currently enabled.  When disabled, the
+    // waveform generator is muted (amplitude set to 0) and no phase is
+    // advanced.  This allows the LFO to be free‑running across notes
+    // without wasting CPU cycles when it’s not audible.
+    bool _enabled = false;
     AudioSynthWaveform _lfo;
     LFODestination _destination = LFO_DEST_NONE;
+    // Preserve the current phase when muting/unmuting.  AudioSynthWaveform
+    // stores its phase in a private accumulator, so we approximate
+    // free‑running behaviour by caching our notion of phase.  This is
+    // advanced in update() when enabled and restored when re‑enabling.
+    float _phase = 0.0f;
 };

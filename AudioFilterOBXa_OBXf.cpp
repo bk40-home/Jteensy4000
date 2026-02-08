@@ -13,8 +13,7 @@ static inline float obxa_tpt_process(float &state, float input, float g)
     return y;
 }
 
-inline static float tpt_process_scaled_cutoff(float &state, float input,
-                                              float cutoff_over_onepluscutoff)
+inline static float tpt_process_scaled_cutoff(float &state, float input, float cutoff_over_onepluscutoff)
 {
     double v = (input - state) * cutoff_over_onepluscutoff;
     double res = v + state;
@@ -82,6 +81,9 @@ struct AudioFilterOBXa::Core
         state.pole1 = state.pole2 = state.pole3 = state.pole4 = 0.f;
 
     }
+
+
+
 
     void setSampleRate(float sr)
     {
@@ -181,9 +183,9 @@ struct AudioFilterOBXa::Core
         state.pole1 = atanf(state.pole1 * state.resCorrection) * state.resCorrectionInv;
 
         float y1 = (float)res;
-        float y2 = tpt_process_scaled_cutoff(state.pole2, y1, lpc);
-        float y3 = tpt_process_scaled_cutoff(state.pole3, y2, lpc);
-        float y4 = tpt_process_scaled_cutoff(state.pole4, y3, lpc);
+        float y2 = obxa_tpt_process(state.pole2, y1, lpc);
+        float y3 = obxa_tpt_process(state.pole3, y2, lpc);
+        float y4 = obxa_tpt_process(state.pole4, y3, lpc);
 
         float out = 0.f;
 
@@ -337,15 +339,14 @@ void AudioFilterOBXa::setEnvValue(float env01)
 void AudioFilterOBXa::update(void)
 {
     audio_block_t *in0 = receiveReadOnly(0);
-    if (!in0) return;
-
     audio_block_t *in1 = receiveReadOnly(1); // cutoff mod bus
     audio_block_t *in2 = receiveReadOnly(2); // resonance mod bus
 
     audio_block_t *out = allocate();
     if (!out)
     {
-        release(in0);
+        // Release any inputs we received
+        if (in0) release(in0);
         if (in1) release(in1);
         if (in2) release(in2);
         return;
@@ -361,12 +362,12 @@ void AudioFilterOBXa::update(void)
 
     for (int i = 0; i < AUDIO_BLOCK_SAMPLES; ++i)
     {
-        float x = (float)in0->data[i] * (1.0f / 32768.0f);
+        // *** KEY CHANGE: Use 0.0f if no input, allowing self-oscillation ***
+        float x = in0 ? ((float)in0->data[i] * (1.0f / 32768.0f)) : 0.0f;
 
         // Audio-rate mods
         float cutMod = in1 ? ((float)in1->data[i] * (1.0f / 32768.0f)) : 0.0f;  // -1..+1
         float resMod = in2 ? ((float)in2->data[i] * (1.0f / 32768.0f)) : 0.0f;  // -1..+1
-
 
         // Convert cutoff mods to a multiplier in octaves:
         float modOct = (cutMod * _cutoffModOct) + (_envValue * _envModOct);
@@ -413,7 +414,10 @@ void AudioFilterOBXa::update(void)
             _core->reset();
             _cooldownBlocks = 2; // mute 2 blocks after reset
             y = 0.0f;
-
+#if OBXA_DEBUG
+            // allow a new fault to be captured after recovery
+            _faultLatched = false;
+#endif
         }
 #endif
 
@@ -426,7 +430,7 @@ void AudioFilterOBXa::update(void)
     transmit(out);
 
     release(out);
-    release(in0);
+    if (in0) release(in0);
     if (in1) release(in1);
     if (in2) release(in2);
 }

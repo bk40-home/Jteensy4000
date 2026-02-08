@@ -3,13 +3,28 @@
 
 // --- Lifecycle
 LFOBlock::LFOBlock() {
+    // Initialise the waveform generator but leave it muted.  By default the
+    // LFO is disabled until a destination and amplitude are set.  This
+    // prevents unnecessary CPU usage when no modulation is required.
     _lfo.begin(_type);
-    _lfo.amplitude(_amp);
+    _lfo.amplitude(0.0f);
     _lfo.frequency(5);
     _lfo.pulseWidth(0.5);
+    _enabled = false;
 }
 
 void LFOBlock::update() {    
+    // Keep the LFO free‑running only when enabled.  If disabled, we
+    // simply leave the internal oscillator muted.  We intentionally do
+    // not stop the phase accumulator so that re‑enabling later will
+    // pick up where it left off, preserving free‑running behaviour.
+    if (!_enabled) {
+        // Ensure the amplitude stays at zero while disabled
+        _lfo.amplitude(0.0f);
+        return;
+    }
+    // When enabled, ensure the amplitude reflects the user’s setting
+    _lfo.amplitude(_amp);
 }
 
 void LFOBlock::setWaveformType(int type) {
@@ -30,13 +45,36 @@ void LFOBlock::setFrequency(float hz) {
 
 void LFOBlock::setDestination(LFODestination destination) {
     _destination = destination;
-
+    // Automatically enable or disable based on destination.  If no
+    // destination is selected, there’s no need to run the LFO.
+    if (_destination == LFO_DEST_NONE) {
+        setEnabled(false);
+    } else {
+        // Only enable if the amplitude is non‑zero
+        setEnabled(_amp > 0.0f);
+    }
 }
 
 void LFOBlock::setAmplitude(float amp) {
     _amp = amp;
-    _lfo.amplitude(_amp);
+    // If enabled, apply the new amplitude.  Otherwise, keep the
+    // underlying oscillator muted.  We still store the requested
+    // amplitude for later.
+    if (_enabled) {
+        _lfo.amplitude(_amp);
+    } else {
+        _lfo.amplitude(0.0f);
+    }
     Serial.printf("setAmplitude %.3f\n",  _amp);
+    // If the amplitude becomes zero, disable the LFO to save CPU
+    if (_amp <= 0.0f) {
+        setEnabled(false);
+    } else {
+        // If a valid destination is set, re‑enable the LFO
+        if (_destination != LFO_DEST_NONE) {
+            setEnabled(true);
+        }
+    }
 }
 
 // --- Parameter Getters
@@ -57,6 +95,22 @@ float LFOBlock::getAmplitude() const {
 
 AudioStream& LFOBlock::output(){ 
     return _lfo;
+}
+
+// === Enabled State ===
+void LFOBlock::setEnabled(bool enabled) {
+    _enabled = enabled;
+    if (_enabled) {
+        // Restore the user’s amplitude when enabling
+        _lfo.amplitude(_amp);
+    } else {
+        // Mute the waveform when disabled
+        _lfo.amplitude(0.0f);
+    }
+}
+
+bool LFOBlock::isEnabled() const {
+    return _enabled;
 }
 
 

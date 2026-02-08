@@ -2,19 +2,10 @@
  * CCDefs.h
  *
  * Centralised definitions for all MIDI Control Change (CC) numbers used
- * throughout the JT‑4000 project.  Historically the project relied on raw
- * integer literals (e.g. 21, 23, 41) sprinkled through the engine, UI and
- * patch code.  This header gives each CC a meaningful name and gathers
- * them in one place.  By using these symbols instead of magic numbers
- * the intent of each mapping becomes clear, and you only need to update
- * a single definition if a CC assignment changes.
+ * throughout the JT-4000 project. Updated to include JPFX effect parameters.
  *
- * The values here reflect the current JT‑4000 CC assignments as found
- * across CCMap.h, SynthEngine::handleControlChange, Patch.cpp and
- * UIManager.cpp.  Where multiple CCs control a similar parameter
- * (e.g. there are two controls for oscillator mix: 47 and 60) separate
- * constants are provided.  Unused or reserved CC numbers are not
- * enumerated.
+ * Performance note: CC dispatch uses a table-driven approach for fast lookup
+ * and minimal branching. See SynthEngine::handleControlChange for implementation.
  */
 
 #pragma once
@@ -26,22 +17,22 @@ namespace CC {
     // -------------------------------------------------------------------------
     // Oscillator waveforms
     // -------------------------------------------------------------------------
-    static constexpr uint8_t OSC1_WAVE        = 21;  // OSC1 waveform selector
-    static constexpr uint8_t OSC2_WAVE        = 22;  // OSC2 waveform selector
+    static constexpr uint8_t OSC1_WAVE        = 21;
+    static constexpr uint8_t OSC2_WAVE        = 22;
 
     // -------------------------------------------------------------------------
     // Filter main controls
     // -------------------------------------------------------------------------
-    static constexpr uint8_t FILTER_CUTOFF    = 23;  // Filter cutoff frequency (log/tapered)
-    static constexpr uint8_t FILTER_RESONANCE = 24;  // Filter resonance
+    static constexpr uint8_t FILTER_CUTOFF    = 23;
+    static constexpr uint8_t FILTER_RESONANCE = 24;
 
     // -------------------------------------------------------------------------
     // Amplifier envelope (VCA)
     // -------------------------------------------------------------------------
-    static constexpr uint8_t AMP_ATTACK  = 25;  // Attack time (ms)
-    static constexpr uint8_t AMP_DECAY   = 26;  // Decay time (ms)
-    static constexpr uint8_t AMP_SUSTAIN = 27;  // Sustain level (0–1)
-    static constexpr uint8_t AMP_RELEASE = 28;  // Release time (ms)
+    static constexpr uint8_t AMP_ATTACK  = 25;
+    static constexpr uint8_t AMP_DECAY   = 26;
+    static constexpr uint8_t AMP_SUSTAIN = 27;
+    static constexpr uint8_t AMP_RELEASE = 28;
 
     // -------------------------------------------------------------------------
     // Filter envelope (VCF)
@@ -54,122 +45,77 @@ namespace CC {
     // -------------------------------------------------------------------------
     // Oscillator pitch/coarse/fine/detune
     // -------------------------------------------------------------------------
-    static constexpr uint8_t OSC1_PITCH_OFFSET = 41; // Coarse pitch (offset in semitones)
+    static constexpr uint8_t OSC1_PITCH_OFFSET = 41;
     static constexpr uint8_t OSC2_PITCH_OFFSET = 42;
-    static constexpr uint8_t OSC1_DETUNE       = 43; // Detune amount (–1..1)
+    static constexpr uint8_t OSC1_DETUNE       = 43;
     static constexpr uint8_t OSC2_DETUNE       = 44;
-    static constexpr uint8_t OSC1_FINE_TUNE    = 45; // Fine tune (–100..+100 cents)
+    static constexpr uint8_t OSC1_FINE_TUNE    = 45;
     static constexpr uint8_t OSC2_FINE_TUNE    = 46;
 
-    // --- Arbitrary waveform table selection (per oscillator) ---
-    // When the oscillator waveform is ARBITRARY, these CCs select which
-    // AKWF piano table to load.  Values map evenly across the available
-    // tables via arbIndexFromCC().
+    // Arbitrary waveform table selection (per oscillator)
     static constexpr uint8_t OSC1_ARB_INDEX   = 83;
     static constexpr uint8_t OSC2_ARB_INDEX   = 85;
 
     // -------------------------------------------------------------------------
     // Oscillator mix/balance and supersaw parameters
     // -------------------------------------------------------------------------
-    static constexpr uint8_t OSC_MIX_BALANCE   = 47; // Cross‑fader between OSC1/OSC2
-    static constexpr uint8_t OSC1_MIX          = 60; // Dedicated OSC1 mixer tap
-    static constexpr uint8_t OSC2_MIX          = 61; // Dedicated OSC2 mixer tap
-    static constexpr uint8_t SUPERSAW1_DETUNE  = 77; // Osc1 supersaw detune amount
-    static constexpr uint8_t SUPERSAW1_MIX     = 78; // Osc1 supersaw mix amount
-    static constexpr uint8_t SUPERSAW2_DETUNE  = 79; // Osc2 supersaw detune amount
-    static constexpr uint8_t SUPERSAW2_MIX     = 80; // Osc2 supersaw mix amount
-    static constexpr uint8_t SUB_MIX           = 58; // Sub oscillator level
-    static constexpr uint8_t NOISE_MIX         = 59; // Noise mix level
+    static constexpr uint8_t OSC_MIX_BALANCE   = 47;
+    static constexpr uint8_t OSC1_MIX          = 60;
+    static constexpr uint8_t OSC2_MIX          = 61;
+    static constexpr uint8_t SUPERSAW1_DETUNE  = 77;
+    static constexpr uint8_t SUPERSAW1_MIX     = 78;
+    static constexpr uint8_t SUPERSAW2_DETUNE  = 79;
+    static constexpr uint8_t SUPERSAW2_MIX     = 80;
+    static constexpr uint8_t SUB_MIX           = 58;
+    static constexpr uint8_t NOISE_MIX         = 59;
 
     // -------------------------------------------------------------------------
     // Filter modulation and key tracking
     // -------------------------------------------------------------------------
-    static constexpr uint8_t FILTER_ENV_AMOUNT  = 48; // Envelope amount (–1..1)
-    static constexpr uint8_t FILTER_KEY_TRACK   = 50; // Key tracking amount (–1..1)
-    static constexpr uint8_t FILTER_OCTAVE_CONTROL = 84; // Filter octave control (0..10)
-    static constexpr uint8_t FILTER_OBXA_MULTIMODE = 103; 
-    static constexpr uint8_t FILTER_OBXA_TWO_POLE = 104; 
-    static constexpr uint8_t FILTER_OBXA_XPANDER_4_POLE = 105; 
-    static constexpr uint8_t FILTER_OBXA_XPANDER_MODE = 106; 
-    static constexpr uint8_t FILTER_OBXA_BP_BLEND_2_POLE = 107; 
-    static constexpr uint8_t FILTER_OBXA_PUSH_2_POLE = 108; 
-    static constexpr uint8_t FILTER_OBXA_RES_MOD_DEPTH = 109; 
+    static constexpr uint8_t FILTER_ENV_AMOUNT  = 48;
+    static constexpr uint8_t FILTER_KEY_TRACK   = 50;
+    static constexpr uint8_t FILTER_OCTAVE_CONTROL = 84;
 
     // -------------------------------------------------------------------------
     // Low frequency oscillators (LFO)
     // -------------------------------------------------------------------------
-    // LFO2 (Page 12)
     static constexpr uint8_t LFO2_FREQ        = 51;
     static constexpr uint8_t LFO2_DEPTH       = 52;
     static constexpr uint8_t LFO2_DESTINATION = 53;
-
-    // LFO1 (Page 11)
     static constexpr uint8_t LFO1_FREQ        = 54;
     static constexpr uint8_t LFO1_DEPTH       = 55;
     static constexpr uint8_t LFO1_DESTINATION = 56;
-
-    // LFO waveforms
     static constexpr uint8_t LFO1_WAVEFORM    = 62;
     static constexpr uint8_t LFO2_WAVEFORM    = 63;
 
     // -------------------------------------------------------------------------
-    // Effects
+    // JPFX Effects (Roland JP-8000 style)
     // -------------------------------------------------------------------------
-    static constexpr uint8_t FX_REVERB_SIZE     = 70;
-    static constexpr uint8_t FX_REVERB_DAMP     = 71;
-    static constexpr uint8_t FX_DELAY_TIME      = 72; // Base delay time (ms)
-    static constexpr uint8_t FX_DELAY_FEEDBACK  = 73;
-    static constexpr uint8_t FX_DRY_MIX         = 74;
-    static constexpr uint8_t FX_REVERB_MIX      = 75;
-    static constexpr uint8_t FX_DELAY_MIX       = 76;
-
-    // -------------------------------------------------------------------------
-    // Additional effect parameters for the new stereo ping‑pong delay and plate
-    // reverb from hexefx_audiolib_i16.  These CCs are assigned starting at
-    // 93 to avoid clashing with existing mappings.  See FXChainBlock for
-    // implementation details.  When a mix parameter is zero the corresponding
-    // effect will be bypassed to save CPU cycles.
-    // -------------------------------------------------------------------------
-
-    // Plate reverb damping is now split into separate high‑ and low‑frequency
-    // damping controls.  FX_REVERB_DAMP controls the high band (0..1).  The
-    // low band uses this new CC.  A value of 0.0 yields no damping, 1.0
-    // shortens the low frequency decay substantially.
-    static constexpr uint8_t FX_REVERB_LODAMP    = 93;
-
-    // Stereo ping‑pong delay modulation rate (0..1).  Higher values increase
-    // the speed of the internal LFO that modulates the delay time, producing
-    // chorusing and flanging effects.  Use in conjunction with mod depth.
-    static constexpr uint8_t FX_DELAY_MOD_RATE   = 94;
-
-    // Stereo ping‑pong delay modulation depth (0..1).  Controls the amount
-    // of delay time modulation.  A value of 0 disables modulation; 1.0
-    // produces strong pitch‑bending effects.
-    static constexpr uint8_t FX_DELAY_MOD_DEPTH  = 95;
-
-    // Stereo ping‑pong delay inertia (0..1).  This controls the inertia of
-    // the internal diffusion network; higher values smooth transitions and
-    // smear echoes.  Lower values produce crisp repeats.
-    static constexpr uint8_t FX_DELAY_INERTIA    = 96;
-
-    // High‑frequency tone control for the ping‑pong delay (0..1).  Lower
-    // values darken the repeats by rolling off treble; higher values keep
-    // more high end.  Internally this maps to the treble parameter of
-    // AudioEffectDelayStereo_i16.
-    static constexpr uint8_t FX_DELAY_TREBLE     = 97;
-
-    // Low‑frequency tone control for the ping‑pong delay (0..1).  Lower
-    // values reduce bass in the repeats; higher values preserve or boost
-    // low frequencies.  Internally this maps to the bass parameter of
-    // AudioEffectDelayStereo_i16.
-    static constexpr uint8_t FX_DELAY_BASS       = 98;
+    // Tone control (±12dB)
+    static constexpr uint8_t FX_BASS_GAIN   = 70;  // Bass shelf filter
+    static constexpr uint8_t FX_TREBLE_GAIN = 71;  // Treble shelf filter
+    
+    // Modulation effects (11 variations: chorus, flanger, phaser)
+    static constexpr uint8_t FX_MOD_EFFECT   = 72;  // Variation selector (0..10)
+    static constexpr uint8_t FX_MOD_MIX      = 73;  // Wet/dry mix (0..1)
+    static constexpr uint8_t FX_MOD_RATE     = 74;  // LFO rate override (Hz)
+    static constexpr uint8_t FX_MOD_FEEDBACK = 75;  // Feedback override (0..0.99)
+    
+    // Delay effects (5 variations: short, long, pingpong 1-3)
+    static constexpr uint8_t FX_DELAY_EFFECT   = 76;  // Variation selector (0..4)
+    static constexpr uint8_t FX_DELAY_MIX      = 77;  // Wet/dry mix (0..1)
+    static constexpr uint8_t FX_DELAY_FEEDBACK = 78;  // Feedback override (0..0.99)
+    static constexpr uint8_t FX_DELAY_TIME     = 79;  // Time override (ms)
+    
+    // Global FX mix (preserves dry signal path)
+    static constexpr uint8_t FX_DRY_MIX = 80;  // Dry signal level (0..1)
 
     // -------------------------------------------------------------------------
     // Glide and global modulation
     // -------------------------------------------------------------------------
     static constexpr uint8_t GLIDE_ENABLE      = 81;
-    static constexpr uint8_t GLIDE_TIME        = 82; // Glide time (ms)
-    static constexpr uint8_t AMP_MOD_FIXED_LEVEL = 90; // Amp modulator DC level
+    static constexpr uint8_t GLIDE_TIME        = 82;
+    static constexpr uint8_t AMP_MOD_FIXED_LEVEL = 90;
 
     // -------------------------------------------------------------------------
     // Miscellaneous synth controls
@@ -181,22 +127,25 @@ namespace CC {
     static constexpr uint8_t RING1_MIX         = 91;
     static constexpr uint8_t RING2_MIX         = 92;
 
-
     // -------------------------------------------------------------------------
     // Arbitrary waveform bank selection
     // -------------------------------------------------------------------------
-    // These CCs select which AKWF bank to use for arbitrary waveforms on each
-    // oscillator.  Values are evenly binned across the number of banks defined
-    // in AKWF_All.h.  See SynthEngine::handleControlChange for mapping logic.
     static constexpr uint8_t OSC1_ARB_BANK = 101;
     static constexpr uint8_t OSC2_ARB_BANK = 102;
 
-
+    // -------------------------------------------------------------------------
+    // OBXa filter extended controls (kept for compatibility)
+    // -------------------------------------------------------------------------
+    static constexpr uint8_t FILTER_OBXA_MULTIMODE = 103;
+    static constexpr uint8_t FILTER_OBXA_TWO_POLE = 104;
+    static constexpr uint8_t FILTER_OBXA_XPANDER_4_POLE = 105;
+    static constexpr uint8_t FILTER_OBXA_XPANDER_MODE = 106;
+    static constexpr uint8_t FILTER_OBXA_BP_BLEND_2_POLE = 107;
+    static constexpr uint8_t FILTER_OBXA_PUSH_2_POLE = 108;
+    static constexpr uint8_t FILTER_OBXA_RES_MOD_DEPTH = 109;
 
     // -------------------------------------------------------------------------
-    // Utility: return a human‑readable name for a CC.  If a CC is not
-    // enumerated above, nullptr is returned.  You can use this for display
-    // purposes or debugging.
+    // Utility: return human-readable name for a CC
     // -------------------------------------------------------------------------
     inline const char* name(uint8_t cc) {
         switch (cc) {
@@ -238,20 +187,20 @@ namespace CC {
             case LFO1_DESTINATION:    return "LFO1 Dest";
             case LFO1_WAVEFORM:       return "LFO1 Wave";
             case LFO2_WAVEFORM:       return "LFO2 Wave";
-            case FX_REVERB_SIZE:      return "Rev Size";
-            case FX_REVERB_DAMP:      return "Rev Damp";
-            case FX_DELAY_TIME:       return "Delay Time";
-            case FX_DELAY_FEEDBACK:   return "Delay FB";
-            case FX_DRY_MIX:          return "Dry Mix";
-            case FX_REVERB_MIX:       return "Rev Mix";
+            
+            // JPFX effects
+            case FX_BASS_GAIN:        return "Bass";
+            case FX_TREBLE_GAIN:      return "Treble";
+            case FX_MOD_EFFECT:       return "Mod Effect";
+            case FX_MOD_MIX:          return "Mod Mix";
+            case FX_MOD_RATE:         return "Mod Rate";
+            case FX_MOD_FEEDBACK:     return "Mod FB";
+            case FX_DELAY_EFFECT:     return "Delay Effect";
             case FX_DELAY_MIX:        return "Delay Mix";
-            // New effect parameters
-            case FX_REVERB_LODAMP:    return "Rev LoDamp";
-            case FX_DELAY_MOD_RATE:   return "Dly ModRate";
-            case FX_DELAY_MOD_DEPTH:  return "Dly ModDepth";
-            case FX_DELAY_INERTIA:    return "Dly Inertia";
-            case FX_DELAY_TREBLE:     return "Dly Treble";
-            case FX_DELAY_BASS:       return "Dly Bass";
+            case FX_DELAY_FEEDBACK:   return "Delay FB";
+            case FX_DELAY_TIME:       return "Delay Time";
+            case FX_DRY_MIX:          return "Dry Mix";
+            
             case GLIDE_ENABLE:        return "Glide En";
             case GLIDE_TIME:          return "Glide Time";
             case AMP_MOD_FIXED_LEVEL: return "Amp Mod DC";
@@ -265,16 +214,6 @@ namespace CC {
             case OSC2_ARB_BANK:       return "Osc2 Bank";
             case OSC1_ARB_INDEX:      return "Osc1 Table";
             case OSC2_ARB_INDEX:      return "Osc2 Table";
-
-
-            case FILTER_OBXA_MULTIMODE:         return "Multimode";
-            case FILTER_OBXA_TWO_POLE:          return "2 Pole"; 
-            case FILTER_OBXA_XPANDER_4_POLE:    return "Xpander";
-            case FILTER_OBXA_XPANDER_MODE:      return "XpMode";
-            case FILTER_OBXA_BP_BLEND_2_POLE:   return "Blend 2p";
-            case FILTER_OBXA_PUSH_2_POLE:       return "Push 2p";
-            case FILTER_OBXA_RES_MOD_DEPTH:      return "Q Depth";
-
 
             default:                  return nullptr;
         }

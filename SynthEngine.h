@@ -23,6 +23,7 @@ public:
     void noteOn(byte note, float velocity);
     void noteOff(byte note);
     void update();
+    static constexpr uint8_t VOICE_NONE = 255;  
 
     // --- Oscillator
     void setOscWaveforms(int wave1, int wave2);
@@ -131,38 +132,38 @@ public:
     float getFilterEnvSustain() const;
     float getFilterEnvRelease() const;
 
-    // FX
-    void setFXReverbRoomSize(float size);
-    // Split reverb damping into separate high and low bands
-    void setFXReverbHiDamping(float damp);
-    void setFXReverbLoDamping(float damp);
-    void setFXDelayTimeMs(float ms);
-    void setFXDelayModRate(float rate);
-    void setFXDelayModDepth(float depth);
-    void setFXDelayInertia(float inertia);
-    void setFXDelayTreble(float treble);
-    void setFXDelayBass(float bass);
-    void setFXDryMix(float level);
-    void setFXReverbMix(float level);
-    void setFXDelayMix(float level);
-    void setFXDelayFeedback(float feedback);
+    // --- JPFX Effects ---
+ * // Tone control
+   void setFXBassGain(float dB);      // -12..+12 dB
+   void setFXTrebleGain(float dB);    // -12..+12 dB
+   float getFXBassGain() const;
+   float getFXTrebleGain() const;
+ *
+ * // Modulation effects
+   void setFXModEffect(int8_t variation);  // -1=off, 0..10=preset
+   void setFXModMix(float mix);            // 0..1
+   void setFXModRate(float hz);            // 0..20 Hz (0=use preset)
+   void setFXModFeedback(float fb);        // -1=preset, 0..0.99=override
+   int8_t getFXModEffect() const;
+   float getFXModMix() const;
+   float getFXModRate() const;
+   float getFXModFeedback() const;
+   const char* getFXModEffectName() const;
 
-    // New FX getters for UI/preset readback
-    float getFXDelayTimeMs() const;
-    float getFXReverbHiDamping() const;
-    float getFXReverbLoDamping() const;
-    float getFXDelayModRate() const;
-    float getFXDelayModDepth() const;
-    float getFXDelayInertia() const;
-    float getFXDelayTreble() const;
-    float getFXDelayBass() const;
-    float getFXDryMix() const;
-    float getFXDelayMix() const;
-    float getFXReverbMix() const;
-    float getFXReverbRoomSize() const;
-    float getFXDelayFeedback()  const;
-
-
+   // Delay effects
+   void setFXDelayEffect(int8_t variation); // -1=off, 0..4=preset
+   void setFXDelayMix(float mix);           // 0..1
+   void setFXDelayFeedback(float fb);       // -1=preset, 0..0.99=override
+   void setFXDelayTime(float ms);           // 0=preset, 5..1500ms=override
+   int8_t getFXDelayEffect() const;
+   float getFXDelayMix() const;
+   float getFXDelayFeedback() const;
+   float getFXDelayTime() const;
+   const char* getFXDelayEffectName() const;
+ 
+   // Global mix
+   void setFXDryMix(float level);  // 0..1
+   float getFXDryMix() const;
 
     // --- UI helpers
     int getOsc1Waveform() const;
@@ -300,20 +301,18 @@ private:
     uint16_t _osc1ArbIndex = 0;
     uint16_t _osc2ArbIndex = 0;
 
-    // --- Cached FX parameters for UI/preset readback ---
-    float _fxDelayTimeMs = 400.0f;
-    float _fxDelayFeedback = 0.5f;
-    float _fxDelayModRate = 0.0f;
-    float _fxDelayModDepth = 0.0f;
-    float _fxDelayInertia = 0.0f;
-    float _fxDelayTreble = 0.5f;
-    float _fxDelayBass = 0.5f;
-    float _fxReverbRoomSize = 0.5f;
-    float _fxReverbHiDamping = 0.5f;
-    float _fxReverbLoDamping = 0.5f;
-    float _fxReverbMix = 0.0f;
-    float _fxDelayMix = 0.0f;
-    float _fxDryMix = 1.0f;
+   // Cached JPFX state for UI/preset readback
+   float _fxBassGain = 0.0f;
+   float _fxTrebleGain = 0.0f;
+   int8_t _fxModEffect = -1;
+   float _fxModMix = 0.5f;
+   float _fxModRate = 0.0f;
+   float _fxModFeedback = -1.0f;
+   int8_t _fxDelayEffect = -1;
+   float _fxDelayMix = 0.5f;
+   float _fxDelayFeedback = -1.0f;
+   float _fxDelayTime = 0.0f;
+   float _fxDryMix = 1.0f;
 
     NotifyFn _notify = nullptr;
 };
