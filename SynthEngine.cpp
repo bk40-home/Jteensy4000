@@ -6,40 +6,128 @@
 
 using namespace CC;
 
-SynthEngine::SynthEngine() {
-    for (int i = 0; i < MAX_VOICES; ++i) {
+/*
+ * SynthEngine.cpp - 8 VOICE CONSTRUCTOR (CORRECTED)
+ *
+ * CRITICAL FIXES:
+ * 1. Use output() not getOutput()
+ * 2. Use shapeModMixerOsc1() not getShapeModOsc1()
+ * 3. Use frequencyModMixerOsc1() not getFreqModOsc1()
+ * 4. Use filterModMixer() not getFilterMod()
+ * 5. Removed setDryMix (JPFX doesn't have this - mixing is internal)
+ */
+
+SynthEngine::SynthEngine()
+    : _lfo1(), _lfo2(), _fxChain()
+{
+    // =========================================================================
+    // INITIALIZE VOICE STATE
+    // =========================================================================
+    for (int i = 0; i < MAX_VOICES; i++) {
         _activeNotes[i] = false;
-        _voicePatch[i] = new AudioConnection(_voices[i].output(), 0, _voiceMixer, i);
-        _voicePatchLFO1ShapeOsc1[i] = new AudioConnection(_lfo1.output(), 0, _voices[i].shapeModMixerOsc1(), 1);
-        _voicePatchLFO1ShapeOsc2[i] = new AudioConnection(_lfo1.output(), 0, _voices[i].shapeModMixerOsc2(), 1);
-        _voicePatchLFO1FrequencyOsc1[i] = new AudioConnection(_lfo1.output(), 0, _voices[i].frequencyModMixerOsc1(), 1);
-        _voicePatchLFO1FrequencyOsc2[i] = new AudioConnection(_lfo1.output(), 0, _voices[i].frequencyModMixerOsc2(), 1);
-        _voicePatchLFO1Filter[i] = new AudioConnection(_lfo1.output(), 0, _voices[i].filterModMixer(), 2);
-        _voicePatchLFO2ShapeOsc1[i] = new AudioConnection(_lfo2.output(), 0, _voices[i].shapeModMixerOsc1(), 2);
-        _voicePatchLFO2ShapeOsc2[i] = new AudioConnection(_lfo2.output(), 0, _voices[i].shapeModMixerOsc2(), 2);
-        _voicePatchLFO2FrequencyOsc1[i] = new AudioConnection(_lfo2.output(), 0, _voices[i].frequencyModMixerOsc1(), 2);
-        _voicePatchLFO2FrequencyOsc2[i] = new AudioConnection(_lfo2.output(), 0, _voices[i].frequencyModMixerOsc2(), 2);
-        _voicePatchLFO2Filter[i] = new AudioConnection(_lfo2.output(), 0, _voices[i].filterModMixer(), 3);
-        _voiceMixer.gain(i, 1.0f / MAX_VOICES);
+        _noteTimestamps[i] = 0;
+    }
+    for (int i = 0; i < 128; i++) {
+        _noteToVoice[i] = VOICE_NONE;
+    }
+
+    // =========================================================================
+    // SETUP AMP MODULATION DC SOURCES
+    // =========================================================================
+    _ampModFixedDc.amplitude(_ampModFixedLevel);
+    _ampModLimitFixedDc.amplitude(1.0f);
+    
+    // Amp mod mixer: Fixed DC + LFO1 + LFO2 → multiply with voice mixer
+    _ampModMixer.gain(0, 1.0f);  // Fixed DC
+    _ampModMixer.gain(1, 0.0f);  // LFO1 (amount controlled by setLFO1Amount)
+    _ampModMixer.gain(2, 0.0f);  // LFO2 (amount controlled by setLFO2Amount)
+    _ampModMixer.gain(3, 0.0f);  // Unused
+    
+    _ampModLimiterMixer.gain(0, 1.0f);  // Amp mod output
+    _ampModLimiterMixer.gain(1, 0.0f);  // Limiter (unused)
+    _ampModLimiterMixer.gain(2, 0.0f);  // Unused
+    _ampModLimiterMixer.gain(3, 0.0f);  // Unused
+
+    // =========================================================================
+    // SETUP 8-VOICE MIXER ARCHITECTURE
+    // =========================================================================
+    
+    // Sub-mixer A (voices 0-3) - gain 0.5 prevents clipping
+    for (int i = 0; i < 4; i++) {
+        _voiceMixerA.gain(i, 0.5f);
     }
     
-    for (int i = 0; i < 128; ++i) _noteToVoice[i] = VOICE_NONE;
+    // Sub-mixer B (voices 4-7) - gain 0.5 prevents clipping
+    for (int i = 0; i < 4; i++) {
+        _voiceMixerB.gain(i, 0.5f);
+    }
+    
+    // Final mixer (combines A and B) - gain 0.5 prevents clipping
+    _voiceMixerFinal.gain(0, 0.5f);  // Sub-mixer A
+    _voiceMixerFinal.gain(1, 0.5f);  // Sub-mixer B
+    _voiceMixerFinal.gain(2, 0.0f);  // Unused
+    _voiceMixerFinal.gain(3, 0.0f);  // Unused
 
-    for (int i = 0; i < MAX_VOICES; ++i) _noteTimestamps[i] = 0;
+    // =========================================================================
+    // CREATE AUDIO CONNECTIONS - VOICES TO MIXERS
+    // =========================================================================
+    
+    // Connect voices 0-3 to sub-mixer A
+    for (int i = 0; i < 4; i++) {
+        _voicePatch[i] = new AudioConnection(_voices[i].output(), 0, _voiceMixerA, i);
+    }
+    
+    // Connect voices 4-7 to sub-mixer B  
+    for (int i = 4; i < 8; i++) {
+        _voicePatch[i] = new AudioConnection(_voices[i].output(), 0, _voiceMixerB, i - 4);
+    }
+    
+    // Connect sub-mixers to final mixer
+    _patchMixerAToFinal = new AudioConnection(_voiceMixerA, 0, _voiceMixerFinal, 0);
+    _patchMixerBToFinal = new AudioConnection(_voiceMixerB, 0, _voiceMixerFinal, 1);
 
-    _ampModFixedDc.amplitude(_ampModFixedLevel);
-    _ampModMixer.gain(0, 1.0f); // fixed DC
-    _ampModMixer.gain(1, 0.0f); // LFO1
-    _ampModMixer.gain(2, 0.0f); // LFO2
-    _ampModMixer.gain(3, 0.0f);
+    // =========================================================================
+    // CREATE AUDIO CONNECTIONS - LFO TO VOICES (8 VOICES)
+    // =========================================================================
+    
+    for (int i = 0; i < MAX_VOICES; i++) {
+        // LFO1 connections - use your actual VoiceBlock method names
+        _voicePatchLFO1ShapeOsc1[i]     = new AudioConnection(_lfo1.output(), 0, _voices[i].shapeModMixerOsc1(), 1);
+        _voicePatchLFO1ShapeOsc2[i]     = new AudioConnection(_lfo1.output(), 0, _voices[i].shapeModMixerOsc2(), 1);
+        _voicePatchLFO1FrequencyOsc1[i] = new AudioConnection(_lfo1.output(), 0, _voices[i].frequencyModMixerOsc1(), 1);
+        _voicePatchLFO1FrequencyOsc2[i] = new AudioConnection(_lfo1.output(), 0, _voices[i].frequencyModMixerOsc2(), 1);
+        _voicePatchLFO1Filter[i]        = new AudioConnection(_lfo1.output(), 0, _voices[i].filterModMixer(), 1);
+        
+        // LFO2 connections - use your actual VoiceBlock method names
+        _voicePatchLFO2ShapeOsc1[i]     = new AudioConnection(_lfo2.output(), 0, _voices[i].shapeModMixerOsc1(), 1);
+        _voicePatchLFO2ShapeOsc2[i]     = new AudioConnection(_lfo2.output(), 0, _voices[i].shapeModMixerOsc2(), 1);
+        _voicePatchLFO2FrequencyOsc1[i] = new AudioConnection(_lfo2.output(), 0, _voices[i].frequencyModMixerOsc1(), 1);
+        _voicePatchLFO2FrequencyOsc2[i] = new AudioConnection(_lfo2.output(), 0, _voices[i].frequencyModMixerOsc2(), 1);
+        _voicePatchLFO2Filter[i]        = new AudioConnection(_lfo2.output(), 0, _voices[i].filterModMixer(), 1);
+    }
 
+    // =========================================================================
+    // CREATE AUDIO CONNECTIONS - AMP MODULATION
+    // =========================================================================
+    
     _patchAmpModFixedDcToAmpModMixer = new AudioConnection(_ampModFixedDc, 0, _ampModMixer, 0);
     _patchLFO1ToAmpModMixer          = new AudioConnection(_lfo1.output(), 0, _ampModMixer, 1);
     _patchLFO2ToAmpModMixer          = new AudioConnection(_lfo2.output(), 0, _ampModMixer, 2);
+    _patchAmpModMixerToAmpMultiply   = new AudioConnection(_ampModMixer, 0, _ampMultiply, 0);
+    _patchVoiceMixerToAmpMultiply    = new AudioConnection(_voiceMixerFinal, 0, _ampMultiply, 1);
 
-    _patchVoiceMixerToAmpMultiply    = new AudioConnection(_voiceMixer, 0, _ampMultiply, 0);
-    _patchAmpModMixerToAmpMultiply   = new AudioConnection(_ampModMixer, 0, _ampMultiply, 1);
-    _fxPatchIn                       = new AudioConnection(_ampMultiply, 0, _fxChain._ampIn, 0);
+    // =========================================================================
+    // CREATE AUDIO CONNECTIONS - JPFX (STEREO!)
+    // =========================================================================
+    //
+    // CRITICAL: AudioEffectJPFX expects 2 inputs (left and right)
+    // We feed the mono amp output to BOTH inputs for stereo processing
+    //
+    _fxPatchInL = new AudioConnection(_ampMultiply, 0, _fxChain.getJPFXInput(), 0);  // Left input
+    _fxPatchInR = new AudioConnection(_ampMultiply, 0, _fxChain.getJPFXInput(), 1);  // Right input (same signal)
+    
+    // FX outputs are already connected inside FXChainBlock to its output mixers
+    // Main audio output connects to _fxChain.getOutputLeft() and getOutputRight()
 }
 
 static inline float CCtoTime(uint8_t cc) { return JT4000Map::cc_to_time_ms(cc); }

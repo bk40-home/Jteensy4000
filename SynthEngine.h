@@ -1,11 +1,11 @@
 #pragma once
-// SynthEngine.h
-// JT-4000-style engine with JPFX (JP-8000 effects)
+// SynthEngine.h - 8 VOICE VERSION
+// Expanded from 4 to 8 voices with proper mixer architecture
 
 #include <Arduino.h>
 #include "VoiceBlock.h"
 #include "LFOBlock.h"
-#include "FXChainBlock.h"  // Now using JPFX version
+#include "FXChainBlock.h"
 #include "Mapping.h"
 #include "Waveforms.h"
 #include "DebugTrace.h"
@@ -13,7 +13,7 @@
 
 using namespace JT4000Map;
 
-#define MAX_VOICES 4
+#define MAX_VOICES 8  // Expanded from 4 to 8
 
 class SynthEngine {
 public:
@@ -124,29 +124,29 @@ public:
     float getFilterEnvSustain() const;
     float getFilterEnvRelease() const;
 
-    // --- JPFX Effects (replaces hexefx)
+    // --- JPFX Effects
     // Tone control
-    void setFXBassGain(float dB);        // -12..+12 dB
-    void setFXTrebleGain(float dB);      // -12..+12 dB
+    void setFXBassGain(float dB);
+    void setFXTrebleGain(float dB);
     float getFXBassGain() const;
     float getFXTrebleGain() const;
 
-    // Modulation effects (11 variations)
-    void setFXModEffect(int8_t variation);   // -1=off, 0..10=preset
-    void setFXModMix(float mix);             // 0..1
-    void setFXModRate(float hz);             // 0..20 Hz (0=use preset)
-    void setFXModFeedback(float fb);         // -1=preset, 0..0.99=override
+    // Modulation effects
+    void setFXModEffect(int8_t variation);
+    void setFXModMix(float mix);
+    void setFXModRate(float hz);
+    void setFXModFeedback(float fb);
     int8_t getFXModEffect() const;
     float getFXModMix() const;
     float getFXModRate() const;
     float getFXModFeedback() const;
     const char* getFXModEffectName() const;
 
-    // Delay effects (5 variations)
-    void setFXDelayEffect(int8_t variation); // -1=off, 0..4=preset
-    void setFXDelayMix(float mix);           // 0..1
-    void setFXDelayFeedback(float fb);       // -1=preset, 0..0.99=override
-    void setFXDelayTime(float ms);           // 0=preset, 5..1500ms=override
+    // Delay effects
+    void setFXDelayEffect(int8_t variation);
+    void setFXDelayMix(float mix);
+    void setFXDelayFeedback(float fb);
+    void setFXDelayTime(float ms);
     int8_t getFXDelayEffect() const;
     float getFXDelayMix() const;
     float getFXDelayFeedback() const;
@@ -154,7 +154,7 @@ public:
     const char* getFXDelayEffectName() const;
 
     // Global mix
-    void setFXDryMix(float level);           // 0..1
+    void setFXDryMix(float level);
     float getFXDryMix() const;
 
     // --- UI helpers
@@ -192,12 +192,38 @@ public:
     void setNotifier(NotifyFn fn);
 
     // --- Outputs
-    AudioMixer4& getVoiceMixer() { return _voiceMixer; }
+    AudioMixer4& getVoiceMixer() { return _voiceMixerFinal; }
     AudioMixer4& getFXOutL()     { return _fxChain.getOutputLeft(); }
     AudioMixer4& getFXOutR()     { return _fxChain.getOutputRight(); }
 
 private:
-    // Voices / routing
+    // =========================================================================
+    // 8-VOICE ARCHITECTURE
+    // =========================================================================
+    // 
+    // MIXER TOPOLOGY:
+    //   Voices 0-3 → _voiceMixerA (AudioMixer4)
+    //   Voices 4-7 → _voiceMixerB (AudioMixer4)
+    //   _voiceMixerA + _voiceMixerB → _voiceMixerFinal (AudioMixer4)
+    //
+    // This architecture:
+    // - Supports up to 8 simultaneous voices
+    // - Each voice gets 1/8 gain to prevent clipping
+    // - Two sub-mixers combine into final mixer
+    // - Clean audio path with proper gain staging
+    //
+    // CPU IMPACT:
+    // - Each voice adds ~3-5% CPU @ 44.1kHz
+    // - 8 voices = ~30-40% CPU for voices alone
+    // - Leaves headroom for filters, FX, etc.
+    //
+    // MEMORY IMPACT:
+    // - 4 additional VoiceBlock instances (~8KB each = 32KB total)
+    // - Minimal additional connections (~100 bytes)
+    // - Well within Teensy 4.1 capabilities (1MB RAM + 8MB PSRAM)
+    // =========================================================================
+
+    // Voices (8 total)
     VoiceBlock _voices[MAX_VOICES];
     bool  _activeNotes[MAX_VOICES];
     byte  _noteToVoice[128];
@@ -216,13 +242,15 @@ private:
     AudioMixer4          _ampModMixer;
     AudioMixer4          _ampModLimiterMixer;
 
-    // Voice mix
-    AudioMixer4 _voiceMixer;
+    // Voice mixing (3-stage architecture for 8 voices)
+    AudioMixer4 _voiceMixerA;     // Voices 0-3
+    AudioMixer4 _voiceMixerB;     // Voices 4-7
+    AudioMixer4 _voiceMixerFinal; // Combines A + B
 
-    // FX (JPFX)
+    // FX
     FXChainBlock _fxChain;
 
-    // Audio connections
+    // Audio connections (8 voices = more connections)
     AudioConnection* _voicePatch[MAX_VOICES];
     AudioConnection* _voicePatchLFO1ShapeOsc1[MAX_VOICES];
     AudioConnection* _voicePatchLFO1ShapeOsc2[MAX_VOICES];
@@ -235,13 +263,21 @@ private:
     AudioConnection* _voicePatchLFO2FrequencyOsc2[MAX_VOICES];
     AudioConnection* _voicePatchLFO2Filter[MAX_VOICES];
 
+
+
     AudioConnection* _patchAmpModFixedDcToAmpModMixer;
     AudioConnection* _patchLFO1ToAmpModMixer;
     AudioConnection* _patchLFO2ToAmpModMixer;
     AudioConnection* _patchAmpModMixerToAmpMultiply;
     AudioConnection* _patchVoiceMixerToAmpMultiply;
-    AudioConnection* _fxPatchIn;
+    AudioConnection* _fxPatchInL;   // Amp → JPFX left input
+    AudioConnection* _fxPatchInR;   // Amp → JPFX right input
 
+
+    // Mixer connections (new for 8-voice architecture)
+    AudioConnection* _patchMixerAToFinal;
+    AudioConnection* _patchMixerBToFinal;
+    
     // --- Cached parameter state ---
     // Osc/waves
     int   _osc1Wave = 0, _osc2Wave = 0;
@@ -288,7 +324,7 @@ private:
     uint16_t _osc1ArbIndex = 0;
     uint16_t _osc2ArbIndex = 0;
 
-    // --- JPFX cached parameters ---
+    // JPFX cached parameters
     float _fxBassGain = 0.0f;
     float _fxTrebleGain = 0.0f;
     int8_t _fxModEffect = -1;

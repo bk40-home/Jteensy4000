@@ -1,183 +1,250 @@
 /*
- * FXChainBlock.cpp
+ * FXChainBlock.cpp - JPFX VERSION
  *
- * Implements JP-8000 style FX chain using AudioEffectJPFX.
- * All audio processing happens in the JPFX module; this class manages
- * parameter routing and final wet/dry mix.
+ * Implementation of JP-8000 style effects using AudioEffectJPFX.
+ * All effects processing happens inside AudioEffectJPFX.
+ * This class just wraps it with proper audio connections and caching.
  */
 
 #include "FXChainBlock.h"
 
+// Effect name arrays for display
+static const char* modEffectNames[] = {
+    "Chorus 1",
+    "Chorus 2",
+    "Chorus 3",
+    "Flanger 1",
+    "Flanger 2",
+    "Flanger 3",
+    "Phaser 1",
+    "Phaser 2",
+    "Phaser 3",
+    "Phaser 4",
+    "Chorus Deep"
+};
+
+static const char* delayEffectNames[] = {
+    "Short",
+    "Long",
+    "PingPong 1",
+    "PingPong 2",
+    "PingPong 3"
+};
+
+// ============================================================================
+// CONSTRUCTOR
+// ============================================================================
+
 FXChainBlock::FXChainBlock()
     : _jpfx()
 {
-    // Initialize JPFX with defaults
+    // Connect JPFX outputs to mixers (input connected from SynthEngine)
+    _patchJPFXL = new AudioConnection(_jpfx, 0, _mixerOutL, 0);
+    _patchJPFXR = new AudioConnection(_jpfx, 1, _mixerOutR, 0);
+    
+    // Set default mixer gains (full wet from JPFX since it handles dry/wet internally)
+    _mixerOutL.gain(0, 1.0f);
+    _mixerOutR.gain(0, 1.0f);
+    
+    // Initialize JPFX to defaults (all effects off)
+    // Note: JPFX handles dry/wet internally via modulation and delay mix
     _jpfx.setBassGain(0.0f);
     _jpfx.setTrebleGain(0.0f);
     _jpfx.setModEffect(AudioEffectJPFX::JPFX_MOD_OFF);
+    _jpfx.setModMix(0.5f);
     _jpfx.setDelayEffect(AudioEffectJPFX::JPFX_DELAY_OFF);
-
-    // Create patch cords
-    // Amplifier → JPFX (mono in, stereo out)
-    _patchAmpToJPFX   = new AudioConnection(_ampIn, _jpfx);
-    
-    // Dry path: amp → mixers (channel 0 = dry)
-    _patchAmpToMixL   = new AudioConnection(_ampIn, 0, _mixerOutL, 0);
-    _patchAmpToMixR   = new AudioConnection(_ampIn, 0, _mixerOutR, 0);
-    
-    // Wet path: JPFX → mixers (channel 1 = wet)
-    _patchJPFXToMixL  = new AudioConnection(_jpfx, 0, _mixerOutL, 1);
-    _patchJPFXToMixR  = new AudioConnection(_jpfx, 0, _mixerOutR, 1);
-
-    // Default mixer gains: dry = 1, wet controlled by effect mix params
-    setDryMix(1.0f, 1.0f);
-    
-    // JPFX handles wet/dry internally; we just pass the signal through
-    // Set mixer channel 1 (wet) to full level - JPFX controls actual mix
-    _mixerOutL.gain(1, 1.0f);
-    _mixerOutR.gain(1, 1.0f);
+    _jpfx.setDelayMix(0.5f);
+    // No setDryMix - JPFX doesn't have this method
 }
 
-// -----------------------------------------------------------------------------
-// Tone control
-// -----------------------------------------------------------------------------
-void FXChainBlock::setBassGain(float dB) {
-    // Constrain to ±12dB
-    if (dB < -12.0f) dB = -12.0f;
-    if (dB > 12.0f) dB = 12.0f;
+// ============================================================================
+// DESTRUCTOR
+// ============================================================================
+
+FXChainBlock::~FXChainBlock()
+{
+    // Clean up audio connections
+    if (_patchJPFXL) delete _patchJPFXL;
+    if (_patchJPFXR) delete _patchJPFXR;
+}
+
+// ============================================================================
+// TONE CONTROL
+// ============================================================================
+
+void FXChainBlock::setBassGain(float dB)
+{
     _bassGain = dB;
     _jpfx.setBassGain(dB);
 }
 
-void FXChainBlock::setTrebleGain(float dB) {
-    // Constrain to ±12dB
-    if (dB < -12.0f) dB = -12.0f;
-    if (dB > 12.0f) dB = 12.0f;
+void FXChainBlock::setTrebleGain(float dB)
+{
     _trebleGain = dB;
     _jpfx.setTrebleGain(dB);
 }
 
-float FXChainBlock::getBassGain() const { return _bassGain; }
-float FXChainBlock::getTrebleGain() const { return _trebleGain; }
-
-// -----------------------------------------------------------------------------
-// Modulation effects
-// -----------------------------------------------------------------------------
-void FXChainBlock::setModEffect(int8_t variation) {
-    // Constrain: -1=off, 0..10=valid variations
-    if (variation < -1) variation = -1;
-    if (variation > 10) variation = 10;
-    
-    _modEffect = variation;
-    
-    if (variation < 0) {
-        _jpfx.setModEffect(AudioEffectJPFX::JPFX_MOD_OFF);
-    } else {
-        _jpfx.setModEffect((AudioEffectJPFX::ModEffectType)variation);
-    }
+float FXChainBlock::getBassGain() const
+{
+    return _bassGain;
 }
 
-void FXChainBlock::setModMix(float mix) {
-    if (mix < 0.0f) mix = 0.0f;
-    if (mix > 1.0f) mix = 1.0f;
+float FXChainBlock::getTrebleGain() const
+{
+    return _trebleGain;
+}
+
+// ============================================================================
+// MODULATION EFFECTS
+// ============================================================================
+
+void FXChainBlock::setModEffect(int8_t variation)
+{
+    _modEffect = variation;
+    
+    // Map to AudioEffectJPFX enum
+    AudioEffectJPFX::ModEffectType type;
+    if (variation < 0) {
+        type = AudioEffectJPFX::JPFX_MOD_OFF;
+    } else {
+        // Clamp to valid range
+        if (variation > 10) variation = 10;
+        type = (AudioEffectJPFX::ModEffectType)variation;
+    }
+    
+    _jpfx.setModEffect(type);
+}
+
+void FXChainBlock::setModMix(float mix)
+{
     _modMix = mix;
     _jpfx.setModMix(mix);
 }
 
-void FXChainBlock::setModRate(float hz) {
-    // 0 = use preset, >0 = override
-    if (hz < 0.0f) hz = 0.0f;
-    if (hz > 20.0f) hz = 20.0f;  // Cap at 20Hz to avoid metallic artifacts
+void FXChainBlock::setModRate(float hz)
+{
     _modRate = hz;
     _jpfx.setModRate(hz);
 }
 
-void FXChainBlock::setModFeedback(float fb) {
-    // -1 = use preset, 0..0.99 = override
-    if (fb < -1.0f) fb = -1.0f;
-    if (fb > 0.99f) fb = 0.99f;
+void FXChainBlock::setModFeedback(float fb)
+{
     _modFeedback = fb;
     _jpfx.setModFeedback(fb);
 }
 
-int8_t FXChainBlock::getModEffect() const { return _modEffect; }
-float FXChainBlock::getModMix() const { return _modMix; }
-float FXChainBlock::getModRate() const { return _modRate; }
-float FXChainBlock::getModFeedback() const { return _modFeedback; }
-
-const char* FXChainBlock::getModEffectName() const {
-    if (_modEffect < 0 || _modEffect > 10) return "Off";
-    return MOD_EFFECT_NAMES[_modEffect];
+int8_t FXChainBlock::getModEffect() const
+{
+    return _modEffect;
 }
 
-// -----------------------------------------------------------------------------
-// Delay effects
-// -----------------------------------------------------------------------------
-void FXChainBlock::setDelayEffect(int8_t variation) {
-    // Constrain: -1=off, 0..4=valid variations
-    if (variation < -1) variation = -1;
-    if (variation > 4) variation = 4;
-    
+float FXChainBlock::getModMix() const
+{
+    return _modMix;
+}
+
+float FXChainBlock::getModRate() const
+{
+    return _modRate;
+}
+
+float FXChainBlock::getModFeedback() const
+{
+    return _modFeedback;
+}
+
+const char* FXChainBlock::getModEffectName() const
+{
+    if (_modEffect < 0) return "Off";
+    if (_modEffect > 10) return "Unknown";
+    return modEffectNames[_modEffect];
+}
+
+// ============================================================================
+// DELAY EFFECTS
+// ============================================================================
+
+void FXChainBlock::setDelayEffect(int8_t variation)
+{
     _delayEffect = variation;
     
+    // Map to AudioEffectJPFX enum
+    AudioEffectJPFX::DelayEffectType type;
     if (variation < 0) {
-        _jpfx.setDelayEffect(AudioEffectJPFX::JPFX_DELAY_OFF);
+        type = AudioEffectJPFX::JPFX_DELAY_OFF;
     } else {
-        _jpfx.setDelayEffect((AudioEffectJPFX::DelayEffectType)variation);
+        // Clamp to valid range
+        if (variation > 4) variation = 4;
+        type = (AudioEffectJPFX::DelayEffectType)variation;
     }
+    
+    _jpfx.setDelayEffect(type);
 }
 
-void FXChainBlock::setDelayMix(float mix) {
-    if (mix < 0.0f) mix = 0.0f;
-    if (mix > 1.0f) mix = 1.0f;
+void FXChainBlock::setDelayMix(float mix)
+{
     _delayMix = mix;
     _jpfx.setDelayMix(mix);
 }
 
-void FXChainBlock::setDelayFeedback(float fb) {
-    // -1 = use preset, 0..0.99 = override
-    if (fb < -1.0f) fb = -1.0f;
-    if (fb > 0.99f) fb = 0.99f;
+void FXChainBlock::setDelayFeedback(float fb)
+{
     _delayFeedback = fb;
     _jpfx.setDelayFeedback(fb);
 }
 
-void FXChainBlock::setDelayTime(float ms) {
-    // 0 = use preset, 5..1500ms = override
-    if (ms < 0.0f) ms = 0.0f;
-    if (ms > 1500.0f) ms = 1500.0f;
+void FXChainBlock::setDelayTime(float ms)
+{
     _delayTime = ms;
     _jpfx.setDelayTime(ms);
 }
 
-int8_t FXChainBlock::getDelayEffect() const { return _delayEffect; }
-float FXChainBlock::getDelayMix() const { return _delayMix; }
-float FXChainBlock::getDelayFeedback() const { return _delayFeedback; }
-float FXChainBlock::getDelayTime() const { return _delayTime; }
-
-const char* FXChainBlock::getDelayEffectName() const {
-    if (_delayEffect < 0 || _delayEffect > 4) return "Off";
-    return DELAY_EFFECT_NAMES[_delayEffect];
+int8_t FXChainBlock::getDelayEffect() const
+{
+    return _delayEffect;
 }
 
-// -----------------------------------------------------------------------------
-// Global mix control
-// -----------------------------------------------------------------------------
-void FXChainBlock::setDryMix(float levelL, float levelR) {
-    if (levelL < 0.0f) levelL = 0.0f;
-    if (levelL > 1.0f) levelL = 1.0f;
-    if (levelR < 0.0f) levelR = 0.0f;
-    if (levelR > 1.0f) levelR = 1.0f;
-    
-    _dryMixL = levelL;
-    _dryMixR = levelR;
-    
-    _mixerOutL.gain(0, levelL);
-    _mixerOutR.gain(0, levelR);
+float FXChainBlock::getDelayMix() const
+{
+    return _delayMix;
 }
 
-// -----------------------------------------------------------------------------
-// Output access
-// -----------------------------------------------------------------------------
-AudioMixer4& FXChainBlock::getOutputLeft()  { return _mixerOutL; }
-AudioMixer4& FXChainBlock::getOutputRight() { return _mixerOutR; }
+float FXChainBlock::getDelayFeedback() const
+{
+    return _delayFeedback;
+}
+
+float FXChainBlock::getDelayTime() const
+{
+    return _delayTime;
+}
+
+const char* FXChainBlock::getDelayEffectName() const
+{
+    if (_delayEffect < 0) return "Off";
+    if (_delayEffect > 4) return "Unknown";
+    return delayEffectNames[_delayEffect];
+}
+
+// ============================================================================
+// DRY MIX (Note: JPFX handles dry/wet internally, no external control)
+// ============================================================================
+
+void FXChainBlock::setDryMix(float left, float right)
+{
+    // Cache for compatibility but JPFX doesn't expose dry mix control
+    // Dry/wet is handled internally via modulation and delay mix parameters
+    _dryMixL = left;
+    _dryMixR = right;
+    // No _jpfx.setDryMix() - this method doesn't exist in AudioEffectJPFX
+}
+
+float FXChainBlock::getDryMixL() const
+{
+    return _dryMixL;
+}
+
+float FXChainBlock::getDryMixR() const
+{
+    return _dryMixR;
+}
