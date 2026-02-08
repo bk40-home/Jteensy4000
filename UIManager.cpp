@@ -42,6 +42,12 @@ const char* UIManager::ccToDisplayText(byte cc, SynthEngine& synth) {
         case CC::OSC2_ARB_BANK: return akwf_bankName(synth.getOsc2ArbBank());
         // Table index is numeric; fall through to default (returns nullptr)
 
+        case CC::FX_MOD_EFFECT:
+            return synth.getFXModEffectName();   // Returns const char* like "Chorus 1"
+            
+        case CC::FX_JPFX_DELAY_EFFECT:
+            return synth.getFXDelayEffectName(); // Returns const char* like "Short"
+
         // Everything else is numeric (0..127) → return nullptr so renderPage() prints the number
         default: return nullptr;
     }
@@ -148,60 +154,95 @@ int UIManager::ccToDisplayValue(byte cc, SynthEngine& synth) {
         case CC::FILTER_OCTAVE_CONTROL: return norm_to_cc(synth.getFilterOctaveControl() / 8.0f);
 
         
-   case CC::FX_MOD_EFFECT:   return synth.getFXModEffectName();
-   case CC::FX_DELAY_EFFECT: return synth.getFXDelayEffectName();
- 
-   // JPFX tone (map -12..+12 dB to 0..127)
-   case CC::FX_BASS_GAIN: {
-       float dB = synth.getFXBassGain();
-       return (uint8_t)constrain((dB + 12.0f)   127.0f / 24.0f, 0, 127);
-   }
-   case CC::FX_TREBLE_GAIN: {
-       float dB = synth.getFXTrebleGain();
-       return (uint8_t)constrain((dB + 12.0f)   127.0f / 24.0f, 0, 127);
-   }
-   
-   // JPFX modulation effect (map -1..10 to 0..127)
-   case CC::FX_MOD_EFFECT: {
-       int8_t var = synth.getFXModEffect();
-       if (var < 0) return 0;
-       return (uint8_t)constrain((var   127) / 10, 0, 127);
-   }
-   
-   // JPFX delay effect (map -1..4 to 0..127)
-   case CC::FX_DELAY_EFFECT: {
-       int8_t var = synth.getFXDelayEffect();
-       if (var < 0) return 0;
-       return (uint8_t)constrain((var   127) / 4, 0, 127);
-   }
-   
-   // JPFX normalized params (0..1)
-   case CC::FX_MOD_MIX:
-   case CC::FX_DELAY_MIX:
-   case CC::FX_DRY_MIX:
-       return norm_to_cc(/* appropriate getter */);
-       
-   // JPFX time/rate params
-   case CC::FX_MOD_RATE: {
-       float hz = synth.getFXModRate();
-       return (uint8_t)constrain((hz   127.0f) / 20.0f, 0, 127);
-   }
-   case CC::FX_DELAY_TIME: {
-       float ms = synth.getFXDelayTime();
-       return (uint8_t)constrain((ms   127.0f) / 1500.0f, 0, 127);
-   }
-   
-   // JPFX feedback params (map -1..0.99 to 0..127)
-   case CC::FX_MOD_FEEDBACK: {
-       float fb = synth.getFXModFeedback();
-       if (fb < 0.0f) return 0;
-       return (uint8_t)constrain((fb   127.0f) / 0.99f, 0, 127);
-   }
-   case CC::FX_DELAY_FEEDBACK: {
-       float fb = synth.getFXDelayFeedback();
-       if (fb < 0.0f) return 0;
-       return (uint8_t)constrain((fb   127.0f) / 0.99f, 0, 127);
-   }
+/*
+ * UIManager.cpp - JPFX DISPLAY CODE ADDITIONS (CORRECT SYNTAX)
+ * 
+ * Add these to your ccToDisplayValue() function AFTER you have:
+ * 1. Fixed CCDefs.h CC conflicts
+ * 2. Added JPFX methods to SynthEngine
+ * 3. Implemented FXChainBlock with JPFX
+ */
+
+
+// In ccToDisplayValue() - add after other FX cases:
+
+// JPFX Bass tone (-12..+12 dB → 0..127)
+case CC::FX_BASS_GAIN: {
+    float dB = synth.getFXBassGain();
+    return (uint8_t)constrain((dB + 12.0f) * 127.0f / 24.0f, 0, 127);  // Note: * operator!
+}
+
+// JPFX Treble tone (-12..+12 dB → 0..127)
+case CC::FX_TREBLE_GAIN: {
+    float dB = synth.getFXTrebleGain();
+    return (uint8_t)constrain((dB + 12.0f) * 127.0f / 24.0f, 0, 127);  // Note: * operator!
+}
+
+// JPFX Modulation effect (-1..10 → 0..127)
+case CC::FX_MOD_EFFECT: {
+    int8_t var = synth.getFXModEffect();
+    if (var < 0) return 0;  // -1 = off
+    return (uint8_t)constrain((var * 127) / 10, 0, 127);  // Note: * operator!
+}
+
+// JPFX Delay effect (-1..4 → 0..127)
+case CC::FX_JPFX_DELAY_EFFECT: {
+    int8_t var = synth.getFXDelayEffect();
+    if (var < 0) return 0;  // -1 = off
+    return (uint8_t)constrain((var * 127) / 4, 0, 127);  // Note: * operator!
+}
+
+// JPFX normalized params (0..1 → 0..127)
+case CC::FX_MOD_MIX:
+    return norm_to_cc(synth.getFXModMix());
+    
+case CC::FX_JPFX_DELAY_MIX:
+    return norm_to_cc(synth.getFXDelayMix());
+
+// JPFX Mod rate (0..20 Hz → 0..127)
+case CC::FX_MOD_RATE: {
+    float hz = synth.getFXModRate();
+    return (uint8_t)constrain((hz * 127.0f) / 20.0f, 0, 127);  // Note: * operator!
+}
+
+// JPFX Delay time (0..1500ms → 0..127)
+case CC::FX_JPFX_DELAY_TIME: {
+    float ms = synth.getFXDelayTime();
+    return (uint8_t)constrain((ms * 127.0f) / 1500.0f, 0, 127);  // Note: * operator!
+}
+
+// JPFX feedback params (-1 or 0..0.99 → 0..127)
+case CC::FX_MOD_FEEDBACK: {
+    float fb = synth.getFXModFeedback();
+    if (fb < 0.0f) return 0;  // -1 = use preset
+    return (uint8_t)constrain((fb * 127.0f) / 0.99f, 0, 127);  // Note: * operator!
+}
+
+case CC::FX_JPFX_DELAY_FEEDBACK: {
+    float fb = synth.getFXDelayFeedback();
+    if (fb < 0.0f) return 0;  // -1 = use preset
+    return (uint8_t)constrain((fb * 127.0f) / 0.99f, 0, 127);  // Note: * operator!
+}
+
+/*
+ * COMMON MISTAKES TO AVOID:
+ * 
+ * ❌ WRONG: constrain((dB + 12.0f)   127.0f / 24.0f, 0, 127)
+ *           Missing * operator before 127.0f
+ * 
+ * ✓ RIGHT:  constrain((dB + 12.0f) * 127.0f / 24.0f, 0, 127)
+ *           Has * operator
+ * 
+ * ❌ WRONG: return synth.getFXModEffectName();  in ccToDisplayValue()
+ *           Returns const char*, but function expects int
+ * 
+ * ✓ RIGHT:  return synth.getFXModEffectName();  in ccToDisplayText()
+ *           Correct function for string returns
+ * 
+ * ❌ WRONG: Using old CC numbers (70-80) that conflict with Supersaw
+ * 
+ * ✓ RIGHT:  Using new CC numbers (99-110) from CCDefs_FIXED.h
+ */
 
 
 

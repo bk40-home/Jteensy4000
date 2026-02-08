@@ -1,11 +1,7 @@
 /*
- * CCDefs.h
+ * CCDefs.h - CORRECTED VERSION
  *
- * Centralised definitions for all MIDI Control Change (CC) numbers used
- * throughout the JT-4000 project. Updated to include JPFX effect parameters.
- *
- * Performance note: CC dispatch uses a table-driven approach for fast lookup
- * and minimal branching. See SynthEngine::handleControlChange for implementation.
+ * Fixed CC number conflicts. JPFX moved to 99-109 to avoid overlap with Supersaw (77-80).
  */
 
 #pragma once
@@ -52,20 +48,16 @@ namespace CC {
     static constexpr uint8_t OSC1_FINE_TUNE    = 45;
     static constexpr uint8_t OSC2_FINE_TUNE    = 46;
 
-    // Arbitrary waveform table selection (per oscillator)
-    static constexpr uint8_t OSC1_ARB_INDEX   = 83;
-    static constexpr uint8_t OSC2_ARB_INDEX   = 85;
-
     // -------------------------------------------------------------------------
     // Oscillator mix/balance and supersaw parameters
     // -------------------------------------------------------------------------
     static constexpr uint8_t OSC_MIX_BALANCE   = 47;
     static constexpr uint8_t OSC1_MIX          = 60;
     static constexpr uint8_t OSC2_MIX          = 61;
-    static constexpr uint8_t SUPERSAW1_DETUNE  = 77;
-    static constexpr uint8_t SUPERSAW1_MIX     = 78;
-    static constexpr uint8_t SUPERSAW2_DETUNE  = 79;
-    static constexpr uint8_t SUPERSAW2_MIX     = 80;
+    static constexpr uint8_t SUPERSAW1_DETUNE  = 77;  // Keep existing
+    static constexpr uint8_t SUPERSAW1_MIX     = 78;  // Keep existing
+    static constexpr uint8_t SUPERSAW2_DETUNE  = 79;  // Keep existing
+    static constexpr uint8_t SUPERSAW2_MIX     = 80;  // Keep existing
     static constexpr uint8_t SUB_MIX           = 58;
     static constexpr uint8_t NOISE_MIX         = 59;
 
@@ -89,26 +81,38 @@ namespace CC {
     static constexpr uint8_t LFO2_WAVEFORM    = 63;
 
     // -------------------------------------------------------------------------
-    // JPFX Effects (Roland JP-8000 style)
+    // Effects (hexefx/JPFX) - REORGANIZED TO AVOID CONFLICTS
     // -------------------------------------------------------------------------
-    // Tone control (±12dB)
-    static constexpr uint8_t FX_BASS_GAIN   = 70;  // Bass shelf filter
-    static constexpr uint8_t FX_TREBLE_GAIN = 71;  // Treble shelf filter
+    // OLD hexefx CCs (keeping for compatibility if you want to keep hexefx)
+    static constexpr uint8_t FX_REVERB_SIZE     = 70;
+    static constexpr uint8_t FX_REVERB_DAMP     = 71;
+    static constexpr uint8_t FX_DELAY_TIME      = 72;
+    static constexpr uint8_t FX_DELAY_FEEDBACK  = 73;
+    static constexpr uint8_t FX_DRY_MIX         = 74;
+    static constexpr uint8_t FX_REVERB_MIX      = 75;
+    static constexpr uint8_t FX_DELAY_MIX       = 76;
     
-    // Modulation effects (11 variations: chorus, flanger, phaser)
-    static constexpr uint8_t FX_MOD_EFFECT   = 72;  // Variation selector (0..10)
-    static constexpr uint8_t FX_MOD_MIX      = 73;  // Wet/dry mix (0..1)
-    static constexpr uint8_t FX_MOD_RATE     = 74;  // LFO rate override (Hz)
-    static constexpr uint8_t FX_MOD_FEEDBACK = 75;  // Feedback override (0..0.99)
-    
-    // Delay effects (5 variations: short, long, pingpong 1-3)
-    static constexpr uint8_t FX_DELAY_EFFECT   = 76;  // Variation selector (0..4)
-    static constexpr uint8_t FX_DELAY_MIX      = 77;  // Wet/dry mix (0..1)
-    static constexpr uint8_t FX_DELAY_FEEDBACK = 78;  // Feedback override (0..0.99)
-    static constexpr uint8_t FX_DELAY_TIME     = 79;  // Time override (ms)
-    
-    // Global FX mix (preserves dry signal path)
-    static constexpr uint8_t FX_DRY_MIX = 80;  // Dry signal level (0..1)
+    // hexefx extended parameters (from your existing code)
+    static constexpr uint8_t FX_REVERB_LODAMP    = 93;
+    static constexpr uint8_t FX_DELAY_MOD_RATE   = 94;
+    static constexpr uint8_t FX_DELAY_MOD_DEPTH  = 95;
+    static constexpr uint8_t FX_DELAY_INERTIA    = 96;
+    static constexpr uint8_t FX_DELAY_TREBLE     = 97;
+    static constexpr uint8_t FX_DELAY_BASS       = 98;
+
+    // -------------------------------------------------------------------------
+    // JPFX Effects (JP-8000 style) - MOVED TO 99-109 TO AVOID CONFLICTS
+    // -------------------------------------------------------------------------
+    static constexpr uint8_t FX_BASS_GAIN        = 99;   // Bass shelf filter
+    static constexpr uint8_t FX_TREBLE_GAIN      = 100;  // Treble shelf filter
+    static constexpr uint8_t FX_MOD_EFFECT       = 103;  // Modulation variation (0..10)
+    static constexpr uint8_t FX_MOD_MIX          = 104;  // Mod wet/dry mix (0..1)
+    static constexpr uint8_t FX_MOD_RATE         = 105;  // Mod LFO rate (Hz)
+    static constexpr uint8_t FX_MOD_FEEDBACK     = 106;  // Mod feedback (0..0.99)
+    static constexpr uint8_t FX_JPFX_DELAY_EFFECT   = 107;  // JPFX Delay variation (0..4)
+    static constexpr uint8_t FX_JPFX_DELAY_MIX      = 108;  // JPFX Delay wet/dry mix
+    static constexpr uint8_t FX_JPFX_DELAY_FEEDBACK = 109;  // JPFX Delay feedback
+    static constexpr uint8_t FX_JPFX_DELAY_TIME     = 110;  // JPFX Delay time (ms)
 
     // -------------------------------------------------------------------------
     // Glide and global modulation
@@ -116,6 +120,14 @@ namespace CC {
     static constexpr uint8_t GLIDE_ENABLE      = 81;
     static constexpr uint8_t GLIDE_TIME        = 82;
     static constexpr uint8_t AMP_MOD_FIXED_LEVEL = 90;
+
+    // -------------------------------------------------------------------------
+    // Arbitrary waveform selection
+    // -------------------------------------------------------------------------
+    static constexpr uint8_t OSC1_ARB_INDEX = 83;
+    static constexpr uint8_t OSC2_ARB_INDEX = 85;
+    static constexpr uint8_t OSC1_ARB_BANK  = 101;
+    static constexpr uint8_t OSC2_ARB_BANK  = 102;
 
     // -------------------------------------------------------------------------
     // Miscellaneous synth controls
@@ -128,21 +140,15 @@ namespace CC {
     static constexpr uint8_t RING2_MIX         = 92;
 
     // -------------------------------------------------------------------------
-    // Arbitrary waveform bank selection
+    // OBXa filter extended controls
     // -------------------------------------------------------------------------
-    static constexpr uint8_t OSC1_ARB_BANK = 101;
-    static constexpr uint8_t OSC2_ARB_BANK = 102;
-
-    // -------------------------------------------------------------------------
-    // OBXa filter extended controls (kept for compatibility)
-    // -------------------------------------------------------------------------
-    static constexpr uint8_t FILTER_OBXA_MULTIMODE = 103;
-    static constexpr uint8_t FILTER_OBXA_TWO_POLE = 104;
-    static constexpr uint8_t FILTER_OBXA_XPANDER_4_POLE = 105;
-    static constexpr uint8_t FILTER_OBXA_XPANDER_MODE = 106;
-    static constexpr uint8_t FILTER_OBXA_BP_BLEND_2_POLE = 107;
-    static constexpr uint8_t FILTER_OBXA_PUSH_2_POLE = 108;
-    static constexpr uint8_t FILTER_OBXA_RES_MOD_DEPTH = 109;
+    static constexpr uint8_t FILTER_OBXA_MULTIMODE = 111;
+    static constexpr uint8_t FILTER_OBXA_TWO_POLE = 112;
+    static constexpr uint8_t FILTER_OBXA_XPANDER_4_POLE = 113;
+    static constexpr uint8_t FILTER_OBXA_XPANDER_MODE = 114;
+    static constexpr uint8_t FILTER_OBXA_BP_BLEND_2_POLE = 115;
+    static constexpr uint8_t FILTER_OBXA_PUSH_2_POLE = 116;
+    static constexpr uint8_t FILTER_OBXA_RES_MOD_DEPTH = 117;
 
     // -------------------------------------------------------------------------
     // Utility: return human-readable name for a CC
@@ -188,6 +194,21 @@ namespace CC {
             case LFO1_WAVEFORM:       return "LFO1 Wave";
             case LFO2_WAVEFORM:       return "LFO2 Wave";
             
+            // hexefx effects
+            case FX_REVERB_SIZE:      return "Rev Size";
+            case FX_REVERB_DAMP:      return "Rev Damp";
+            case FX_DELAY_TIME:       return "Delay Time";
+            case FX_DELAY_FEEDBACK:   return "Delay FB";
+            case FX_DRY_MIX:          return "Dry Mix";
+            case FX_REVERB_MIX:       return "Rev Mix";
+            case FX_DELAY_MIX:        return "Delay Mix";
+            case FX_REVERB_LODAMP:    return "Rev LoDamp";
+            case FX_DELAY_MOD_RATE:   return "Dly ModRate";
+            case FX_DELAY_MOD_DEPTH:  return "Dly ModDepth";
+            case FX_DELAY_INERTIA:    return "Dly Inertia";
+            case FX_DELAY_TREBLE:     return "Dly Treble";
+            case FX_DELAY_BASS:       return "Dly Bass";
+            
             // JPFX effects
             case FX_BASS_GAIN:        return "Bass";
             case FX_TREBLE_GAIN:      return "Treble";
@@ -195,11 +216,10 @@ namespace CC {
             case FX_MOD_MIX:          return "Mod Mix";
             case FX_MOD_RATE:         return "Mod Rate";
             case FX_MOD_FEEDBACK:     return "Mod FB";
-            case FX_DELAY_EFFECT:     return "Delay Effect";
-            case FX_DELAY_MIX:        return "Delay Mix";
-            case FX_DELAY_FEEDBACK:   return "Delay FB";
-            case FX_DELAY_TIME:       return "Delay Time";
-            case FX_DRY_MIX:          return "Dry Mix";
+            case FX_JPFX_DELAY_EFFECT:   return "JPFX Dly FX";
+            case FX_JPFX_DELAY_MIX:      return "JPFX Dly Mix";
+            case FX_JPFX_DELAY_FEEDBACK: return "JPFX Dly FB";
+            case FX_JPFX_DELAY_TIME:     return "JPFX Dly Time";
             
             case GLIDE_ENABLE:        return "Glide En";
             case GLIDE_TIME:          return "Glide Time";

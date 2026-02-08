@@ -88,13 +88,24 @@ void loadInitTemplateByWave(SynthEngine &synth, uint8_t waveIndex) {
     sendCC(synth, CC::LFO1_DEPTH, 0);
     sendCC(synth, CC::LFO2_DEPTH, 0);
 
-    sendCC(synth, CC::FX_REVERB_SIZE,    0);
-    sendCC(synth, CC::FX_REVERB_DAMP,    0);
-    sendCC(synth, CC::FX_DELAY_TIME,     0);
-    sendCC(synth, CC::FX_DELAY_FEEDBACK, 0);
-    sendCC(synth, CC::FX_DRY_MIX,    127);
-    sendCC(synth, CC::FX_REVERB_MIX, 0);
-    sendCC(synth, CC::FX_DELAY_MIX,  0);
+// JPFX Tone (neutral)
+sendCC(synth, CC::FX_BASS_GAIN, 64);     // 0 dB (center)
+sendCC(synth, CC::FX_TREBLE_GAIN, 64);   // 0 dB (center)
+
+// JPFX Modulation (off)
+sendCC(synth, CC::FX_MOD_EFFECT, 0);     // Off
+sendCC(synth, CC::FX_MOD_MIX, 64);       // 50% mix (if enabled)
+sendCC(synth, CC::FX_MOD_RATE, 0);       // Use preset rate
+sendCC(synth, CC::FX_MOD_FEEDBACK, 0);   // Use preset feedback
+
+// JPFX Delay (off)
+sendCC(synth, CC::FX_JPFX_DELAY_EFFECT, 0);    // Off
+sendCC(synth, CC::FX_JPFX_DELAY_MIX, 64);      // 50% mix (if enabled)
+sendCC(synth, CC::FX_JPFX_DELAY_FEEDBACK, 0);  // Use preset feedback
+sendCC(synth, CC::FX_JPFX_DELAY_TIME, 0);      // Use preset time
+
+// JPFX Dry mix
+sendCC(synth, CC::FX_DRY_MIX, 127);      // Full dry (effects off)
 
     sendCC(synth, CC::GLIDE_ENABLE, 0);
     sendCC(synth, CC::GLIDE_TIME,   0);
