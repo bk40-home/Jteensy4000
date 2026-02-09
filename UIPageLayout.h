@@ -10,7 +10,7 @@
 
 namespace UIPage {
 
-static constexpr int NUM_PAGES       = 20;
+static constexpr int NUM_PAGES       = 22;
 static constexpr int PARAMS_PER_PAGE = 4;
 
 static constexpr uint8_t ccMap[NUM_PAGES][PARAMS_PER_PAGE] = {
@@ -50,10 +50,19 @@ static constexpr uint8_t ccMap[NUM_PAGES][PARAMS_PER_PAGE] = {
     // Page 17: JPFX Delay Parameters
     {CC::FX_JPFX_DELAY_FEEDBACK, CC::FX_JPFX_DELAY_TIME, CC::FX_DRY_MIX, 255},
 
-    // Page 18: Glide + Amp Mod
-    {CC::GLIDE_ENABLE,     CC::GLIDE_TIME,        CC::AMP_MOD_FIXED_LEVEL, 255},
+    //Page 18 (Reverb):
 
-    // Page 19: Arbitrary Waveform Selection
+    {CC::FX_REVERB_SIZE, CC::FX_REVERB_DAMP, CC::FX_REVERB_LODAMP, CC::FX_REVERB_MIX},
+
+    //Page 19 (Global Mix):
+
+    {CC::FX_DRY_MIX, CC::FX_JPFX_DELAY_MIX, 255, 255},
+
+    // Page 20: Glide + Amp Mod
+    {CC::GLIDE_ENABLE,     CC::GLIDE_TIME,        CC::AMP_MOD_FIXED_LEVEL, 255},
+    
+
+    // Page 21: Arbitrary Waveform Selection
     {CC::OSC1_ARB_BANK,    CC::OSC1_ARB_INDEX,    CC::OSC2_ARB_BANK,      CC::OSC2_ARB_INDEX},
 };
 
@@ -83,6 +92,8 @@ static constexpr const char* ccNames[NUM_PAGES][PARAMS_PER_PAGE] = {
     {"Bass", "Treble", "Mod FX", "Mod Mix"},
     {"Mod Rate", "Mod FB", "Dly FX", "Dly Mix"},
     {"Dly FB", "Dly Time", "Dry Mix", "-"},
+    {"Rev Size", "Rev Damp", "Rev lodmp", "Rev Mix"},
+    {"Fx DryMix", "Fx Jpfx Mix", "-", "-"},
 
     {"Glide En", "Glide Time", "Amp Mod DC", "-"},
     {"OSC1 Bank", "OSC1 Table", "OSC2 Bank", "OSC2 Table"},

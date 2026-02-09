@@ -153,9 +153,28 @@ public:
     float getFXDelayTime() const;
     const char* getFXDelayEffectName() const;
 
+    // Reverb controls (hexefx)
+void setFXReverbRoomSize(float size);
+void setFXReverbHiDamping(float damp);
+void setFXReverbLoDamping(float damp);
+float getFXReverbRoomSize() const;
+float getFXReverbHiDamping() const;
+float getFXReverbLoDamping() const;
+
+// Mix controls
+void setFXJPFXMix(float left, float right);    // JPFX wet amount
+void setFXReverbMix(float left, float right);  // Reverb wet amount
+float getFXJPFXMixL() const;
+float getFXJPFXMixR() const;
+float getFXReverbMixL() const;
+float getFXReverbMixR() const;
+
     // Global mix
     void setFXDryMix(float level);
     float getFXDryMix() const;
+
+    // void setMasterVolume(float level);
+    // float getMasterVolume() const;
 
     // --- UI helpers
     int getOsc1Waveform() const;
@@ -273,6 +292,9 @@ private:
     AudioConnection* _fxPatchInL;   // Amp → JPFX left input
     AudioConnection* _fxPatchInR;   // Amp → JPFX right input
 
+    AudioConnection* _fxPatchDryL;   // Amp → mixer dry left
+    AudioConnection* _fxPatchDryR;   // Amp → mixer dry right
+
 
     // Mixer connections (new for 8-voice architecture)
     AudioConnection* _patchMixerAToFinal;
@@ -336,6 +358,13 @@ private:
     float _fxDelayFeedback = -1.0f;
     float _fxDelayTime = 0.0f;
     float _fxDryMix = 1.0f;
+    float _fxReverbRoomSize = 0.5f;
+    float _fxReverbHiDamp = 0.5f;
+    float _fxReverbLoDamp = 0.5f;
+    float _fxJPFXMixL = 0.0f;
+    float _fxJPFXMixR = 0.0f;
+    float _fxReverbMixL = 0.0f;
+    float _fxReverbMixR = 0.0f;
 
     NotifyFn _notify = nullptr;
 };

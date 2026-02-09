@@ -203,7 +203,7 @@ namespace CC {
             case FX_REVERB_MIX:       return "Rev Mix";
             case FX_DELAY_MIX:        return "Delay Mix";
             case FX_REVERB_LODAMP:    return "Rev LoDamp";
-            case FX_DELAY_MOD_RATE:   return "Dly ModRate";
+            case FX_DELAY_MOD_RATE:   return "Dly ModRate"; 
             case FX_DELAY_MOD_DEPTH:  return "Dly ModDepth";
             case FX_DELAY_INERTIA:    return "Dly Inertia";
             case FX_DELAY_TREBLE:     return "Dly Treble";

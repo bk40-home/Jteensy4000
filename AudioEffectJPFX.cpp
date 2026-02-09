@@ -113,42 +113,59 @@ AudioEffectJPFX::~AudioEffectJPFX()
 void AudioEffectJPFX::allocateDelayBuffers()
 {
     const float sr = AUDIO_SAMPLE_RATE_EXACT;
+    float maxSamplesF = (JPFX_MAX_DELAY_MS * 0.001f * sr) + 2.0f;
+    uint32_t samples  = (uint32_t)ceilf(maxSamplesF);
+    delayBufSize      = samples;
+    delayWriteIndex   = 0;
     
-    // Allocate modulation buffers (smaller, ~50ms max needed)
-    float modMaxMs = 50.0f;  // Max modulation delay time
-    uint32_t modSamples = (uint32_t)ceilf(modMaxMs * 0.001f * sr) + 2;
-    modBufSize = modSamples;
-    modBufL = (float *)malloc(sizeof(float) * modBufSize);
-    modBufR = (float *)malloc(sizeof(float) * modBufSize);
+    // Calculate buffer size in bytes
+    uint32_t bufferBytes = sizeof(float) * delayBufSize;
     
-    if (modBufL && modBufR) {
-        for (uint32_t i = 0; i < modBufSize; ++i) {
-            modBufL[i] = 0.0f;
-            modBufR[i] = 0.0f;
+    Serial.print("[JPFX] Allocating delay buffers: ");
+    Serial.print(bufferBytes / 1024);
+    Serial.print("KB per channel, ");
+    Serial.print((bufferBytes * 2) / 1024);
+    Serial.println("KB total");
+    
+    // NEW: Try PSRAM first, then fall back to regular RAM
+    #if defined(__IMXRT1062__)  // Teensy 4.x
+        delayBufL = (float *)extmem_malloc(bufferBytes);
+        delayBufR = (float *)extmem_malloc(bufferBytes);
+        
+        if (delayBufL && delayBufR) {
+            Serial.println("[JPFX] Using PSRAM for delay buffers");
+        } else {
+            // PSRAM failed, try regular malloc
+
+            
+            Serial.println("[JPFX] PSRAM unavailable, trying regular RAM");
+
         }
-    } else {
-        if (modBufL) free(modBufL);
-        if (modBufR) free(modBufR);
-        modBufL = modBufR = nullptr;
-        modBufSize = 0;
-    }
+    #else
+        delayBufL = (float *)malloc(bufferBytes);
+        delayBufR = (float *)malloc(bufferBytes);
+    #endif
     
-    // Allocate delay buffers (larger, up to JPFX_MAX_DELAY_MS)
-    uint32_t delaySamples = (uint32_t)ceilf(JPFX_MAX_DELAY_MS * 0.001f * sr) + 2;
-    delayBufSize = delaySamples;
-    delayBufL = (float *)malloc(sizeof(float) * delayBufSize);
-    delayBufR = (float *)malloc(sizeof(float) * delayBufSize);
-    
-    if (delayBufL && delayBufR) {
-        for (uint32_t i = 0; i < delayBufSize; ++i) {
-            delayBufL[i] = 0.0f;
-            delayBufR[i] = 0.0f;
-        }
-    } else {
+    if (delayBufL == nullptr || delayBufR == nullptr) {
+        // Allocation failure
+        Serial.println("[JPFX] ERROR: Delay buffer allocation FAILED!");
+        Serial.print("[JPFX] Requested: ");
+        Serial.print((bufferBytes * 2) / 1024);
+        Serial.println("KB");
+        
+
+        
         if (delayBufL) free(delayBufL);
         if (delayBufR) free(delayBufR);
         delayBufL = delayBufR = nullptr;
         delayBufSize = 0;
+    } else {
+        // Success - clear buffers
+        Serial.println("[JPFX] Delay buffers allocated successfully");
+        for (uint32_t i = 0; i < delayBufSize; ++i) {
+            delayBufL[i] = 0.0f;
+            delayBufR[i] = 0.0f;
+        }
     }
 }
 
@@ -264,6 +281,40 @@ void AudioEffectJPFX::setModFeedback(float fb)
 
 void AudioEffectJPFX::setDelayEffect(DelayEffectType type)
 {
+    // DEBUG: Log delay effect selection
+    Serial.print("[JPFX] setDelayEffect called: ");
+    Serial.print((int)type);
+    Serial.print(" (");
+    if (type == JPFX_DELAY_OFF) Serial.print("OFF");
+    else if (type == JPFX_DELAY_SHORT) Serial.print("SHORT");
+    else if (type == JPFX_DELAY_LONG) Serial.print("LONG");
+    else if (type == JPFX_DELAY_PINGPONG1) Serial.print("PINGPONG1");
+    else if (type == JPFX_DELAY_PINGPONG2) Serial.print("PINGPONG2");
+    else if (type == JPFX_DELAY_PINGPONG3) Serial.print("PINGPONG3");
+    Serial.println(")");
+    
+    // DEBUG: Check buffer allocation
+    Serial.print("[JPFX] Delay buffers: L=");
+    Serial.print((delayBufL != nullptr) ? "OK" : "NULL");
+    Serial.print(", R=");
+    Serial.print((delayBufR != nullptr) ? "OK" : "NULL");
+    Serial.print(", Size=");
+    Serial.println(delayBufSize);
+
+    delayType = type;
+    
+    // DEBUG: Show preset parameters if not OFF
+    if (type != JPFX_DELAY_OFF) {
+        const DelayParams &p = delayParams[type];
+        Serial.print("[JPFX] Delay params: L=");
+        Serial.print(p.delayL);
+        Serial.print("ms, R=");
+        Serial.print(p.delayR);
+        Serial.print("ms, FB=");
+        Serial.print(p.feedback);
+
+    }
+
     if (type != delayType) {
         delayType = type;
         delayWriteIndex = 0;
@@ -392,6 +443,31 @@ inline void AudioEffectJPFX::processModulation(float inL, float inR, float &outL
 //-----------------------------------------------------------------------------
 inline void AudioEffectJPFX::processDelay(float inL, float inR, float &outL, float &outR)
 {
+    // If delay disabled or no buffer allocated, bypass
+    if (delayType == JPFX_DELAY_OFF || delayBufL == nullptr || delayBufR == nullptr) {
+        outL = inL;
+        outR = inR;
+        
+        // DEBUG: Only print once per second (not every sample!)
+        static uint32_t lastDebug = 0;
+        if (millis() - lastDebug > 1000) {
+            if (delayType != JPFX_DELAY_OFF) {
+                Serial.println("[JPFX] processDelay: BYPASSED (buffer null)");
+            }
+            lastDebug = millis();
+        }
+        return;
+    }
+    
+    // DEBUG: Print once per second when delay is active
+    static uint32_t lastActiveDebug = 0;
+    if (millis() - lastActiveDebug > 1000) {
+        Serial.print("[JPFX] processDelay ACTIVE: mix=");
+        Serial.print(delayMix);
+        Serial.print(", writeIdx=");
+        Serial.println(delayWriteIndex);
+        lastActiveDebug = millis();
+    }
     // Bypass if disabled or no buffer
     if (delayType == JPFX_DELAY_OFF || !delayBufL || !delayBufR) {
         outL = inL;

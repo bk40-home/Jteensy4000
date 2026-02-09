@@ -54,12 +54,12 @@ SynthEngine::SynthEngine()
     
     // Sub-mixer A (voices 0-3) - gain 0.5 prevents clipping
     for (int i = 0; i < 4; i++) {
-        _voiceMixerA.gain(i, 0.5f);
+        _voiceMixerA.gain(i, 1.0f);
     }
     
     // Sub-mixer B (voices 4-7) - gain 0.5 prevents clipping
     for (int i = 0; i < 4; i++) {
-        _voiceMixerB.gain(i, 0.5f);
+        _voiceMixerB.gain(i, 1.0f);
     }
     
     // Final mixer (combines A and B) - gain 0.5 prevents clipping
@@ -116,18 +116,13 @@ SynthEngine::SynthEngine()
     _patchAmpModMixerToAmpMultiply   = new AudioConnection(_ampModMixer, 0, _ampMultiply, 0);
     _patchVoiceMixerToAmpMultiply    = new AudioConnection(_voiceMixerFinal, 0, _ampMultiply, 1);
 
-    // =========================================================================
-    // CREATE AUDIO CONNECTIONS - JPFX (STEREO!)
-    // =========================================================================
-    //
-    // CRITICAL: AudioEffectJPFX expects 2 inputs (left and right)
-    // We feed the mono amp output to BOTH inputs for stereo processing
-    //
-    _fxPatchInL = new AudioConnection(_ampMultiply, 0, _fxChain.getJPFXInput(), 0);  // Left input
-    _fxPatchInR = new AudioConnection(_ampMultiply, 0, _fxChain.getJPFXInput(), 1);  // Right input (same signal)
-    
-    // FX outputs are already connected inside FXChainBlock to its output mixers
-    // Main audio output connects to _fxChain.getOutputLeft() and getOutputRight()
+// Connect amp to JPFX (stereo)
+_fxPatchInL = new AudioConnection(_ampMultiply, 0, _fxChain.getJPFXInput(), 0);
+_fxPatchInR = new AudioConnection(_ampMultiply, 0, _fxChain.getJPFXInput(), 1);
+
+// Connect amp dry to mixer (channel 0)
+_fxPatchDryL = new AudioConnection(_ampMultiply, 0, _fxChain.getOutputLeft(), 0);
+_fxPatchDryR = new AudioConnection(_ampMultiply, 0, _fxChain.getOutputRight(), 0);
 }
 
 static inline float CCtoTime(uint8_t cc) { return JT4000Map::cc_to_time_ms(cc); }
@@ -578,6 +573,42 @@ float SynthEngine::getFXDryMix() const {
     return _fxDryMix;
 }
 
+void SynthEngine::setFXReverbRoomSize(float size) {
+    _fxReverbRoomSize = size;
+    _fxChain.setReverbRoomSize(size);
+}
+
+void SynthEngine::setFXReverbHiDamping(float damp) {
+    _fxReverbHiDamp = damp;
+    _fxChain.setReverbHiDamping(damp);
+}
+
+void SynthEngine::setFXReverbLoDamping(float damp) {
+    _fxReverbLoDamp = damp;
+    _fxChain.setReverbLoDamping(damp);
+}
+
+void SynthEngine::setFXJPFXMix(float left, float right) {
+    _fxJPFXMixL = left;
+    _fxJPFXMixR = right;
+    _fxChain.setJPFXMix(left, right);
+}
+
+void SynthEngine::setFXReverbMix(float left, float right) {
+    _fxReverbMixL = left;
+    _fxReverbMixR = right;
+    _fxChain.setReverbMix(left, right);
+}
+
+// Getters
+float SynthEngine::getFXReverbRoomSize() const { return _fxReverbRoomSize; }
+float SynthEngine::getFXReverbHiDamping() const { return _fxReverbHiDamp; }
+float SynthEngine::getFXReverbLoDamping() const { return _fxReverbLoDamp; }
+float SynthEngine::getFXJPFXMixL() const { return _fxJPFXMixL; }
+float SynthEngine::getFXJPFXMixR() const { return _fxJPFXMixR; }
+float SynthEngine::getFXReverbMixL() const { return _fxReverbMixL; }
+float SynthEngine::getFXReverbMixR() const { return _fxReverbMixR; }
+
 
 
 // ---- UI helper getters ----
@@ -889,6 +920,26 @@ void SynthEngine::handleControlChange(byte /*channel*/, byte control, byte value
             setFXDryMix(norm);
             JT_LOGF("[CC %u:%s] Dry Mix = %.3f\n", control, ccName, norm);
         } break;
+        case CC::FX_REVERB_SIZE: {
+    setFXReverbRoomSize(norm);
+    JT_LOGF("[CC %u:%s] Reverb Size = %.3f\n", control, ccName, norm);
+} break;
+
+case CC::FX_REVERB_DAMP: {
+    setFXReverbHiDamping(norm);
+    JT_LOGF("[CC %u:%s] Reverb HiDamp = %.3f\n", control, ccName, norm);
+} break;
+
+case CC::FX_REVERB_LODAMP: {
+    setFXReverbLoDamping(norm);
+    JT_LOGF("[CC %u:%s] Reverb LoDamp = %.3f\n", control, ccName, norm);
+} break;
+
+case CC::FX_REVERB_MIX: {
+    setFXReverbMix(norm, norm);  // Stereo
+    JT_LOGF("[CC %u:%s] Reverb Mix = %.3f\n", control, ccName, norm);
+} break;
+
 
         // ------------------- Supersaw / DC / Ring -------------------
         case CC::SUPERSAW1_DETUNE: { setSupersawDetune(0, norm); JT_LOGF("[CC %u:%s] Supersaw1 Detune = %.3f\n", control, ccName, norm); } break;

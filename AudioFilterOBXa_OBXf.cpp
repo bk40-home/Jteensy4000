@@ -183,9 +183,9 @@ struct AudioFilterOBXa::Core
         state.pole1 = atanf(state.pole1 * state.resCorrection) * state.resCorrectionInv;
 
         float y1 = (float)res;
-        float y2 = obxa_tpt_process(state.pole2, y1, lpc);
-        float y3 = obxa_tpt_process(state.pole3, y2, lpc);
-        float y4 = obxa_tpt_process(state.pole4, y3, lpc);
+        float y2 = tpt_process_scaled_cutoff(state.pole2, y1, lpc);
+        float y3 = tpt_process_scaled_cutoff(state.pole3, y2, lpc);
+        float y4 = tpt_process_scaled_cutoff(state.pole4, y3, lpc);
 
         float out = 0.f;
 

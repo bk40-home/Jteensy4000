@@ -23,7 +23,7 @@
 // 1250ms; we allocate a little extra headroom.  Changing this constant
 // will directly affect the size of the delay buffer allocated at
 // construction time.  If PSRAM is available it will be used.
-#define JPFX_MAX_DELAY_MS    1500.0f
+#define JPFX_MAX_DELAY_MS    750.0f
 
 // Number of modulation effect variations (chorus/flanger/phaser)
 #define JPFX_NUM_MOD_VARIATIONS 11

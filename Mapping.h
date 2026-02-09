@@ -99,7 +99,7 @@ namespace JT4000Map {
     // Use THESE mappings for the OBXa filter block / CC mapping.
 
     // Clamp cutoff for OBXa core stability (0.24 * 44100 = 10584)
-    static constexpr float OBXA_CUTOFF_MAX_HZ = 10584.0f;
+    static constexpr float OBXA_CUTOFF_MAX_HZ = 18000.0f;
     static constexpr float OBXA_CUTOFF_MIN_HZ = CUTOFF_MIN_HZ;
 
     inline float cc_to_obxa_cutoff_hz(uint8_t cc)
@@ -118,7 +118,7 @@ namespace JT4000Map {
     }
 
     // Resonance for OBXa is 0..1. To avoid "exactly 1.0" edge cases, clamp slightly below 1.
-    static constexpr float OBXA_RES_MAX = 1.0f; // tweak 0.99..0.999 as needed
+    static constexpr float OBXA_RES_MAX = 0.91f; // tweak 0.99..0.999 as needed
 
     inline float cc_to_obxa_res01(uint8_t cc)
     {
