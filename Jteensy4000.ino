@@ -50,7 +50,7 @@ USBHub hub1(myusb);       // if a hub is used
 MIDIDevice midiHost(myusb);
 
 unsigned long lastDisplayUpdate = 0;
-const unsigned long displayRefreshMs = 100;
+const unsigned long displayRefreshMs = 16;
 
 static void onParam(uint8_t cc, uint8_t v) {
   Serial.printf("[NOTIFY] CC %u = %u\n", cc, v);
@@ -204,9 +204,9 @@ synth.setNotifier(onParam);
 void loop() {
   // ----------------- MIDI handling (consistent callback flow) -----------------
   // USB host stack + host MIDI (USBHost_t36)
-  myusb.Task();
-  while (midiHost.read()) {
-    // Handlers registered in setup() do the routing.
+   myusb.Task();
+   while (midiHost.read()) {
+  //   // Handlers registered in setup() do the routing.
   }
 
   // USB device MIDI (Teensy as a USB-MIDI device)
@@ -228,5 +228,5 @@ void loop() {
   }
 
   // Serial-driven preset loader
-  handleSerialPresets(synth, ui);
+  //handleSerialPresets(synth, ui);
 }
