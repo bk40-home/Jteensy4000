@@ -609,6 +609,18 @@ float SynthEngine::getFXJPFXMixR() const { return _fxJPFXMixR; }
 float SynthEngine::getFXReverbMixL() const { return _fxReverbMixL; }
 float SynthEngine::getFXReverbMixR() const { return _fxReverbMixR; }
 
+// ============================================================================
+// FX REVERB BYPASS CONTROL (NEW - CPU Optimization)
+// ============================================================================
+
+void SynthEngine::setFXReverbBypass(bool bypass) {
+    _fxChain.setReverbBypass(bypass);
+}
+
+bool SynthEngine::getFXReverbBypass() const {
+    return _fxChain.getReverbBypass();
+}
+
 
 
 // ---- UI helper getters ----
@@ -938,6 +950,28 @@ case CC::FX_REVERB_LODAMP: {
 case CC::FX_REVERB_MIX: {
     setFXReverbMix(norm, norm);  // Stereo
     JT_LOGF("[CC %u:%s] Reverb Mix = %.3f\n", control, ccName, norm);
+} break;
+
+// ============================================================================
+// NEW CC HANDLERS FOR FX MIX CONTROLS
+// ============================================================================
+
+case CC::FX_JPFX_MIX: {
+    // FX_JPFX_MIX controls the JPFX output level (bypasses reverb)
+    // This is the "JPFX Mix" control on Page 19
+    float mix = norm;  // norm is already calculated from CC value
+    setFXJPFXMix(mix, mix);  // Set both L and R channels
+    JT_LOGF("[CC %u:%s] JPFX Mix = %.3f\n", control, ccName, mix);
+    if (_notify) _notify(control, value);
+} break;
+
+case CC::FX_REVERB_BYPASS: {
+    // FX_REVERB_BYPASS toggles reverb on/off for CPU savings
+    // Values > 63 = bypassed, <= 63 = active
+    bool bypass = (value > 63);
+    setFXReverbBypass(bypass);
+    JT_LOGF("[CC %u:%s] Reverb Bypass = %s\n", control, ccName, bypass ? "ON" : "OFF");
+    if (_notify) _notify(control, value);
 } break;
 
 

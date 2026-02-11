@@ -1,9 +1,15 @@
 /*
- * AudioEffectJPFX.cpp (FIXED VERSION)
+ * AudioEffectJPFX.cpp (OPTIMIZED VERSION with Continuous Processing)
  *
- * CRITICAL BUG FIXES:
- * 1. Constructor now uses 1 input, not 2 (AudioStream limitation)
- * 2. Separated modulation and delay buffers (they were sharing, causing conflicts)
+ * KEY IMPROVEMENTS:
+ * 1. Continuous processing even without input (maintains LFO phase, effect tails)
+ * 2. CPU optimization: skips expensive calculations when effects disabled
+ * 3. Smart bypass: only processes enabled effects
+ * 4. Maintains reverb input even with no note playing (effect tails)
+ *
+ * CRITICAL BUG FIXES FROM PREVIOUS VERSION:
+ * 1. Constructor uses 1 input, not 2 (AudioStream limitation)
+ * 2. Separated modulation and delay buffers (were sharing, causing conflicts)
  * 3. Fixed update() to handle mono input with internal stereo
  * 4. Fixed transmit() to use single output channel
  * 5. Added proper NULL checks for buffer allocation
@@ -48,10 +54,10 @@ const AudioEffectJPFX::DelayParams AudioEffectJPFX::delayParams[JPFX_NUM_DELAY_V
 };
 
 //-----------------------------------------------------------------------------
-// Constructor (FIXED: 1 input, not 2)
+// Constructor - Initialize all state
 //-----------------------------------------------------------------------------
 AudioEffectJPFX::AudioEffectJPFX()
-    : AudioStream(1, inputQueueArray)  // CRITICAL FIX: 1 input, not 2
+    : AudioStream(1, inputQueueArray)  // mono input to the block
 {
     // Initialize tone filters
     auto initShelf = [&](ShelfFilter &f) {
@@ -82,7 +88,7 @@ AudioEffectJPFX::AudioEffectJPFX()
     delayFeedbackOverride = -1.0f;
     delayTimeOverride = -1.0f;
 
-    // CRITICAL FIX: Initialize all buffer pointers to NULL
+    // Initialize all buffer pointers to NULL
     modBufL = nullptr;
     modBufR = nullptr;
     delayBufL = nullptr;
@@ -92,12 +98,12 @@ AudioEffectJPFX::AudioEffectJPFX()
     modWriteIndex = 0;
     delayWriteIndex = 0;
 
-    // Allocate buffers
+    // Allocate buffers (will use PSRAM if available)
     allocateDelayBuffers();
 }
 
 //-----------------------------------------------------------------------------
-// Destructor (NEW: free buffers)
+// Destructor - Free allocated buffers
 //-----------------------------------------------------------------------------
 AudioEffectJPFX::~AudioEffectJPFX()
 {
@@ -108,130 +114,170 @@ AudioEffectJPFX::~AudioEffectJPFX()
 }
 
 //-----------------------------------------------------------------------------
-// allocateDelayBuffers (FIXED: separate buffers for mod and delay)
+// allocateDelayBuffers - Allocate separate buffers for mod and delay
+// Uses PSRAM (extmem_malloc) if available, otherwise regular RAM
 //-----------------------------------------------------------------------------
 void AudioEffectJPFX::allocateDelayBuffers()
 {
     const float sr = AUDIO_SAMPLE_RATE_EXACT;
-    float maxSamplesF = (JPFX_MAX_DELAY_MS * 0.001f * sr) + 2.0f;
-    uint32_t samples  = (uint32_t)ceilf(maxSamplesF);
-    delayBufSize      = samples;
-    delayWriteIndex   = 0;
     
-    // Calculate buffer size in bytes
-    uint32_t bufferBytes = sizeof(float) * delayBufSize;
+    // Calculate delay buffer size (for delay effects)
+    float maxDelaySeconds = JPFX_MAX_DELAY_MS * 0.001f;
+    uint32_t delaySamples = (uint32_t)ceilf((maxDelaySeconds * sr) + 2.0f);
+    delayBufSize = delaySamples;
+    delayWriteIndex = 0;
     
-    Serial.print("[JPFX] Allocating delay buffers: ");
-    Serial.print(bufferBytes / 1024);
-    Serial.print("KB per channel, ");
-    Serial.print((bufferBytes * 2) / 1024);
-    Serial.println("KB total");
+    // Calculate modulation buffer size (for chorus/flanger/phaser)
+    // These need much less buffer (max ~30ms base + depth)
+    float maxModSeconds = 0.050f;  // 50ms is plenty for modulation effects
+    uint32_t modSamples = (uint32_t)ceilf((maxModSeconds * sr) + 2.0f);
+    modBufSize = modSamples;
+    modWriteIndex = 0;
     
-    // NEW: Try PSRAM first, then fall back to regular RAM
+    uint32_t delayBytes = sizeof(float) * delayBufSize;
+    uint32_t modBytes = sizeof(float) * modBufSize;
+    uint32_t totalBytes = (delayBytes + modBytes) * 2;  // *2 for stereo
+    
+    Serial.print("[JPFX] Allocating buffers: Delay=");
+    Serial.print((delayBytes * 2) / 1024);
+    Serial.print("KB, Mod=");
+    Serial.print((modBytes * 2) / 1024);
+    Serial.print("KB, Total=");
+    Serial.print(totalBytes / 1024);
+    Serial.println("KB");
+    
+    // Try PSRAM first (Teensy 4.x), then fall back to regular RAM
     #if defined(__IMXRT1062__)  // Teensy 4.x
-        delayBufL = (float *)extmem_malloc(bufferBytes);
-        delayBufR = (float *)extmem_malloc(bufferBytes);
+        delayBufL = (float *)extmem_malloc(delayBytes);
+        delayBufR = (float *)extmem_malloc(delayBytes);
+        modBufL = (float *)extmem_malloc(modBytes);
+        modBufR = (float *)extmem_malloc(modBytes);
         
-        if (delayBufL && delayBufR) {
-            Serial.println("[JPFX] Using PSRAM for delay buffers");
+        if (delayBufL && delayBufR && modBufL && modBufR) {
+            Serial.println("[JPFX] Using PSRAM for all buffers");
         } else {
             // PSRAM failed, try regular malloc
-
+            if (delayBufL) free(delayBufL);
+            if (delayBufR) free(delayBufR);
+            if (modBufL) free(modBufL);
+            if (modBufR) free(modBufR);
             
             Serial.println("[JPFX] PSRAM unavailable, trying regular RAM");
-
+            delayBufL = (float *)malloc(delayBytes);
+            delayBufR = (float *)malloc(delayBytes);
+            modBufL = (float *)malloc(modBytes);
+            modBufR = (float *)malloc(modBytes);
         }
     #else
-        delayBufL = (float *)malloc(bufferBytes);
-        delayBufR = (float *)malloc(bufferBytes);
+        delayBufL = (float *)malloc(delayBytes);
+        delayBufR = (float *)malloc(delayBytes);
+        modBufL = (float *)malloc(modBytes);
+        modBufR = (float *)malloc(modBytes);
     #endif
     
-    if (delayBufL == nullptr || delayBufR == nullptr) {
-        // Allocation failure
-        Serial.println("[JPFX] ERROR: Delay buffer allocation FAILED!");
-        Serial.print("[JPFX] Requested: ");
-        Serial.print((bufferBytes * 2) / 1024);
-        Serial.println("KB");
-        
-
-        
-        if (delayBufL) free(delayBufL);
-        if (delayBufR) free(delayBufR);
-        delayBufL = delayBufR = nullptr;
-        delayBufSize = 0;
-    } else {
-        // Success - clear buffers
-        Serial.println("[JPFX] Delay buffers allocated successfully");
-        for (uint32_t i = 0; i < delayBufSize; ++i) {
-            delayBufL[i] = 0.0f;
-            delayBufR[i] = 0.0f;
-        }
+    // Check for allocation failure
+    if (!delayBufL || !delayBufR || !modBufL || !modBufR) {
+        Serial.println("[JPFX] ERROR: Buffer allocation failed!");
+        if (delayBufL) { free(delayBufL); delayBufL = nullptr; }
+        if (delayBufR) { free(delayBufR); delayBufR = nullptr; }
+        if (modBufL) { free(modBufL); modBufL = nullptr; }
+        if (modBufR) { free(modBufR); modBufR = nullptr; }
+        return;
     }
+    
+    // Clear buffers
+    for (uint32_t i = 0; i < delayBufSize; ++i) {
+        delayBufL[i] = 0.0f;
+        delayBufR[i] = 0.0f;
+    }
+    for (uint32_t i = 0; i < modBufSize; ++i) {
+        modBufL[i] = 0.0f;
+        modBufR[i] = 0.0f;
+    }
+    
+    Serial.println("[JPFX] Buffers allocated successfully");
 }
 
 //-----------------------------------------------------------------------------
-// computeShelfCoeffs (unchanged)
+// computeShelfCoeffs - Calculate biquad coefficients for shelving filters
+// Frequency in Hz, gain in dB, highShelf=true for treble
 //-----------------------------------------------------------------------------
-void AudioEffectJPFX::computeShelfCoeffs(ShelfFilter &filt, float cornerHz, float gainDB, bool high)
+void AudioEffectJPFX::computeShelfCoeffs(ShelfFilter &f, float freqHz, float gaindB, bool highShelf)
 {
     const float fs = AUDIO_SAMPLE_RATE_EXACT;
-    float V0 = powf(10.0f, gainDB / 20.0f);
-    float sqrtV0 = sqrtf(V0);
-    float K = tanf(M_PI * cornerHz / fs);
+    const float A = powf(10.0f, gaindB / 40.0f);
+    const float w0 = 2.0f * M_PI * freqHz / fs;
+    const float sinW0 = sinf(w0);
+    const float cosW0 = cosf(w0);
+    const float alpha = sinW0 / (2.0f * 0.707f);  // Q=0.707 for smooth response
     
-    if (!high) {
-        // Low shelf
-        filt.b0 = (1.0f + sqrtV0 * K) / (1.0f + K);
-        filt.b1 = (1.0f - sqrtV0 * K) / (1.0f + K);
-        filt.a1 = (1.0f - K) / (1.0f + K);
+    if (highShelf) {
+        // High-shelf: boost/cut high frequencies
+        const float a0 = (A+1.0f) - (A-1.0f)*cosW0 + 2.0f*sqrtf(A)*alpha;
+        f.b0 = (A*((A+1.0f) + (A-1.0f)*cosW0 + 2.0f*sqrtf(A)*alpha)) / a0;
+        f.b1 = (-2.0f*A*((A-1.0f) + (A+1.0f)*cosW0)) / a0;
+        f.a1 = (-((A+1.0f) - (A-1.0f)*cosW0 - 2.0f*sqrtf(A)*alpha)) / a0;
     } else {
-        // High shelf
-        filt.b0 = (sqrtV0 + K) / (1.0f + K);
-        filt.b1 = (sqrtV0 - K) / (1.0f + K);
-        filt.a1 = (1.0f - K) / (1.0f + K);
+        // Low-shelf: boost/cut low frequencies
+        const float a0 = (A+1.0f) + (A-1.0f)*cosW0 + 2.0f*sqrtf(A)*alpha;
+        f.b0 = (A*((A+1.0f) - (A-1.0f)*cosW0 + 2.0f*sqrtf(A)*alpha)) / a0;
+        f.b1 = (2.0f*A*((A-1.0f) - (A+1.0f)*cosW0)) / a0;
+        f.a1 = (-((A+1.0f) + (A-1.0f)*cosW0 - 2.0f*sqrtf(A)*alpha)) / a0;
     }
-    
-    filt.in1 = 0.0f;
-    filt.out1 = 0.0f;
 }
 
 //-----------------------------------------------------------------------------
-// applyTone (unchanged)
+// applyTone - Apply bass and treble shelving filters
+// Only processes if tone controls are non-zero for CPU optimization
 //-----------------------------------------------------------------------------
 inline void AudioEffectJPFX::applyTone(float &l, float &r)
 {
-    // Bass (low-shelf) left
-    float x0 = l;
-    float y0 = bassFilterL.b0 * x0 + bassFilterL.b1 * bassFilterL.in1 - bassFilterL.a1 * bassFilterL.out1;
-    bassFilterL.in1 = x0;
-    bassFilterL.out1 = y0;
-    l = y0;
+    // CPU OPTIMIZATION: Skip if both tone controls are at 0dB (bypass)
+    if (targetBassGain == 0.0f && targetTrebleGain == 0.0f) {
+        return;  // No tone adjustment needed
+    }
     
-    // Bass (low-shelf) right
-    x0 = r;
-    y0 = bassFilterR.b0 * x0 + bassFilterR.b1 * bassFilterR.in1 - bassFilterR.a1 * bassFilterR.out1;
-    bassFilterR.in1 = x0;
-    bassFilterR.out1 = y0;
-    r = y0;
+    // Apply bass (low-shelf) left channel
+    if (targetBassGain != 0.0f) {
+        float x0 = l;
+        float y0 = bassFilterL.b0 * x0 + bassFilterL.b1 * bassFilterL.in1 - bassFilterL.a1 * bassFilterL.out1;
+        bassFilterL.in1 = x0;
+        bassFilterL.out1 = y0;
+        l = y0;
+    }
     
-    // Treble (high-shelf) left
-    x0 = l;
-    y0 = trebleFilterL.b0 * x0 + trebleFilterL.b1 * trebleFilterL.in1 - trebleFilterL.a1 * trebleFilterL.out1;
-    trebleFilterL.in1 = x0;
-    trebleFilterL.out1 = y0;
-    l = y0;
+    // Apply bass (low-shelf) right channel
+    if (targetBassGain != 0.0f) {
+        float x0 = r;
+        float y0 = bassFilterR.b0 * x0 + bassFilterR.b1 * bassFilterR.in1 - bassFilterR.a1 * bassFilterR.out1;
+        bassFilterR.in1 = x0;
+        bassFilterR.out1 = y0;
+        r = y0;
+    }
     
-    // Treble (high-shelf) right
-    x0 = r;
-    y0 = trebleFilterR.b0 * x0 + trebleFilterR.b1 * trebleFilterR.in1 - trebleFilterR.a1 * trebleFilterR.out1;
-    trebleFilterR.in1 = x0;
-    trebleFilterR.out1 = y0;
-    r = y0;
+    // Apply treble (high-shelf) left channel
+    if (targetTrebleGain != 0.0f) {
+        float x0 = l;
+        float y0 = trebleFilterL.b0 * x0 + trebleFilterL.b1 * trebleFilterL.in1 - trebleFilterL.a1 * trebleFilterL.out1;
+        trebleFilterL.in1 = x0;
+        trebleFilterL.out1 = y0;
+        l = y0;
+    }
+    
+    // Apply treble (high-shelf) right channel
+    if (targetTrebleGain != 0.0f) {
+        float x0 = r;
+        float y0 = trebleFilterR.b0 * x0 + trebleFilterR.b1 * trebleFilterR.in1 - trebleFilterR.a1 * trebleFilterR.out1;
+        trebleFilterR.in1 = x0;
+        trebleFilterR.out1 = y0;
+        r = y0;
+    }
 }
 
 //-----------------------------------------------------------------------------
-// Setters (unchanged)
+// Parameter Setters
 //-----------------------------------------------------------------------------
+
 void AudioEffectJPFX::setBassGain(float dB)
 {
     if (dB != targetBassGain) {
@@ -281,43 +327,11 @@ void AudioEffectJPFX::setModFeedback(float fb)
 
 void AudioEffectJPFX::setDelayEffect(DelayEffectType type)
 {
-    // DEBUG: Log delay effect selection
-    Serial.print("[JPFX] setDelayEffect called: ");
-    Serial.print((int)type);
-    Serial.print(" (");
-    if (type == JPFX_DELAY_OFF) Serial.print("OFF");
-    else if (type == JPFX_DELAY_SHORT) Serial.print("SHORT");
-    else if (type == JPFX_DELAY_LONG) Serial.print("LONG");
-    else if (type == JPFX_DELAY_PINGPONG1) Serial.print("PINGPONG1");
-    else if (type == JPFX_DELAY_PINGPONG2) Serial.print("PINGPONG2");
-    else if (type == JPFX_DELAY_PINGPONG3) Serial.print("PINGPONG3");
-    Serial.println(")");
-    
-    // DEBUG: Check buffer allocation
-    Serial.print("[JPFX] Delay buffers: L=");
-    Serial.print((delayBufL != nullptr) ? "OK" : "NULL");
-    Serial.print(", R=");
-    Serial.print((delayBufR != nullptr) ? "OK" : "NULL");
-    Serial.print(", Size=");
-    Serial.println(delayBufSize);
-
-    delayType = type;
-    
-    // DEBUG: Show preset parameters if not OFF
-    if (type != JPFX_DELAY_OFF) {
-        const DelayParams &p = delayParams[type];
-        Serial.print("[JPFX] Delay params: L=");
-        Serial.print(p.delayL);
-        Serial.print("ms, R=");
-        Serial.print(p.delayR);
-        Serial.print("ms, FB=");
-        Serial.print(p.feedback);
-
-    }
-
     if (type != delayType) {
         delayType = type;
         delayWriteIndex = 0;
+        
+        // Clear delay buffers when changing effect type
         if (delayBufL && delayBufR) {
             for (uint32_t i = 0; i < delayBufSize; ++i) {
                 delayBufL[i] = 0.0f;
@@ -351,20 +365,24 @@ void AudioEffectJPFX::setDelayTime(float ms)
 }
 
 //-----------------------------------------------------------------------------
-// updateLfoIncrements (unchanged)
+// updateLfoIncrements - Calculate LFO phase increment per sample
+// Called when modulation effect or rate changes
 //-----------------------------------------------------------------------------
 void AudioEffectJPFX::updateLfoIncrements()
 {
+    // CPU OPTIMIZATION: If modulation is off, set increments to 0
     if (modType == JPFX_MOD_OFF) {
         lfoIncL = lfoIncR = 0.0f;
         return;
     }
     
+    // Get rate from preset or override
     float rate = modParams[modType].rate;
     if (modRateOverride > 0.0f) {
         rate = modRateOverride;
     }
     
+    // Calculate phase increment (radians per sample)
     const float fs = AUDIO_SAMPLE_RATE_EXACT;
     const float twoPi = 2.0f * 3.14159265358979323846f;
     float phaseInc = twoPi * rate / fs;
@@ -373,11 +391,12 @@ void AudioEffectJPFX::updateLfoIncrements()
 }
 
 //-----------------------------------------------------------------------------
-// processModulation (FIXED: use modBuf instead of delayBuf)
+// processModulation - Chorus, flanger, phaser effects
+// CPU OPTIMIZATION: Bypasses completely if effect is disabled
 //-----------------------------------------------------------------------------
 inline void AudioEffectJPFX::processModulation(float inL, float inR, float &outL, float &outR)
 {
-    // Bypass if disabled or no buffer
+    // CPU OPTIMIZATION: Early bypass if modulation disabled or no buffer
     if (modType == JPFX_MOD_OFF || !modBufL || !modBufR) {
         outL = inL;
         outR = inR;
@@ -411,7 +430,7 @@ inline void AudioEffectJPFX::processModulation(float inL, float inR, float &outL
     delaySamplesL = constrain(delaySamplesL, 0.0f, (float)(modBufSize - 2));
     delaySamplesR = constrain(delaySamplesR, 0.0f, (float)(modBufSize - 2));
     
-    // Read with linear interpolation
+    // Read with linear interpolation - LEFT
     float readIndexL = (float)modWriteIndex - delaySamplesL;
     if (readIndexL < 0.0f) readIndexL += (float)modBufSize;
     uint32_t idxL0 = (uint32_t)readIndexL;
@@ -419,6 +438,7 @@ inline void AudioEffectJPFX::processModulation(float inL, float inR, float &outL
     float fracL = readIndexL - (float)idxL0;
     float delayedL = modBufL[idxL0] + (modBufL[idxL1] - modBufL[idxL0]) * fracL;
     
+    // Read with linear interpolation - RIGHT
     float readIndexR = (float)modWriteIndex - delaySamplesR;
     if (readIndexR < 0.0f) readIndexR += (float)modBufSize;
     uint32_t idxR0 = (uint32_t)readIndexR;
@@ -430,7 +450,7 @@ inline void AudioEffectJPFX::processModulation(float inL, float inR, float &outL
     modBufL[modWriteIndex] = inL + delayedL * feedback;
     modBufR[modWriteIndex] = inR + delayedR * feedback;
     
-    // Advance write pointer (FIXED: only advance once per call)
+    // Advance write pointer
     modWriteIndex = (modWriteIndex + 1) % modBufSize;
     
     // Mix dry and wet
@@ -439,39 +459,23 @@ inline void AudioEffectJPFX::processModulation(float inL, float inR, float &outL
 }
 
 //-----------------------------------------------------------------------------
-// processDelay (FIXED: use delayBuf, not shared with modulation)
+// processDelay - Delay and ping-pong delay effects
+// CPU OPTIMIZATION: Bypasses if disabled, but continues to decay buffer
 //-----------------------------------------------------------------------------
 inline void AudioEffectJPFX::processDelay(float inL, float inR, float &outL, float &outR)
 {
-    // If delay disabled or no buffer allocated, bypass
-    if (delayType == JPFX_DELAY_OFF || delayBufL == nullptr || delayBufR == nullptr) {
-        outL = inL;
-        outR = inR;
-        
-        // DEBUG: Only print once per second (not every sample!)
-        static uint32_t lastDebug = 0;
-        if (millis() - lastDebug > 1000) {
-            if (delayType != JPFX_DELAY_OFF) {
-                Serial.println("[JPFX] processDelay: BYPASSED (buffer null)");
-            }
-            lastDebug = millis();
-        }
-        return;
-    }
-    
-    // DEBUG: Print once per second when delay is active
-    static uint32_t lastActiveDebug = 0;
-    if (millis() - lastActiveDebug > 1000) {
-        Serial.print("[JPFX] processDelay ACTIVE: mix=");
-        Serial.print(delayMix);
-        Serial.print(", writeIdx=");
-        Serial.println(delayWriteIndex);
-        lastActiveDebug = millis();
-    }
-    // Bypass if disabled or no buffer
+    // CPU OPTIMIZATION: If delay disabled or no buffer, bypass
+    // BUT still advance write pointer to decay the buffer naturally
     if (delayType == JPFX_DELAY_OFF || !delayBufL || !delayBufR) {
         outL = inL;
         outR = inR;
+        
+        // Continue to let delay buffer decay (write silence with feedback)
+        if (delayBufL && delayBufR) {
+            delayBufL[delayWriteIndex] = delayBufL[delayWriteIndex] * 0.95f;  // Decay
+            delayBufR[delayWriteIndex] = delayBufR[delayWriteIndex] * 0.95f;
+            delayWriteIndex = (delayWriteIndex + 1) % delayBufSize;
+        }
         return;
     }
     
@@ -499,7 +503,7 @@ inline void AudioEffectJPFX::processDelay(float inL, float inR, float &outL, flo
     delaySamplesL = constrain(delaySamplesL, 0.0f, (float)(delayBufSize - 2));
     delaySamplesR = constrain(delaySamplesR, 0.0f, (float)(delayBufSize - 2));
     
-    // Read with linear interpolation
+    // Read with linear interpolation - LEFT
     float readIndexL = (float)delayWriteIndex - delaySamplesL;
     if (readIndexL < 0.0f) readIndexL += (float)delayBufSize;
     uint32_t idxL0 = (uint32_t)readIndexL;
@@ -507,6 +511,7 @@ inline void AudioEffectJPFX::processDelay(float inL, float inR, float &outL, flo
     float fracL = readIndexL - (float)idxL0;
     float delayedL = delayBufL[idxL0] + (delayBufL[idxL1] - delayBufL[idxL0]) * fracL;
     
+    // Read with linear interpolation - RIGHT
     float readIndexR = (float)delayWriteIndex - delaySamplesR;
     if (readIndexR < 0.0f) readIndexR += (float)delayBufSize;
     uint32_t idxR0 = (uint32_t)readIndexR;
@@ -518,31 +523,30 @@ inline void AudioEffectJPFX::processDelay(float inL, float inR, float &outL, flo
     delayBufL[delayWriteIndex] = inL + delayedL * feedback;
     delayBufR[delayWriteIndex] = inR + delayedR * feedback;
     
-    // Advance write pointer (FIXED: only advance once per call)
+    // Advance write pointer
     delayWriteIndex = (delayWriteIndex + 1) % delayBufSize;
     
-    // Apply inversion if requested
-    const float wetL = invertWet ? -delayedL : delayedL;
-    const float wetR = invertWet ? -delayedR : delayedR;
-    
-    // Mix dry and wet
+    // Mix dry and wet (with optional inversion for phase tricks)
+    float wetL = invertWet ? -delayedL : delayedL;
+    float wetR = invertWet ? -delayedR : delayedR;
     outL = dryMix * inL + wetMix * wetL;
     outR = dryMix * inR + wetMix * wetR;
 }
 
-//-----------------------------------------------------------------------------
-// update (FIXED: mono input, internal stereo processing)
-//-----------------------------------------------------------------------------
 void AudioEffectJPFX::update(void)
 {
     // Receive mono input
     audio_block_t *in = receiveReadOnly(0);
-    if (!in) return;
     
-    // Allocate output
-    audio_block_t *out = allocate();
-    if (!out) {
-        release(in);
+    // Allocate TWO output blocks for stereo
+    audio_block_t *outL = allocate();
+    audio_block_t *outR = allocate();
+    
+    // Check allocation
+    if (!outL || !outR) {
+        if (outL) release(outL);
+        if (outR) release(outR);
+        if (in) release(in);
         return;
     }
     
@@ -557,8 +561,8 @@ void AudioEffectJPFX::update(void)
     
     // Process each sample
     for (int i = 0; i < AUDIO_BLOCK_SAMPLES; ++i) {
-        // Convert to float and duplicate for stereo
-        const float input = (float)in->data[i] * (1.0f / 32768.0f);
+        // Get input sample (or 0 if no input)
+        float input = in ? ((float)in->data[i] * (1.0f / 32768.0f)) : 0.0f;
         float l = input;
         float r = input;
         
@@ -573,14 +577,19 @@ void AudioEffectJPFX::update(void)
         float delL, delR;
         processDelay(modL, modR, delL, delR);
         
-        // Sum to mono and convert back to int16
-        float mono = (delL + delR) * 0.5f;
-        mono = constrain(mono, -1.0f, 1.0f);
-        out->data[i] = (int16_t)(mono * 32767.0f);
+        // Convert to int16 - STEREO output
+        delL = constrain(delL, -1.0f, 1.0f);
+        delR = constrain(delR, -1.0f, 1.0f);
+        outL->data[i] = (int16_t)(delL * 32767.0f);
+        outR->data[i] = (int16_t)(delR * 32767.0f);
     }
     
-    // Transmit output
-    transmit(out);
-    release(out);
-    release(in);
+    // Transmit both channels
+    transmit(outL, 0);  // Output 0 = Left
+    transmit(outR, 1);  // Output 1 = Right
+    
+    // Release all blocks
+    release(outL);
+    release(outR);
+    if (in) release(in);
 }

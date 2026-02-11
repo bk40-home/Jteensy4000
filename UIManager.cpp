@@ -199,6 +199,11 @@ case CC::FX_MOD_MIX:
 case CC::FX_JPFX_DELAY_MIX:
     return norm_to_cc(synth.getFXDelayMix());
 
+case CC::FX_DRY_MIX: return norm_to_cc(synth.getFXDryMix());
+case CC::FX_REVERB_MIX:  return norm_to_cc(synth.getFXReverbMixL());
+case CC::FX_JPFX_MIX:   return norm_to_cc(synth.getFXJPFXMixL());
+
+
 // JPFX Mod rate (0..20 Hz → 0..127)
 case CC::FX_MOD_RATE: {
     float hz = synth.getFXModRate();

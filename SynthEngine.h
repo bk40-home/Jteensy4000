@@ -1,6 +1,7 @@
 #pragma once
-// SynthEngine.h - 8 VOICE VERSION
+// SynthEngine.h - 8 VOICE VERSION with FX FIXES
 // Expanded from 4 to 8 voices with proper mixer architecture
+// Added reverb bypass control for CPU optimization
 
 #include <Arduino.h>
 #include "VoiceBlock.h"
@@ -154,27 +155,27 @@ public:
     const char* getFXDelayEffectName() const;
 
     // Reverb controls (hexefx)
-void setFXReverbRoomSize(float size);
-void setFXReverbHiDamping(float damp);
-void setFXReverbLoDamping(float damp);
-float getFXReverbRoomSize() const;
-float getFXReverbHiDamping() const;
-float getFXReverbLoDamping() const;
+    void setFXReverbRoomSize(float size);
+    void setFXReverbHiDamping(float damp);
+    void setFXReverbLoDamping(float damp);
+    float getFXReverbRoomSize() const;
+    float getFXReverbHiDamping() const;
+    float getFXReverbLoDamping() const;
 
-// Mix controls
-void setFXJPFXMix(float left, float right);    // JPFX wet amount
-void setFXReverbMix(float left, float right);  // Reverb wet amount
-float getFXJPFXMixL() const;
-float getFXJPFXMixR() const;
-float getFXReverbMixL() const;
-float getFXReverbMixR() const;
+    // Reverb bypass control (NEW - CPU optimization)
+    void setFXReverbBypass(bool bypass);
+    bool getFXReverbBypass() const;
 
-    // Global mix
-    void setFXDryMix(float level);
+    // Mix controls
+    void setFXDryMix(float level);                     // Dry signal level
+    void setFXJPFXMix(float left, float right);        // JPFX wet amount
+    void setFXReverbMix(float left, float right);      // Reverb wet amount
+    
     float getFXDryMix() const;
-
-    // void setMasterVolume(float level);
-    // float getMasterVolume() const;
+    float getFXJPFXMixL() const;
+    float getFXJPFXMixR() const;
+    float getFXReverbMixL() const;
+    float getFXReverbMixR() const;
 
     // --- UI helpers
     int getOsc1Waveform() const;
@@ -282,8 +283,6 @@ private:
     AudioConnection* _voicePatchLFO2FrequencyOsc2[MAX_VOICES];
     AudioConnection* _voicePatchLFO2Filter[MAX_VOICES];
 
-
-
     AudioConnection* _patchAmpModFixedDcToAmpModMixer;
     AudioConnection* _patchLFO1ToAmpModMixer;
     AudioConnection* _patchLFO2ToAmpModMixer;
@@ -291,10 +290,8 @@ private:
     AudioConnection* _patchVoiceMixerToAmpMultiply;
     AudioConnection* _fxPatchInL;   // Amp → JPFX left input
     AudioConnection* _fxPatchInR;   // Amp → JPFX right input
-
-    AudioConnection* _fxPatchDryL;   // Amp → mixer dry left
-    AudioConnection* _fxPatchDryR;   // Amp → mixer dry right
-
+    AudioConnection* _fxPatchDryL;  // Amp → mixer dry left
+    AudioConnection* _fxPatchDryR;  // Amp → mixer dry right
 
     // Mixer connections (new for 8-voice architecture)
     AudioConnection* _patchMixerAToFinal;

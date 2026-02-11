@@ -3,10 +3,8 @@
 #include <usb_midi.h>
 #include <USBHost_t36.h>
 #include "SynthEngine.h"
-#include "HardwareInterface.h"
-#include "UIManager.h"
 #include "UIPageLayout.h"   // UI-only page->CC layout and labels
-//#include "CCMap.h"
+
 #include "Presets.h"
 #include "AudioScopeTap.h" 
 

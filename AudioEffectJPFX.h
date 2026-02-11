@@ -1,17 +1,20 @@
 /*
- * AudioEffectJPFX.h (FIXED VERSION)
+ * AudioEffectJPFX.h (STEREO OUTPUT VERSION)
  *
- * This module implements the effects section of the Roland JP‑8000 synthesizer
- * for the JT‑4000 project.
+ * This module implements the effects section of the Roland JP-8000 synthesizer
+ * for the JT-4000 project.
  *
- * CRITICAL BUG FIXES:
- * 1. Changed from 2 inputs to 1 input (mono processing, internal stereo)
- * 2. Changed from 2 outputs to 1 output (AudioStream limitation)
- * 3. Added proper input queue
- * 4. Fixed transmit() to use single output
- * 5. Made delay buffer shared between modulation and delay (was conflict)
- * 6. Added proper bypass when effects are off
- * 7. Fixed constructor input count
+ * KEY CHANGES FOR STEREO OUTPUT:
+ * 1. Changed from 1 output to 2 outputs (true stereo!)
+ * 2. Maintains 1 input (mono input, stereo processing, stereo output)
+ * 3. Separate transmit() calls for left and right channels
+ * 4. Preserves stereo imaging from ping-pong delays and modulation
+ *
+ * PREVIOUS BUG FIXES MAINTAINED:
+ * - 1 input (mono processing, internal stereo)
+ * - Separate modulation and delay buffers (no conflicts)
+ * - Continuous processing (maintains effect tails)
+ * - Smart bypass when effects disabled
  */
 
 #pragma once
@@ -19,11 +22,11 @@
 #include <Arduino.h>
 #include "AudioStream.h"
 
-// Maximum delay time in milliseconds.  The JP‑8000's delay extends up to
+// Maximum delay time in milliseconds.  The JP-8000's delay extends up to
 // 1250ms; we allocate a little extra headroom.  Changing this constant
 // will directly affect the size of the delay buffer allocated at
 // construction time.  If PSRAM is available it will be used.
-#define JPFX_MAX_DELAY_MS    750.0f
+#define JPFX_MAX_DELAY_MS    1500.0f
 
 // Number of modulation effect variations (chorus/flanger/phaser)
 #define JPFX_NUM_MOD_VARIATIONS 11
@@ -59,7 +62,7 @@ public:
         JPFX_DELAY_PINGPONG3
     };
 
-    // Constructor: 1 input, 1 output (internal stereo processing)
+    // Constructor: 1 input (mono), 2 outputs (stereo)
     AudioEffectJPFX();
     
     // Destructor to free delay buffers
@@ -85,7 +88,7 @@ public:
     void setDelayTime(float ms);        // ms, 0 = use preset
 
 private:
-    // Input queue for AudioStream
+    // Input queue for AudioStream (1 input)
     audio_block_t *inputQueueArray[1];
 
     // ----- Tone control internals -----
@@ -109,7 +112,7 @@ private:
         float rate;                     // LFO rate (Hz)
         float feedback;                 // Feedback (0.0..0.99)
         float mix;                      // Wet/dry mix (0.0..1.0)
-        bool  isPhaser;                 // Use all‑pass instead of delay
+        bool  isPhaser;                 // Use all-pass instead of delay
         bool  isFlanger;                // Use shorter delay times
     } ModParams;
 
@@ -139,8 +142,7 @@ private:
     float delayFeedbackOverride;
     float delayTimeOverride;
 
-    // CRITICAL FIX: Separate delay buffers for modulation and delay effects
-    // The original code used the same buffer for both, causing conflicts
+    // Separate delay buffers for modulation and delay effects
     float *modBufL, *modBufR;         // Modulation delay buffers
     float *delayBufL, *delayBufR;     // Delay effect buffers
     uint32_t modBufSize, delayBufSize;

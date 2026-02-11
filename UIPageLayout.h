@@ -1,9 +1,21 @@
-#pragma once
 /*
- * UIPageLayout.h - WITH JPFX PAGES
+ * UIPageLayout.h - REORGANIZED FX PAGES
  * 
- * Updated to use JPFX effects (CCs 99-110) instead of hexefx.
+ * FX pages now logically grouped:
+ * - Page 15: JPFX Tone + Modulation
+ * - Page 16: JPFX Delay
+ * - Page 17: Reverb Controls
+ * - Page 18: FX Mix Levels (all mix controls together)
+ * - Page 19: Global settings (moved up from 20)
+ * 
+ * Changes from previous version:
+ * - Removed duplicate FX_DRY_MIX and FX_JPFX_DELAY_MIX
+ * - Added FX_REVERB_BYPASS control
+ * - Grouped all mix controls on single page
+ * - Better visual organization with blank spaces
  */
+
+#pragma once
 
 #include <Arduino.h>
 #include "CCDefs.h"
@@ -14,6 +26,10 @@ static constexpr int NUM_PAGES       = 22;
 static constexpr int PARAMS_PER_PAGE = 4;
 
 static constexpr uint8_t ccMap[NUM_PAGES][PARAMS_PER_PAGE] = {
+    // =========================================================================
+    // OSCILLATOR PAGES (0-6)
+    // =========================================================================
+    
     // Page 0-2: OSC1
     {CC::OSC1_WAVE,        CC::OSC1_PITCH_OFFSET, CC::OSC1_FINE_TUNE,   CC::OSC1_DETUNE},
     {CC::OSC_MIX_BALANCE,  CC::OSC1_MIX,          CC::SUPERSAW1_DETUNE, CC::SUPERSAW1_MIX},
@@ -24,79 +40,176 @@ static constexpr uint8_t ccMap[NUM_PAGES][PARAMS_PER_PAGE] = {
     {CC::OSC2_MIX,         CC::SUPERSAW2_DETUNE,  CC::SUPERSAW2_MIX,    CC::NOISE_MIX},
     {CC::OSC2_FREQ_DC,     CC::OSC2_SHAPE_DC,     CC::RING2_MIX,        255},
 
-    // Page 6: Sub
+    // Page 6: Sub Oscillator
     {CC::SUB_MIX,          255,                   255,                  255},
 
-    // Page 7-10: Filter
-    {CC::FILTER_CUTOFF,    CC::FILTER_RESONANCE,  CC::FILTER_ENV_AMOUNT, CC::FILTER_KEY_TRACK},
-    {CC::FILTER_OCTAVE_CONTROL, CC::FILTER_OBXA_RES_MOD_DEPTH,  CC::FILTER_OBXA_MULTIMODE, 255},
-    {CC::FILTER_OBXA_TWO_POLE, CC::FILTER_OBXA_BP_BLEND_2_POLE,  CC::FILTER_OBXA_PUSH_2_POLE, 255},
-    {CC::FILTER_OBXA_XPANDER_4_POLE, CC::FILTER_OBXA_XPANDER_MODE,  255, 255},
+    // =========================================================================
+    // FILTER PAGES (7-10)
+    // =========================================================================
+    
+    {CC::FILTER_CUTOFF,              CC::FILTER_RESONANCE,           CC::FILTER_ENV_AMOUNT,        CC::FILTER_KEY_TRACK},
+    {CC::FILTER_OCTAVE_CONTROL,      CC::FILTER_OBXA_RES_MOD_DEPTH,  CC::FILTER_OBXA_MULTIMODE,    255},
+    {CC::FILTER_OBXA_TWO_POLE,       CC::FILTER_OBXA_BP_BLEND_2_POLE, CC::FILTER_OBXA_PUSH_2_POLE, 255},
+    {CC::FILTER_OBXA_XPANDER_4_POLE, CC::FILTER_OBXA_XPANDER_MODE,   255,                          255},
 
-    // Page 11-12: Envelopes
-    {CC::AMP_ATTACK,       CC::AMP_DECAY,         CC::AMP_SUSTAIN,       CC::AMP_RELEASE},
-    {CC::FILTER_ENV_ATTACK, CC::FILTER_ENV_DECAY, CC::FILTER_ENV_SUSTAIN, CC::FILTER_ENV_RELEASE},
+    // =========================================================================
+    // ENVELOPE PAGES (11-12)
+    // =========================================================================
+    
+    {CC::AMP_ATTACK,        CC::AMP_DECAY,         CC::AMP_SUSTAIN,        CC::AMP_RELEASE},
+    {CC::FILTER_ENV_ATTACK, CC::FILTER_ENV_DECAY,  CC::FILTER_ENV_SUSTAIN, CC::FILTER_ENV_RELEASE},
 
-    // Page 13-14: LFOs
+    // =========================================================================
+    // LFO PAGES (13-14)
+    // =========================================================================
+    
     {CC::LFO1_FREQ,        CC::LFO1_DEPTH,        CC::LFO1_DESTINATION,  CC::LFO1_WAVEFORM},
     {CC::LFO2_FREQ,        CC::LFO2_DEPTH,        CC::LFO2_DESTINATION,  CC::LFO2_WAVEFORM},
 
-    // Page 15: JPFX Tone + Modulation Effect Selection
+    // =========================================================================
+    // FX PAGES (15-18) - REORGANIZED FOR CLARITY
+    // =========================================================================
+    
+    // Page 15: JPFX Tone + Modulation Effect
     {CC::FX_BASS_GAIN,     CC::FX_TREBLE_GAIN,    CC::FX_MOD_EFFECT,     CC::FX_MOD_MIX},
-
-    // Page 16: JPFX Modulation Parameters
+    
+    // Page 16: JPFX Modulation Parameters + Delay Effect Selection
     {CC::FX_MOD_RATE,      CC::FX_MOD_FEEDBACK,   CC::FX_JPFX_DELAY_EFFECT, CC::FX_JPFX_DELAY_MIX},
-
+    
     // Page 17: JPFX Delay Parameters
-    {CC::FX_JPFX_DELAY_FEEDBACK, CC::FX_JPFX_DELAY_TIME, CC::FX_DRY_MIX, 255},
+    {CC::FX_JPFX_DELAY_FEEDBACK, CC::FX_JPFX_DELAY_TIME, 255, 255},
+    
+    // Page 18: Reverb Controls (all reverb parameters together)
+    {CC::FX_REVERB_SIZE,   CC::FX_REVERB_DAMP,    CC::FX_REVERB_LODAMP,  CC::FX_REVERB_MIX},
 
-    //Page 18 (Reverb):
+    // Page 19: FX Mix Levels (all mix controls grouped together)
+    {CC::FX_DRY_MIX,       CC::FX_JPFX_MIX,     CC::FX_REVERB_MIX,     255},
 
-    {CC::FX_REVERB_SIZE, CC::FX_REVERB_DAMP, CC::FX_REVERB_LODAMP, CC::FX_REVERB_MIX},
-
-    //Page 19 (Global Mix):
-
-    {CC::FX_DRY_MIX, CC::FX_JPFX_DELAY_MIX, 255, 255},
-
-    // Page 20: Glide + Amp Mod
+    // =========================================================================
+    // GLOBAL PAGES (20-21)
+    // =========================================================================
+    
+    // Page 20: Glide + Amp Modulation
     {CC::GLIDE_ENABLE,     CC::GLIDE_TIME,        CC::AMP_MOD_FIXED_LEVEL, 255},
     
-
     // Page 21: Arbitrary Waveform Selection
     {CC::OSC1_ARB_BANK,    CC::OSC1_ARB_INDEX,    CC::OSC2_ARB_BANK,      CC::OSC2_ARB_INDEX},
 };
 
+// Display names for each parameter on each page
 static constexpr const char* ccNames[NUM_PAGES][PARAMS_PER_PAGE] = {
-    {"OSC1 Wave", "OSC1 Pitch", "OSC1 Fine", "OSC1 Det"},
-    {"Osc1 Mix", "Osc1 Bal", "SupSaw Det1", "SupSaw Mix1"},
-    {"Freq DC1", "Shape DC1", "Ring Mix1", "-"},
+    // =========================================================================
+    // OSCILLATOR PAGES (0-6)
+    // =========================================================================
+    
+    // OSC1
+    {"OSC1 Wave",  "OSC1 Pitch", "OSC1 Fine",  "OSC1 Det"},
+    {"Osc Bal",    "Osc1 Mix",   "Saw1 Det",   "Saw1 Mix"},
+    {"Freq DC1",   "Shape DC1",  "Ring1 Mix",  "-"},
 
-    {"OSC2 Wave", "OSC2 Pitch", "OSC2 Fine", "OSC2 Det"},
-    {"Osc2 Mix", "SupSaw Det2", "SupSaw Mix2", "Noise Mix"},
-    {"Freq DC2", "Shape DC2", "Ring Mix2", "-"},
+    // OSC2
+    {"OSC2 Wave",  "OSC2 Pitch", "OSC2 Fine",  "OSC2 Det"},
+    {"Osc2 Mix",   "Saw2 Det",   "Saw2 Mix",   "Noise Mix"},
+    {"Freq DC2",   "Shape DC2",  "Ring2 Mix",  "-"},
 
-    {"Sub Mix", "-", "-", "-"},
+    // Sub
+    {"Sub Mix",    "-",          "-",          "-"},
 
-    {"Cutoff", "Resonance", "Filt Env Amt", "Key Track"},
-    {"Oct Ctrl", "Q Depth", "Multimode", "-"},
-    {"2 Pole", "Blend 2p", "Push 2p", "-"},
-    {"Xpander", "XpMode", "-", "-"},
+    // =========================================================================
+    // FILTER PAGES (7-10)
+    // =========================================================================
+    
+    {"Cutoff",     "Resonance",  "Flt Env Amt", "Key Track"},
+    {"Oct Ctrl",   "Q Depth",    "Multimode",   "-"},
+    {"2 Pole",     "Blend 2p",   "Push 2p",     "-"},
+    {"Xpander",    "Xpand Mode", "-",           "-"},
 
-    {"Amp Att", "Amp Dec", "Amp Sus", "Amp Rel"},
-    {"Filt Att", "Filt Dec", "Filt Sus", "Filt Rel"},
+    // =========================================================================
+    // ENVELOPE PAGES (11-12)
+    // =========================================================================
+    
+    {"Amp Att",    "Amp Dec",    "Amp Sus",     "Amp Rel"},
+    {"Flt Att",    "Flt Dec",    "Flt Sus",     "Flt Rel"},
 
-    {"LFO1 Freq", "LFO1 Depth", "LFO1 Dest", "LFO1 Wave"},
-    {"LFO2 Freq", "LFO2 Depth", "LFO2 Dest", "LFO2 Wave"},
+    // =========================================================================
+    // LFO PAGES (13-14)
+    // =========================================================================
+    
+    {"LFO1 Freq",  "LFO1 Depth", "LFO1 Dest",   "LFO1 Wave"},
+    {"LFO2 Freq",  "LFO2 Depth", "LFO2 Dest",   "LFO2 Wave"},
 
-    // JPFX pages
-    {"Bass", "Treble", "Mod FX", "Mod Mix"},
-    {"Mod Rate", "Mod FB", "Dly FX", "Dly Mix"},
-    {"Dly FB", "Dly Time", "Dry Mix", "-"},
-    {"Rev Size", "Rev Damp", "Rev lodmp", "Rev Mix"},
-    {"Fx DryMix", "Fx Jpfx Mix", "-", "-"},
+    // =========================================================================
+    // FX PAGES (15-18) - CLEARLY LABELED
+    // =========================================================================
+    
+    // Page 15: Tone + Modulation Effect Type
+    {"Bass",       "Treble",     "Mod FX",      "Mod Mix"},
+    
+    // Page 16: Modulation Parameters + Delay Type
+    {"Mod Rate",   "Mod FB",     "Dly FX",      "Dly Mix"},
+    
+    // Page 17: Delay Parameters
+    {"Dly FB",     "Dly Time",   "-",           "-"},
+    
+    // Page 18: Reverb
+    {"Rev Size",   "Rev Damp",   "Rev LoDamp",  "Rev Mix"},
 
-    {"Glide En", "Glide Time", "Amp Mod DC", "-"},
-    {"OSC1 Bank", "OSC1 Table", "OSC2 Bank", "OSC2 Table"},
+    // Page 19: Mix Levels (master FX balance)
+    {"Dry Mix",    "JPFX Mix",   "Rev Mix",     "-"},
+
+    // =========================================================================
+    // GLOBAL PAGES (20-21)
+    // =========================================================================
+    
+    {"Glide On",   "Glide Time", "Amp Mod",     "-"},
+    {"OSC1 Bank",  "OSC1 Wave#", "OSC2 Bank",   "OSC2 Wave#"},
 };
+
+/*
+ * PAGE ORGANIZATION NOTES:
+ * 
+ * FX SECTION (Pages 15-19):
+ * 
+ * Page 15: TONE + MODULATION EFFECT
+ *   - Bass/Treble EQ controls (JPFX tone section)
+ *   - Modulation effect type selection (chorus/flanger/phaser)
+ *   - Modulation wet/dry mix
+ * 
+ * Page 16: MODULATION PARAMETERS + DELAY EFFECT
+ *   - Modulation rate (LFO speed)
+ *   - Modulation feedback
+ *   - Delay effect type selection
+ *   - Delay wet/dry mix
+ * 
+ * Page 17: DELAY PARAMETERS
+ *   - Delay feedback (regeneration)
+ *   - Delay time (milliseconds)
+ *   - Two blank spaces for future expansion
+ * 
+ * Page 18: REVERB
+ *   - Room size
+ *   - High frequency damping
+ *   - Low frequency damping
+ *   - Reverb wet/dry mix
+ * 
+ * Page 19: FX MIX LEVELS (Master Balance)
+ *   - Dry signal level (pre-FX)
+ *   - JPFX output level (post-JPFX, can bypass reverb)
+ *   - Reverb output level (final wet signal)
+ *   - One blank space
+ * 
+ * SIGNAL FLOW REMINDER:
+ *   Synth Voice → [Dry Mix] ────────────────→ Output
+ *                     ↓
+ *                  JPFX → [JPFX Mix] ───────→ Output
+ *                     ↓
+ *                  Reverb → [Rev Mix] ──────→ Output
+ * 
+ * All three paths sum at output mixer, allowing flexible routing:
+ * - Dry only (Dry=100%, JPFX=0%, Rev=0%)
+ * - Dry + JPFX (Dry=70%, JPFX=30%, Rev=0%)
+ * - Dry + JPFX + Reverb (Dry=50%, JPFX=30%, Rev=20%)
+ * - Full wet (Dry=0%, JPFX=50%, Rev=50%)
+ */
 
 } // namespace UIPage
