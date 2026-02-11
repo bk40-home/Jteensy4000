@@ -96,14 +96,14 @@ SynthEngine::SynthEngine()
         _voicePatchLFO1ShapeOsc2[i]     = new AudioConnection(_lfo1.output(), 0, _voices[i].shapeModMixerOsc2(), 1);
         _voicePatchLFO1FrequencyOsc1[i] = new AudioConnection(_lfo1.output(), 0, _voices[i].frequencyModMixerOsc1(), 1);
         _voicePatchLFO1FrequencyOsc2[i] = new AudioConnection(_lfo1.output(), 0, _voices[i].frequencyModMixerOsc2(), 1);
-        _voicePatchLFO1Filter[i]        = new AudioConnection(_lfo1.output(), 0, _voices[i].filterModMixer(), 1);
+        _voicePatchLFO1Filter[i]        = new AudioConnection(_lfo1.output(), 0, _voices[i].filterModMixer(), 2);
         
         // LFO2 connections - use your actual VoiceBlock method names
-        _voicePatchLFO2ShapeOsc1[i]     = new AudioConnection(_lfo2.output(), 0, _voices[i].shapeModMixerOsc1(), 1);
-        _voicePatchLFO2ShapeOsc2[i]     = new AudioConnection(_lfo2.output(), 0, _voices[i].shapeModMixerOsc2(), 1);
-        _voicePatchLFO2FrequencyOsc1[i] = new AudioConnection(_lfo2.output(), 0, _voices[i].frequencyModMixerOsc1(), 1);
-        _voicePatchLFO2FrequencyOsc2[i] = new AudioConnection(_lfo2.output(), 0, _voices[i].frequencyModMixerOsc2(), 1);
-        _voicePatchLFO2Filter[i]        = new AudioConnection(_lfo2.output(), 0, _voices[i].filterModMixer(), 1);
+        _voicePatchLFO2ShapeOsc1[i]     = new AudioConnection(_lfo2.output(), 0, _voices[i].shapeModMixerOsc1(), 2);
+        _voicePatchLFO2ShapeOsc2[i]     = new AudioConnection(_lfo2.output(), 0, _voices[i].shapeModMixerOsc2(), 2);
+        _voicePatchLFO2FrequencyOsc1[i] = new AudioConnection(_lfo2.output(), 0, _voices[i].frequencyModMixerOsc1(), 2);
+        _voicePatchLFO2FrequencyOsc2[i] = new AudioConnection(_lfo2.output(), 0, _voices[i].frequencyModMixerOsc2(), 2);
+        _voicePatchLFO2Filter[i]        = new AudioConnection(_lfo2.output(), 0, _voices[i].filterModMixer(), 3);
     }
 
     // =========================================================================

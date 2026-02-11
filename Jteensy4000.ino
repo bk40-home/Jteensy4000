@@ -4,6 +4,8 @@
 #include <USBHost_t36.h>
 #include "SynthEngine.h"
 #include "UIPageLayout.h"   // UI-only page->CC layout and labels
+#include "HardwareInterface.h"
+#include "UIManager.h"
 
 #include "Presets.h"
 #include "AudioScopeTap.h" 
