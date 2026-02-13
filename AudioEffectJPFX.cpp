@@ -20,6 +20,7 @@
 
 #include "AudioEffectJPFX.h"
 #include <math.h>
+#include "BPMClockManager.h"
 
 #ifdef __arm__
 #include <arm_math.h>
@@ -87,6 +88,10 @@ AudioEffectJPFX::AudioEffectJPFX()
     delayMix = 0.5f;
     delayFeedbackOverride = -1.0f;
     delayTimeOverride = -1.0f;
+
+    // Initialize BPM timing state (NEW)
+    _delayTimingMode = TIMING_FREE;       // Default: free-running ms
+    _freeRunningDelayTime = 250.0f;       // Default delay time
 
     // Initialize all buffer pointers to NULL
     modBufL = nullptr;
@@ -196,6 +201,31 @@ void AudioEffectJPFX::allocateDelayBuffers()
     }
     
     Serial.println("[JPFX] Buffers allocated successfully");
+}
+
+// ADD new method implementations:
+void AudioEffectJPFX::setDelayTimingMode(TimingMode mode) {
+    _delayTimingMode = mode;
+    
+    if (mode == TIMING_FREE) {
+        // Restore free-running delay time
+        setDelayTime(_freeRunningDelayTime);
+    }
+    // When switching to BPM mode, time will be updated by
+    // updateFromBPMClock() call from FXChainBlock
+}
+
+void AudioEffectJPFX::updateFromBPMClock(const BPMClockManager& bpmClock) {
+    // Only update if in BPM-synced mode
+    if (_delayTimingMode == TIMING_FREE) return;
+    if (delayType == JPFX_DELAY_OFF) return;  // No delay active
+    
+    // Get time for current timing mode
+    float syncedTimeMs = bpmClock.getTimeForMode(_delayTimingMode);
+    if (syncedTimeMs > 0.0f) {
+        // Apply directly to delay parameters, bypass setDelayTime()
+        delayTimeOverride = syncedTimeMs;
+    }
 }
 
 //-----------------------------------------------------------------------------
@@ -355,12 +385,15 @@ void AudioEffectJPFX::setDelayFeedback(float fb)
     }
 }
 
-void AudioEffectJPFX::setDelayTime(float ms)
-{
-    if (ms < 0.0f || ms == 0.0f) {
-        delayTimeOverride = -1.0f;
+void AudioEffectJPFX::setDelayTime(float ms) {
+    _freeRunningDelayTime = ms;  // Always store for mode switching
+    
+    // Only apply if in free-running mode
+    if (_delayTimingMode == TIMING_FREE) {
+        delayTimeOverride = ms;
+        Serial.printf("Delay setDelayTime %.1f ms (FREE)\n", ms);
     } else {
-        delayTimeOverride = constrain(ms, 0.0f, JPFX_MAX_DELAY_MS);
+        Serial.println("Delay in sync mode, time managed by BPM clock");
     }
 }
 

@@ -57,6 +57,11 @@ public:
     float getModFeedback() const;
     const char* getModEffectName() const;
 
+    // ADD to public methods:
+    void updateFromBPMClock(const BPMClockManager& bpmClock);
+    void setDelayTimingMode(TimingMode mode);
+    TimingMode getDelayTimingMode() const;
+
     // Delay effects (5 variations)
     void setDelayEffect(int8_t variation);   // -1=off, 0-4=preset
     void setDelayMix(float mix);             // 0..1 (wet amount)

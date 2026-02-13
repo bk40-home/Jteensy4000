@@ -216,6 +216,23 @@ public:
     AudioMixer4& getFXOutL()     { return _fxChain.getOutputLeft(); }
     AudioMixer4& getFXOutR()     { return _fxChain.getOutputRight(); }
 
+    // ADD to public methods (after line 217):
+    // --- BPM Clock Management
+    void setBPMClock(BPMClockManager* clock);
+    void updateBPMSync();  // Call from update() to refresh synced params
+    
+    // LFO timing modes
+    void setLFO1TimingMode(TimingMode mode);
+    void setLFO2TimingMode(TimingMode mode);
+    TimingMode getLFO1TimingMode() const;
+    TimingMode getLFO2TimingMode() const;
+    
+    // Delay timing mode
+    void setDelayTimingMode(TimingMode mode);
+    TimingMode getDelayTimingMode() const;
+
+
+
 private:
     // =========================================================================
     // 8-VOICE ARCHITECTURE
@@ -362,6 +379,8 @@ private:
     float _fxJPFXMixR = 0.0f;
     float _fxReverbMixL = 0.0f;
     float _fxReverbMixR = 0.0f;
-
+// ADD to private members (after line 366):
+    BPMClockManager* _bpmClock = nullptr;  // Reference to global clock
+    
     NotifyFn _notify = nullptr;
 };

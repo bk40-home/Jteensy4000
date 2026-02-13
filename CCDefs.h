@@ -1,12 +1,13 @@
 /*
- * CCDefs.h - FULLY CORRECTED VERSION
+ * CCDefs.h - FULLY CORRECTED VERSION WITH BPM TIMING
  *
  * Key fixes:
  * 1. Added FX_DRY_MIX, FX_REVERB_MIX, FX_JPFX_MIX (were commented out!)
  * 2. Fixed CC number conflicts (77 was used for both SUPERSAW1_DETUNE and FX_JPFX_DIRECT_MIX)
  * 3. Added FX_REVERB_BYPASS for smart bypass control
  * 4. Reorganized FX routing controls to avoid conflicts
- * 5. Better comments and organization
+ * 5. Added BPM timing CCs (118-122)
+ * 6. Complete CC name() function with all mappings
  */
 
 #pragma once
@@ -131,7 +132,7 @@ namespace CC {
     // Note: CC 99-110 used by JPFX (see below)
 
     // -------------------------------------------------------------------------
-    // JPFX Effects (JP-8000 style) - MOVED TO 99-110 TO AVOID CONFLICTS
+    // JPFX Effects (JP-8000 style) - 99-110
     // -------------------------------------------------------------------------
     static constexpr uint8_t FX_BASS_GAIN        = 99;   // Bass shelf filter (-12dB to +12dB)
     static constexpr uint8_t FX_TREBLE_GAIN      = 100;  // Treble shelf filter (-12dB to +12dB)
@@ -162,6 +163,15 @@ namespace CC {
     static constexpr uint8_t FILTER_OBXA_BP_BLEND_2_POLE = 115;
     static constexpr uint8_t FILTER_OBXA_PUSH_2_POLE = 116;
     static constexpr uint8_t FILTER_OBXA_RES_MOD_DEPTH = 117;
+
+    // -------------------------------------------------------------------------
+    // BPM Clock and Timing (NEW - 118-122)
+    // -------------------------------------------------------------------------
+    static constexpr uint8_t BPM_CLOCK_SOURCE    = 118;  // 0=Internal, 1=External MIDI
+    static constexpr uint8_t BPM_INTERNAL_TEMPO  = 119;  // 40-127 mapped to 40-300 BPM
+    static constexpr uint8_t LFO1_TIMING_MODE    = 120;  // 0-11 (TimingMode enum)
+    static constexpr uint8_t LFO2_TIMING_MODE    = 121;  // 0-11 (TimingMode enum)
+    static constexpr uint8_t DELAY_TIMING_MODE   = 122;  // 0-11 (TimingMode enum)
 
     // -------------------------------------------------------------------------
     // Utility: return human-readable name for a CC
@@ -238,7 +248,7 @@ namespace CC {
             case FX_REVERB_MIX:       return "Rev Mix";
             case FX_REVERB_BYPASS:    return "Rev Bypass";
 
-            // FX - Mix Levels (Page 19)
+            // FX - Mix Levels
             case FX_DRY_MIX:          return "Dry Mix";
             case FX_JPFX_MIX:         return "JPFX Mix";
 
@@ -258,7 +268,7 @@ namespace CC {
             case FX_JPFX_DELAY_FEEDBACK: return "Dly FB";
             case FX_JPFX_DELAY_TIME:     return "Dly Time";
 
-            // FX - Legacy (unused in JPFX)
+            // FX - Legacy (unused)
             case FX_DELAY_TIME:       return "Delay Time";
             case FX_DELAY_FEEDBACK:   return "Delay FB";
             case FX_DELAY_MOD_RATE:   return "Dly ModRate"; 
@@ -270,6 +280,13 @@ namespace CC {
             case GLIDE_ENABLE:        return "Glide On";
             case GLIDE_TIME:          return "Glide Time";
             case AMP_MOD_FIXED_LEVEL: return "Amp Mod";
+
+            // BPM Timing (NEW)
+            case BPM_CLOCK_SOURCE:    return "Clock Src";
+            case BPM_INTERNAL_TEMPO:  return "Int BPM";
+            case LFO1_TIMING_MODE:    return "LFO1 Sync";
+            case LFO2_TIMING_MODE:    return "LFO2 Sync";
+            case DELAY_TIMING_MODE:   return "Dly Sync";
 
             default:                  return nullptr;
         }

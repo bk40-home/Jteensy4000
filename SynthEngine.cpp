@@ -135,6 +135,47 @@ static inline const char* ccname(uint8_t cc) {
 
 void SynthEngine::setNotifier(NotifyFn fn) { _notify = fn; }
 
+// ADD method implementations:
+void SynthEngine::setBPMClock(BPMClockManager* clock) {
+    _bpmClock = clock;
+}
+
+void SynthEngine::updateBPMSync() {
+    if (!_bpmClock) return;  // No clock configured
+    
+    // Update LFOs if they're in sync mode
+    _lfo1.updateFromBPMClock(*_bpmClock);
+    _lfo2.updateFromBPMClock(*_bpmClock);
+    
+    // Update delay timing through FX chain
+    _fxChain.updateFromBPMClock(*_bpmClock);
+}
+
+void SynthEngine::setLFO1TimingMode(TimingMode mode) {
+    _lfo1.setTimingMode(mode);
+}
+
+void SynthEngine::setLFO2TimingMode(TimingMode mode) {
+    _lfo2.setTimingMode(mode);
+}
+
+TimingMode SynthEngine::getLFO1TimingMode() const {
+    return _lfo1.getTimingMode();
+}
+
+TimingMode SynthEngine::getLFO2TimingMode() const {
+    return _lfo2.getTimingMode();
+}
+
+void SynthEngine::setDelayTimingMode(TimingMode mode) {
+    _fxChain.setDelayTimingMode(mode);
+}
+
+TimingMode SynthEngine::getDelayTimingMode() const {
+    return _fxChain.getDelayTimingMode();
+}
+
+
 
 void SynthEngine::noteOn(byte note, float velocity) {
     float freq = 440.0f * powf(2.0f, (note - 69) / 12.0f);
@@ -181,6 +222,8 @@ void SynthEngine::noteOff(byte note) {
 
 void SynthEngine::update() {
     for (int i = 0; i < MAX_VOICES; ++i) _voices[i].update();
+     // Update BPM-synced parameters (if clock is configured)
+    updateBPMSync();  // << ADD THIS LINE
 }
 
 // ---- Filter / Env ----

@@ -2,7 +2,7 @@
 #include <Arduino.h>
 #include <Audio.h>
 #include "Waveforms.h"  // ✅ use the same waveform IDs & names as main osc
-
+#include "BPMClockManager.h"  // For tempo sync
 
 enum LFODestination {
     LFO_DEST_NONE = 0,
@@ -51,6 +51,27 @@ public:
     void setAmplitude(float amp);
     void setDestination(LFODestination destination);
 
+    // ADD to public methods (after line 52):
+    /**
+     * @brief Set timing mode for this LFO
+     * @param mode TIMING_FREE (Hz) or musical division
+     */
+    void setTimingMode(TimingMode mode);
+    
+    /**
+     * @brief Get current timing mode
+     */
+    TimingMode getTimingMode() const { return _timingMode; }
+    
+    /**
+     * @brief Update frequency from BPM clock (called by SynthEngine)
+     * @param bpmClock Reference to global BPM clock manager
+     */
+    void updateFromBPMClock(const BPMClockManager& bpmClock);
+
+
+
+
     // --- Parameter Getters
     float getFrequency() const;
     float getAmplitude() const;
@@ -68,6 +89,8 @@ private:
     // advanced.  This allows the LFO to be free‑running across notes
     // without wasting CPU cycles when it’s not audible.
     bool _enabled = false;
+    TimingMode _timingMode = TIMING_FREE;  // Default: free-running Hz
+    float _freeRunningFreq = 1.0f;         // Stored Hz when in free mode
     AudioSynthWaveform _lfo;
     LFODestination _destination = LFO_DEST_NONE;
     // Preserve the current phase when muting/unmuting.  AudioSynthWaveform

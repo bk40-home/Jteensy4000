@@ -13,6 +13,43 @@ LFOBlock::LFOBlock() {
     _enabled = false;
 }
 
+// ADD new method implementation:
+void LFOBlock::setTimingMode(TimingMode mode) {
+    _timingMode = mode;
+    
+    if (mode == TIMING_FREE) {
+        // Restore free-running frequency
+        setFrequency(_freeRunningFreq);
+    }
+    // When switching to BPM mode, frequency will be updated by
+    // updateFromBPMClock() call from SynthEngine
+}
+
+void LFOBlock::updateFromBPMClock(const BPMClockManager& bpmClock) {
+    // Only update if in BPM-synced mode
+    if (_timingMode == TIMING_FREE) return;
+    
+    // Get frequency for current timing mode
+    float syncedFreq = bpmClock.getFrequencyForMode(_timingMode);
+    if (syncedFreq > 0.0f) {
+        _lfo.frequency(syncedFreq);  // Update LFO directly, bypass cached _freq
+    }
+}
+
+// MODIFY setFrequency (line 40):
+void LFOBlock::setFrequency(float hz) {
+    _freeRunningFreq = hz;  // Always store for mode switching
+    
+    // Only apply if in free-running mode
+    if (_timingMode == TIMING_FREE) {
+        _freq = hz;
+        _lfo.frequency(hz);
+        Serial.printf("LFO setFrequency %.3f Hz (FREE)\n", _freq);
+    } else {
+        Serial.printf("LFO in sync mode, freq managed by BPM clock\n");
+    }
+}
+
 void LFOBlock::update() {    
     // Keep the LFO free‑running only when enabled.  If disabled, we
     // simply leave the internal oscillator muted.  We intentionally do
@@ -36,12 +73,7 @@ void LFOBlock::setWaveformType(int type) {
     }
 }
 
-// --- Parameter Setters
-void LFOBlock::setFrequency(float hz) {
-    _freq = hz;
-    _lfo.frequency(hz);
-    Serial.printf("setFrequency %.3f\n",  _freq);
-}
+
 
 void LFOBlock::setDestination(LFODestination destination) {
     _destination = destination;

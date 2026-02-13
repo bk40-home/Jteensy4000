@@ -36,6 +36,8 @@ AudioConnection* patchOutScope  = nullptr;   // scope feed
 SynthEngine synth;
 HardwareInterface hw;
 UIManager ui;
+// ---------------------- BPM Clock Manager --------------------
+BPMClockManager bpmClock;
 
 // Split to 2 independent paths 
 AudioMixer4  mixerI2SL;
@@ -112,6 +114,26 @@ void handleControlChange(byte channel, byte control, byte value) {
   synth.handleControlChange(channel, control, value);
 }
 
+// ---------------------- MIDI Clock handlers ------------------
+void handleMIDIClock() {
+  bpmClock.handleMIDIClock();  // Process tempo calculation
+}
+
+void handleMIDIStart() {
+  bpmClock.handleMIDIStart();
+  Serial.println("MIDI Start received");
+}
+
+void handleMIDIStop() {
+  bpmClock.handleMIDIStop();
+  Serial.println("MIDI Stop received");
+}
+
+void handleMIDIContinue() {
+  bpmClock.handleMIDIContinue();
+  Serial.println("MIDI Continue received");
+}
+
 // Example: type a number 0..8 in Serial Monitor and press Enter to load template
 void handleSerialPresets(SynthEngine& synth, UIManager& ui) {
   if (!Serial.available()) return;
@@ -122,6 +144,24 @@ void handleSerialPresets(SynthEngine& synth, UIManager& ui) {
     ui.syncFromEngine(synth);
   } else {
     Serial.println("Enter a preset index 0..8");
+  }
+}
+
+// Dispatch MIDI real-time messages to appropriate handlers
+void handleMIDIRealTime(uint8_t realtimeByte) {
+  switch (realtimeByte) {
+    case 0xF8:  // MIDI Clock
+      handleMIDIClock();
+      break;
+    case 0xFA:  // MIDI Start
+      handleMIDIStart();
+      break;
+    case 0xFC:  // MIDI Stop
+      handleMIDIStop();
+      break;
+    case 0xFB:  // MIDI Continue
+      handleMIDIContinue();
+      break;
   }
 }
 
@@ -147,6 +187,10 @@ void setup() {
   usbMIDI.setHandleNoteOn(handleNoteOn);
   usbMIDI.setHandleNoteOff(handleNoteOff);
   usbMIDI.setHandleControlChange(handleControlChange);
+
+  // MIDI clock handlers (for external tempo sync)
+  usbMIDI.setHandleRealTimeSystem(handleMIDIRealTime);  // See below
+  midiHost.setHandleRealTimeSystem(handleMIDIRealTime);
 
   Serial.println("JTeensy 4000 Synth Ready");
 

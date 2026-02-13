@@ -217,6 +217,17 @@ const char* FXChainBlock::getDelayEffectName() const {
     if (_delayEffect > 4) return "Unknown";
     return delayEffectNames[_delayEffect];
 }
+void FXChainBlock::updateFromBPMClock(const BPMClockManager& bpmClock) {
+    _jpfx.updateFromBPMClock(bpmClock);
+}
+
+void FXChainBlock::setDelayTimingMode(TimingMode mode) {
+    _jpfx.setDelayTimingMode(mode);
+}
+
+TimingMode FXChainBlock::getDelayTimingMode() const {
+    return _jpfx.getDelayTimingMode();
+}
 
 // ============================================================================
 // HEXEFX REVERB CONTROLS

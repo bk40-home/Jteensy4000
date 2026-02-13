@@ -1,5 +1,5 @@
 /*
- * AudioEffectJPFX.h (STEREO OUTPUT VERSION)
+ * AudioEffectJPFX.h (STEREO OUTPUT VERSION WITH BPM TIMING)
  *
  * This module implements the effects section of the Roland JP-8000 synthesizer
  * for the JT-4000 project.
@@ -9,6 +9,10 @@
  * 2. Maintains 1 input (mono input, stereo processing, stereo output)
  * 3. Separate transmit() calls for left and right channels
  * 4. Preserves stereo imaging from ping-pong delays and modulation
+ *
+ * BPM TIMING INTEGRATION:
+ * - Delay can sync to musical note divisions
+ * - Requires BPMClockManager.h to be included
  *
  * PREVIOUS BUG FIXES MAINTAINED:
  * - 1 input (mono processing, internal stereo)
@@ -21,6 +25,7 @@
 
 #include <Arduino.h>
 #include "AudioStream.h"
+#include "BPMClockManager.h"  // CRITICAL: Include BEFORE class definition
 
 // Maximum delay time in milliseconds.  The JP-8000's delay extends up to
 // 1250ms; we allocate a little extra headroom.  Changing this constant
@@ -87,6 +92,25 @@ public:
     void setDelayFeedback(float fb);    // 0.0..0.99, -1 = use preset
     void setDelayTime(float ms);        // ms, 0 = use preset
 
+    // ----- BPM Timing interface (NEW) -----
+    /**
+     * @brief Set delay timing mode
+     * @param mode TIMING_FREE (ms) or musical division
+     */
+    void setDelayTimingMode(TimingMode mode);
+    
+    /**
+     * @brief Get current delay timing mode
+     * @return Current TimingMode
+     */
+    TimingMode getDelayTimingMode() const { return _delayTimingMode; }
+    
+    /**
+     * @brief Update delay time from BPM clock (called by FXChainBlock)
+     * @param bpmClock Reference to global BPM clock manager
+     */
+    void updateFromBPMClock(const BPMClockManager& bpmClock);
+
 private:
     // Input queue for AudioStream (1 input)
     audio_block_t *inputQueueArray[1];
@@ -140,7 +164,11 @@ private:
     DelayEffectType delayType;
     float delayMix;
     float delayFeedbackOverride;
-    float delayTimeOverride;
+    float delayTimeOverride;  // KEEP WITHOUT UNDERSCORE (matches original code)
+
+    // ----- BPM Timing state (NEW) -----
+    TimingMode _delayTimingMode;          // Current timing mode
+    float _freeRunningDelayTime;          // Stored ms when in free mode
 
     // Separate delay buffers for modulation and delay effects
     float *modBufL, *modBufR;         // Modulation delay buffers
