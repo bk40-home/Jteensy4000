@@ -53,6 +53,12 @@ namespace CC {
     static constexpr uint8_t OSC2_DETUNE       = 44;
     static constexpr uint8_t OSC1_FINE_TUNE    = 45;
     static constexpr uint8_t OSC2_FINE_TUNE    = 46;
+    static constexpr uint8_t OSC1_FEEDBACK_AMOUNT = 123;    
+    static constexpr uint8_t OSC2_FEEDBACK_AMOUNT = 124;
+
+    static constexpr uint8_t OSC1_FEEDBACK_MIX = 125;    
+    static constexpr uint8_t OSC2_FEEDBACK_MIX = 126;
+
 
     // -------------------------------------------------------------------------
     // Oscillator mix/balance and supersaw parameters
@@ -190,6 +196,10 @@ namespace CC {
             case OSC_MIX_BALANCE:     return "Osc Bal";
             case OSC1_MIX:            return "Osc1 Mix";
             case OSC2_MIX:            return "Osc2 Mix";
+            case OSC1_FEEDBACK_AMOUNT:       return "Osc1 FBA";
+            case OSC2_FEEDBACK_AMOUNT:       return "Osc2 FBA";  
+            case OSC1_FEEDBACK_MIX:       return "Osc1 FBM";
+            case OSC2_FEEDBACK_MIX:       return "Osc2 FBM";     
             case SUPERSAW1_DETUNE:    return "Saw1 Det";
             case SUPERSAW1_MIX:       return "Saw1 Mix";
             case SUPERSAW2_DETUNE:    return "Saw2 Det";

@@ -350,6 +350,14 @@ void SynthEngine::setOsc2ShapeDcAmp(float amp)     { _osc2ShapeDc = amp; for (in
 void SynthEngine::setRing1Mix(float level) { _ring1Mix = level; for (int i=0;i<MAX_VOICES;++i) _voices[i].setRing1Mix(level); }
 void SynthEngine::setRing2Mix(float level) { _ring2Mix = level; for (int i=0;i<MAX_VOICES;++i) _voices[i].setRing2Mix(level); }
 
+void SynthEngine::setOsc1FeedbackAmount(float amount) { _osc1FeedbackAmount = amount; for (int i=0;i<MAX_VOICES;++i) _voices[i].setOsc1FeedbackAmount(amount); }
+void SynthEngine::setOsc2FeedbackAmount(float amount) { _osc2FeedbackAmount = amount; for (int i=0;i<MAX_VOICES;++i) _voices[i].setOsc2FeedbackAmount(amount); }
+
+void SynthEngine::setOsc1FeedbackMix(float mix) { _osc1FeedbackMix = mix; for (int i=0;i<MAX_VOICES;++i) _voices[i].setOsc1FeedbackMix(mix); }
+void SynthEngine::setOsc2FeedbackMix(float mix) { _osc2FeedbackMix = mix; for (int i=0;i<MAX_VOICES;++i) _voices[i].setOsc2FeedbackMix(mix); }
+
+
+
 // ---- Arbitrary waveform bank/index selection ----
 void SynthEngine::setOsc1ArbBank(ArbBank b) {
     _osc1ArbBank = b;
@@ -696,6 +704,12 @@ float SynthEngine::getOsc2FrequencyDc() const { return _osc2FreqDc; }
 float SynthEngine::getOsc1ShapeDc() const     { return _osc1ShapeDc; }
 float SynthEngine::getOsc2ShapeDc() const     { return _osc2ShapeDc; }
 
+float SynthEngine::getOsc1FeedbackAmount( ) const {return _osc1FeedbackAmount;}
+float SynthEngine::getOsc2FeedbackAmount( ) const {return _osc2FeedbackAmount;}
+
+float SynthEngine::getOsc1FeedbackMix( ) const {return _osc1FeedbackMix;}
+float SynthEngine::getOsc2FeedbackMix( ) const {return _osc2FeedbackMix;}
+
 bool  SynthEngine::getGlideEnabled() const { return _glideEnabled; }
 float SynthEngine::getGlideTimeMs()  const { return _glideTimeMs; }
 
@@ -821,6 +835,31 @@ void SynthEngine::handleControlChange(byte /*channel*/, byte control, byte value
         case CC::OSC2_DETUNE:    { float d = norm * 2.0f - 1.0f;     setOsc2Detune(d);      JT_LOGF("[CC %u:%s] OSC2 Detune = %.3f\n",        control, ccName, d); } break;
         case CC::OSC1_FINE_TUNE: { float c = norm * 200.0f - 100.0f; setOsc1FineTune(c);    JT_LOGF("[CC %u:%s] OSC1 Fine = %.1f cents\n",    control, ccName, c); } break;
         case CC::OSC2_FINE_TUNE: { float c = norm * 200.0f - 100.0f; setOsc2FineTune(c);    JT_LOGF("[CC %u:%s] OSC2 Fine = %.1f cents\n",    control, ccName, c); } break;
+
+        // ------------------- Osc mix + taps -------------------
+        case CC::OSC1_FEEDBACK_AMOUNT: {
+            float a = norm;
+            setOsc1FeedbackAmount(norm);
+            JT_LOGF("[CC %u:%s] Osc1 feedback amount = %.3f \n", control, ccName, a);
+        } break;
+
+        case CC::OSC2_FEEDBACK_AMOUNT: {
+            float a = norm;
+            setOsc2FeedbackAmount(norm);
+            JT_LOGF("[CC %u:%s] Osc2 feedback amount = %.3f \n", control, ccName, a);
+        } break;
+
+        case CC::OSC1_FEEDBACK_MIX: {
+            float a = norm;
+            setOsc1FeedbackAmount(norm);
+            JT_LOGF("[CC %u:%s] Osc1 feedback mix = %.3f \n", control, ccName, a);
+        } break;
+
+         case CC::OSC2_FEEDBACK_MIX: {
+            float a = norm;
+            setOsc1FeedbackAmount(norm);
+            JT_LOGF("[CC %u:%s] Osc2 feedback mix = %.3f \n", control, ccName, a);
+        } break;
 
         // ------------------- Osc mix + taps -------------------
         case CC::OSC_MIX_BALANCE: {

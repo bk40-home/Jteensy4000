@@ -167,7 +167,7 @@ void handleMIDIRealTime(uint8_t realtimeByte) {
 
 void setup() {
   Serial.begin(115200);                 // debug prints
-  AudioMemory(100);                     // audio buffers before starting graph
+  AudioMemory(200);                     // audio buffers before starting graph
 
   // Start USB host
   myusb.begin();

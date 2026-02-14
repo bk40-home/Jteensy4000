@@ -11,17 +11,32 @@
 #include "LFOBlock.h"
 #include "SubOscillatorBlock.h"
 
-
+/**
+ * @brief Complete voice with dual oscillators, filter, envelopes, and feedback
+ * 
+ * VoiceBlock combines:
+ * - 2 oscillators (OSC1 with supersaw, OSC2 standard)
+ * - Sub oscillator
+ * - Pink noise generator
+ * - Ring modulators
+ * - Resonant filter
+ * - Amp & filter envelopes
+ * - Feedback oscillation support (NEW)
+ */
 class VoiceBlock {
 public:
-    void setAmplitude(float amp);
-    // --- Lifecycle
+    // =========================================================================
+    // LIFECYCLE
+    // =========================================================================
     VoiceBlock();
     void update();
     void noteOn(float freq, float velocity);
     void noteOff();
+    void setAmplitude(float amp);
 
-    // --- Oscillator Configuration
+    // =========================================================================
+    // OSCILLATOR CONFIGURATION
+    // =========================================================================
     void setOsc1Waveform(int wave);
     void setOsc2Waveform(int wave);
     void setOscMix(float osc1Level, float osc2Level);
@@ -33,7 +48,7 @@ public:
     void setOsc2Detune(float hz);
     void setOsc1FineTune(float cents);
     void setOsc2FineTune(float cents);
-    void setSubMix(float mix);      // e.g. 0–1
+    void setSubMix(float mix);
     void setNoiseMix(float mix);
     void setOsc1SupersawDetune(float amount);
     void setOsc2SupersawDetune(float amount);
@@ -47,38 +62,54 @@ public:
     void setRing2Mix(float level); 
     void setBaseFrequency(float freq);   
 
-    // Arbitrary waveform bank and table selection
-    // These methods allow the SynthEngine to propagate the selected AKWF bank
-    // and table index to each oscillator.  When the oscillator's waveform type
-    // is set to WAVEFORM_ARBITRARY, these determine which single-cycle
-    // waveform is loaded.  See OscillatorBlock for details.
+    // =========================================================================
+    // ARBITRARY WAVEFORM SELECTION
+    // =========================================================================
     void setOsc1ArbBank(ArbBank bank);
     void setOsc2ArbBank(ArbBank bank);
     void setOsc1ArbIndex(uint16_t idx);
     void setOsc2ArbIndex(uint16_t idx);
 
+    // =========================================================================
+    // GLIDE (PORTAMENTO)
+    // =========================================================================
     void setGlideEnabled(bool enabled);
     void setGlideTime(float ms);
 
-    // --- Filter
-    void setFilterCutoff(float value) ;
+    // =========================================================================
+    // FEEDBACK OSCILLATION (NEW)
+    // =========================================================================
+
+    void setOsc1FeedbackAmount(float amount);
+    void setOsc2FeedbackAmount(float amount);
+    void setOsc1FeedbackMix(float mix);
+    void setOsc2FeedbackMix(float mix);
+   
+    float getOsc1FeedbackMix() const;
+    float getOsc2FeedbackMix() const;
+
+    float getOsc1FeedbackAmount() const;
+    float getOsc2FeedbackAmount() const;
+
+    // =========================================================================
+    // FILTER
+    // =========================================================================
+    void setFilterCutoff(float value);
     void setFilterResonance(float value);
-    // void setFilterDrive(float value) ;
     void setFilterOctaveControl(float octaves);
-    // void setFilterPassbandGain(float gain);
-    void setFilterEnvAmount(float amt) ;
+    void setFilterEnvAmount(float amt);
     void setFilterKeyTrackAmount(float amt);
-    void setMultimode(float _multimode);        // 0..1 (when xpander4Pole=false)   void setMultimode(float _multimode);        // 0..1 (when xpander4Pole=false)
+    void setMultimode(float _multimode);
     void setTwoPole(bool enabled);
     void setXpander4Pole(bool enabled);
-    void setXpanderMode(uint8_t mode);   // 0..14
+    void setXpanderMode(uint8_t mode);
     void setBPBlend2Pole(bool enabled);
     void setPush2Pole(bool enabled);
     void setResonanceModDepth(float depth01);
 
-
- 
-    // --- Envelopes
+    // =========================================================================
+    // ENVELOPES
+    // =========================================================================
     void setAmpAttack(float attack);
     void setAmpDecay(float decay);
     void setAmpSustain(float sustain);
@@ -91,7 +122,9 @@ public:
     void setFilterRelease(float release);
     void setFilterADSR(float a, float d, float s, float r);
 
-    // --- UI Getters
+    // =========================================================================
+    // GETTERS (UI/STATE QUERY)
+    // =========================================================================
     int getOsc1Waveform() const;
     int getOsc2Waveform() const;
     float getOsc1PitchOffset() const;
@@ -137,16 +170,19 @@ public:
     float getAmpDecay() const;
     float getAmpSustain() const;
     float getAmpRelease() const;
+
     float getFilterEnvAttack() const;
     float getFilterEnvDecay() const;
     float getFilterEnvSustain() const;
     float getFilterEnvRelease() const;
 
-    // --- Outputs
+    // =========================================================================
+    // AUDIO OUTPUTS & MODULATION MIXERS
+    // =========================================================================
     AudioStream& output();
     AudioMixer4& frequencyModMixerOsc1();
-    AudioMixer4& shapeModMixerOsc1();    
     AudioMixer4& frequencyModMixerOsc2();
+    AudioMixer4& shapeModMixerOsc1();
     AudioMixer4& shapeModMixerOsc2();
     AudioMixer4& filterModMixer();
 
@@ -154,25 +190,28 @@ public:
     void setModInputs(audio_block_t** modSources);
 
 private:
-
-    OscillatorBlock _osc1, _osc2;
+    // Audio components
+    OscillatorBlock _osc1{true};   // OSC1 has supersaw capability
+    OscillatorBlock _osc2{false};  // OSC2 no supersaw
     AudioEffectMultiply _ring1, _ring2;
     SubOscillatorBlock _subOsc;
     AudioSynthNoisePink _noise;
     AudioMixer4 _oscMixer;
-    AudioMixer4 _voiceMixer;  // come back
+    AudioMixer4 _voiceMixer;
 
     FilterBlock _filter;
 
     EnvelopeBlock _filterEnvelope;
-    EnvelopeBlock _ampEnvelope; // updating this to take the audio input 
-    //AmpBlock _ampBlock; // will I still need this?
+    EnvelopeBlock _ampEnvelope;
 
+    // State variables
     float _osc1Level = 1.0f;
     float _osc2Level = 0.0f;
 
     float _ring1Level = 0.0f;
     float _ring2Level = 0.0f;
+    float _osc1FeedbackMixLevel = 0.0f;
+    float _osc2FeedbackMixLevel = 0.0f;
     
     float _baseCutoff = 10000.0f;
     float _keyTrackVal = 0.0f;
@@ -189,9 +228,8 @@ private:
 
     bool _isActive = false;
 
-
     float _currentFreq = 0.0f;
-    float _osc1PitchOffset = 0.0f;        // unmodulated offsets
+    float _osc1PitchOffset = 0.0f;
     float _osc2PitchOffset = 0.0f;
     float _subMixLevel = 0.0f;
     float _noiseMixLevel = 0.0f;
@@ -199,10 +237,9 @@ private:
     float _subMix = 0.0f;
     float _noiseMix = 0.0f;
 
-    // limit mixers for head room to avoid clipping
+    // Limit mixers for headroom
     float _on = 0.8f;
     float _clampedLevel(float level);
-
 
     AudioConnection* _patchCables[15];
 };

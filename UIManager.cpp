@@ -147,6 +147,10 @@ int UIManager::ccToDisplayValue(byte cc, SynthEngine& synth) {
         case CC::OSC2_SHAPE_DC:    return norm_to_cc(synth.getOsc2ShapeDc());
         case CC::RING1_MIX:        return norm_to_cc(synth.getRing1Mix());
         case CC::RING2_MIX:        return norm_to_cc(synth.getRing2Mix());
+        case CC::OSC1_FEEDBACK_AMOUNT:        return norm_to_cc(synth.getOsc1FeedbackAmount());
+        case CC::OSC2_FEEDBACK_AMOUNT:        return norm_to_cc(synth.getOsc1FeedbackMix());
+        case CC::OSC1_FEEDBACK_MIX:        return norm_to_cc(synth.getOsc2FeedbackAmount());
+        case CC::OSC2_FEEDBACK_MIX:        return norm_to_cc(synth.getOsc2FeedbackMix());
 
         // ---------------- Filter mods --------------
         case CC::FILTER_ENV_AMOUNT:     return norm_to_cc((synth.getFilterEnvAmount() + 1.0f) * 0.5f);
@@ -228,29 +232,6 @@ case CC::FX_JPFX_DELAY_FEEDBACK: {
     if (fb < 0.0f) return 0;  // -1 = use preset
     return (uint8_t)constrain((fb * 127.0f) / 0.99f, 0, 127);  // Note: * operator!
 }
-
-/*
- * COMMON MISTAKES TO AVOID:
- * 
- * ❌ WRONG: constrain((dB + 12.0f)   127.0f / 24.0f, 0, 127)
- *           Missing * operator before 127.0f
- * 
- * ✓ RIGHT:  constrain((dB + 12.0f) * 127.0f / 24.0f, 0, 127)
- *           Has * operator
- * 
- * ❌ WRONG: return synth.getFXModEffectName();  in ccToDisplayValue()
- *           Returns const char*, but function expects int
- * 
- * ✓ RIGHT:  return synth.getFXModEffectName();  in ccToDisplayText()
- *           Correct function for string returns
- * 
- * ❌ WRONG: Using old CC numbers (70-80) that conflict with Supersaw
- * 
- * ✓ RIGHT:  Using new CC numbers (99-110) from CCDefs_FIXED.h
- */
-
-
-
 
         // ---------------- Glide / AmpModDC --------------------------
         case CC::GLIDE_ENABLE:        return synth.getGlideEnabled() ? 127 : 0;

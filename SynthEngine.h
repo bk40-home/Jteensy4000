@@ -48,6 +48,16 @@ public:
     void setOsc2ShapeDcAmp(float amp);
     void setRing1Mix(float level);
     void setRing2Mix(float level);
+    void setOsc1FeedbackAmount(float amount) ;
+    void setOsc2FeedbackAmount(float amount) ;
+    void setOsc1FeedbackMix(float mix) ;
+    void setOsc2FeedbackMix(float mix) ;
+
+    float getOsc1FeedbackAmount( ) const;
+    float getOsc2FeedbackAmount( ) const;
+    float getOsc1FeedbackMix( ) const;
+    float getOsc2FeedbackMix( ) const;
+
 
     // --- Arbitrary waveform selection
     void setOsc1ArbBank(ArbBank b);
@@ -326,6 +336,8 @@ private:
     float _supersawMix[2] = {0.0f, 0.0f};
     float _osc1FreqDc = 0.0f, _osc2FreqDc = 0.0f;
     float _osc1ShapeDc = 0.0f, _osc2ShapeDc = 0.0f;
+    float _osc1FeedbackAmount = 0.0f, _osc2FeedbackAmount = 0.0f;
+    float _osc1FeedbackMix = 0.0f, _osc2FeedbackMix = 0.0f;
 
     // LFO state mirrors
     float _lfo1Frequency = 0.0f, _lfo2Frequency = 0.0f;

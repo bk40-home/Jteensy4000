@@ -1,18 +1,14 @@
 /*
- * UIPageLayout.h - REORGANIZED FX PAGES
+ * UIPageLayout.h - WITH BPM TIMING PAGE
  * 
- * FX pages now logically grouped:
+ * FX pages logically grouped + BPM timing controls:
  * - Page 15: JPFX Tone + Modulation
  * - Page 16: JPFX Delay
  * - Page 17: Reverb Controls
- * - Page 18: FX Mix Levels (all mix controls together)
- * - Page 19: Global settings (moved up from 20)
- * 
- * Changes from previous version:
- * - Removed duplicate FX_DRY_MIX and FX_JPFX_DELAY_MIX
- * - Added FX_REVERB_BYPASS control
- * - Grouped all mix controls on single page
- * - Better visual organization with blank spaces
+ * - Page 18: FX Mix Levels
+ * - Page 19: Global settings
+ * - Page 20: Arbitrary Waveforms
+ * - Page 21: BPM Clock & Timing (NEW)
  */
 
 #pragma once
@@ -22,7 +18,7 @@
 
 namespace UIPage {
 
-static constexpr int NUM_PAGES       = 22;
+static constexpr int NUM_PAGES       = 24;
 static constexpr int PARAMS_PER_PAGE = 4;
 
 static constexpr uint8_t ccMap[NUM_PAGES][PARAMS_PER_PAGE] = {
@@ -30,18 +26,19 @@ static constexpr uint8_t ccMap[NUM_PAGES][PARAMS_PER_PAGE] = {
     // OSCILLATOR PAGES (0-6)
     // =========================================================================
     
-    // Page 0-2: OSC1
+    // Page 0-3: OSC1
     {CC::OSC1_WAVE,        CC::OSC1_PITCH_OFFSET, CC::OSC1_FINE_TUNE,   CC::OSC1_DETUNE},
-    {CC::OSC_MIX_BALANCE,  CC::OSC1_MIX,          CC::SUPERSAW1_DETUNE, CC::SUPERSAW1_MIX},
+    {CC::OSC_MIX_BALANCE,   CC::SUPERSAW1_DETUNE, CC::SUPERSAW1_MIX,   255},
     {CC::OSC1_FREQ_DC,     CC::OSC1_SHAPE_DC,     CC::RING1_MIX,        255},
+    {CC::OSC1_FEEDBACK_AMOUNT,     CC::OSC1_FEEDBACK_MIX,     255,        255},
 
-    // Page 3-5: OSC2
+    // Page 4-6: OSC2
     {CC::OSC2_WAVE,        CC::OSC2_PITCH_OFFSET, CC::OSC2_FINE_TUNE,   CC::OSC2_DETUNE},
-    {CC::OSC2_MIX,         CC::SUPERSAW2_DETUNE,  CC::SUPERSAW2_MIX,    CC::NOISE_MIX},
     {CC::OSC2_FREQ_DC,     CC::OSC2_SHAPE_DC,     CC::RING2_MIX,        255},
+    {CC::OSC1_FEEDBACK_AMOUNT,     CC::OSC2_FEEDBACK_MIX,     255,        255},
 
     // Page 6: Sub Oscillator
-    {CC::SUB_MIX,          255,                   255,                  255},
+    {CC::SUB_MIX,CC::NOISE_MIX,CC::OSC1_MIX, CC::OSC2_MIX},
 
     // =========================================================================
     // FILTER PAGES (7-10)
@@ -60,14 +57,14 @@ static constexpr uint8_t ccMap[NUM_PAGES][PARAMS_PER_PAGE] = {
     {CC::FILTER_ENV_ATTACK, CC::FILTER_ENV_DECAY,  CC::FILTER_ENV_SUSTAIN, CC::FILTER_ENV_RELEASE},
 
     // =========================================================================
-    // LFO PAGES (13-14)
+    // LFO PAGES (13-14) - Updated with timing mode controls
     // =========================================================================
     
-    {CC::LFO1_FREQ,        CC::LFO1_DEPTH,        CC::LFO1_DESTINATION,  CC::LFO1_WAVEFORM},
-    {CC::LFO2_FREQ,        CC::LFO2_DEPTH,        CC::LFO2_DESTINATION,  CC::LFO2_WAVEFORM},
+    {CC::LFO1_FREQ,        CC::LFO1_DEPTH,        CC::LFO1_DESTINATION,  CC::LFO1_TIMING_MODE},
+    {CC::LFO2_FREQ,        CC::LFO2_DEPTH,        CC::LFO2_DESTINATION,  CC::LFO2_TIMING_MODE},
 
     // =========================================================================
-    // FX PAGES (15-18) - REORGANIZED FOR CLARITY
+    // FX PAGES (15-18)
     // =========================================================================
     
     // Page 15: JPFX Tone + Modulation Effect
@@ -76,14 +73,14 @@ static constexpr uint8_t ccMap[NUM_PAGES][PARAMS_PER_PAGE] = {
     // Page 16: JPFX Modulation Parameters + Delay Effect Selection
     {CC::FX_MOD_RATE,      CC::FX_MOD_FEEDBACK,   CC::FX_JPFX_DELAY_EFFECT, CC::FX_JPFX_DELAY_MIX},
     
-    // Page 17: JPFX Delay Parameters
-    {CC::FX_JPFX_DELAY_FEEDBACK, CC::FX_JPFX_DELAY_TIME, 255, 255},
+    // Page 17: JPFX Delay Parameters - Updated with timing mode
+    {CC::FX_JPFX_DELAY_FEEDBACK, CC::FX_JPFX_DELAY_TIME, CC::DELAY_TIMING_MODE, 255},
     
-    // Page 18: Reverb Controls (all reverb parameters together)
+    // Page 18: Reverb Controls
     {CC::FX_REVERB_SIZE,   CC::FX_REVERB_DAMP,    CC::FX_REVERB_LODAMP,  CC::FX_REVERB_MIX},
 
-    // Page 19: FX Mix Levels (all mix controls grouped together)
-    {CC::FX_DRY_MIX,       CC::FX_JPFX_MIX,     CC::FX_REVERB_MIX,     255},
+    // Page 19: FX Mix Levels
+    {CC::FX_DRY_MIX,       CC::FX_JPFX_MIX,       CC::FX_REVERB_MIX,     255},
 
     // =========================================================================
     // GLOBAL PAGES (20-21)
@@ -94,6 +91,13 @@ static constexpr uint8_t ccMap[NUM_PAGES][PARAMS_PER_PAGE] = {
     
     // Page 21: Arbitrary Waveform Selection
     {CC::OSC1_ARB_BANK,    CC::OSC1_ARB_INDEX,    CC::OSC2_ARB_BANK,      CC::OSC2_ARB_INDEX},
+
+    // =========================================================================
+    // BPM TIMING PAGE (22) - NEW
+    // =========================================================================
+    
+    // Page 22: BPM Clock & Timing
+    {CC::BPM_CLOCK_SOURCE, CC::BPM_INTERNAL_TEMPO, 255, 255},
 };
 
 // Display names for each parameter on each page
@@ -104,16 +108,17 @@ static constexpr const char* ccNames[NUM_PAGES][PARAMS_PER_PAGE] = {
     
     // OSC1
     {"OSC1 Wave",  "OSC1 Pitch", "OSC1 Fine",  "OSC1 Det"},
-    {"Osc Bal",    "Osc1 Mix",   "Saw1 Det",   "Saw1 Mix"},
+    {"Osc Bal",  "SSaw1 Det",   "SSaw1 Mix", "-"},
     {"Freq DC1",   "Shape DC1",  "Ring1 Mix",  "-"},
+    {"OSC1 FB AMT",   "OSC1 FB MIX",  "-",  "-"},
 
     // OSC2
     {"OSC2 Wave",  "OSC2 Pitch", "OSC2 Fine",  "OSC2 Det"},
-    {"Osc2 Mix",   "Saw2 Det",   "Saw2 Mix",   "Noise Mix"},
     {"Freq DC2",   "Shape DC2",  "Ring2 Mix",  "-"},
+    {"OSC2 FB AMT",   "OSC2 FB MIX",  "-",  "-"},
 
     // Sub
-    {"Sub Mix",    "-",          "-",          "-"},
+    {"Sub Mix",     "Noise Mix",          "Osc1 Mix",          "Osc2 Mix"},
 
     // =========================================================================
     // FILTER PAGES (7-10)
@@ -132,14 +137,14 @@ static constexpr const char* ccNames[NUM_PAGES][PARAMS_PER_PAGE] = {
     {"Flt Att",    "Flt Dec",    "Flt Sus",     "Flt Rel"},
 
     // =========================================================================
-    // LFO PAGES (13-14)
+    // LFO PAGES (13-14) - Updated with timing mode
     // =========================================================================
     
-    {"LFO1 Freq",  "LFO1 Depth", "LFO1 Dest",   "LFO1 Wave"},
-    {"LFO2 Freq",  "LFO2 Depth", "LFO2 Dest",   "LFO2 Wave"},
+    {"LFO1 Freq",  "LFO1 Depth", "LFO1 Dest",   "LFO1 Sync"},
+    {"LFO2 Freq",  "LFO2 Depth", "LFO2 Dest",   "LFO2 Sync"},
 
     // =========================================================================
-    // FX PAGES (15-18) - CLEARLY LABELED
+    // FX PAGES (15-18)
     // =========================================================================
     
     // Page 15: Tone + Modulation Effect Type
@@ -148,13 +153,13 @@ static constexpr const char* ccNames[NUM_PAGES][PARAMS_PER_PAGE] = {
     // Page 16: Modulation Parameters + Delay Type
     {"Mod Rate",   "Mod FB",     "Dly FX",      "Dly Mix"},
     
-    // Page 17: Delay Parameters
-    {"Dly FB",     "Dly Time",   "-",           "-"},
+    // Page 17: Delay Parameters + Timing Mode
+    {"Dly FB",     "Dly Time",   "Dly Sync",    "-"},
     
     // Page 18: Reverb
     {"Rev Size",   "Rev Damp",   "Rev LoDamp",  "Rev Mix"},
 
-    // Page 19: Mix Levels (master FX balance)
+    // Page 19: Mix Levels
     {"Dry Mix",    "JPFX Mix",   "Rev Mix",     "-"},
 
     // =========================================================================
@@ -163,53 +168,14 @@ static constexpr const char* ccNames[NUM_PAGES][PARAMS_PER_PAGE] = {
     
     {"Glide On",   "Glide Time", "Amp Mod",     "-"},
     {"OSC1 Bank",  "OSC1 Wave#", "OSC2 Bank",   "OSC2 Wave#"},
+
+    // =========================================================================
+    // BPM TIMING PAGE (22) - NEW
+    // =========================================================================
+    
+    {"Clock Src",  "Int BPM",    "-",           "-"},
 };
 
-/*
- * PAGE ORGANIZATION NOTES:
- * 
- * FX SECTION (Pages 15-19):
- * 
- * Page 15: TONE + MODULATION EFFECT
- *   - Bass/Treble EQ controls (JPFX tone section)
- *   - Modulation effect type selection (chorus/flanger/phaser)
- *   - Modulation wet/dry mix
- * 
- * Page 16: MODULATION PARAMETERS + DELAY EFFECT
- *   - Modulation rate (LFO speed)
- *   - Modulation feedback
- *   - Delay effect type selection
- *   - Delay wet/dry mix
- * 
- * Page 17: DELAY PARAMETERS
- *   - Delay feedback (regeneration)
- *   - Delay time (milliseconds)
- *   - Two blank spaces for future expansion
- * 
- * Page 18: REVERB
- *   - Room size
- *   - High frequency damping
- *   - Low frequency damping
- *   - Reverb wet/dry mix
- * 
- * Page 19: FX MIX LEVELS (Master Balance)
- *   - Dry signal level (pre-FX)
- *   - JPFX output level (post-JPFX, can bypass reverb)
- *   - Reverb output level (final wet signal)
- *   - One blank space
- * 
- * SIGNAL FLOW REMINDER:
- *   Synth Voice → [Dry Mix] ────────────────→ Output
- *                     ↓
- *                  JPFX → [JPFX Mix] ───────→ Output
- *                     ↓
- *                  Reverb → [Rev Mix] ──────→ Output
- * 
- * All three paths sum at output mixer, allowing flexible routing:
- * - Dry only (Dry=100%, JPFX=0%, Rev=0%)
- * - Dry + JPFX (Dry=70%, JPFX=30%, Rev=0%)
- * - Dry + JPFX + Reverb (Dry=50%, JPFX=30%, Rev=20%)
- * - Full wet (Dry=0%, JPFX=50%, Rev=50%)
- */
+
 
 } // namespace UIPage

@@ -374,3 +374,40 @@ void VoiceBlock::setOsc1ArbIndex(uint16_t idx) {
 void VoiceBlock::setOsc2ArbIndex(uint16_t idx) {
     _osc2.setArbTableIndex(idx);
 }
+
+// ============================================================================
+// FEEDBACK OSCILLATION METHODS (NEW)
+// ============================================================================
+
+
+void VoiceBlock::setOsc1FeedbackAmount(float amount) {
+    _osc1.setFeedbackAmount(amount);
+}
+
+void VoiceBlock::setOsc2FeedbackAmount(float amount) {
+    _osc2.setFeedbackAmount(amount);
+}
+
+void VoiceBlock::setOsc1FeedbackMix(float mix) {
+    _osc1.setFeedbackMix(mix);
+}
+
+void VoiceBlock::setOsc2FeedbackMix(float mix) {
+    _osc2.setFeedbackMix(mix);
+}
+
+float VoiceBlock::getOsc1FeedbackMix() const {
+    return _osc1.getFeedbackMix();
+}
+
+float VoiceBlock::getOsc2FeedbackMix() const {
+   return  _osc2.getFeedbackMix();
+}
+
+float VoiceBlock::getOsc1FeedbackAmount() const {
+    return _osc1.getFeedbackAmount();
+}
+
+float VoiceBlock::getOsc2FeedbackAmount() const {
+    return _osc2.getFeedbackAmount();
+}
