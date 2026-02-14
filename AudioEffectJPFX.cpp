@@ -391,10 +391,11 @@ void AudioEffectJPFX::setDelayTime(float ms) {
     // Only apply if in free-running mode
     if (_delayTimingMode == TIMING_FREE) {
         delayTimeOverride = ms;
-        Serial.printf("Delay setDelayTime %.1f ms (FREE)\n", ms);
-    } else {
-        Serial.println("Delay in sync mode, time managed by BPM clock");
-    }
+        //Serial.printf("Delay setDelayTime %.1f ms (FREE)\n", ms);
+    } 
+    // else {
+    //     Serial.println("Delay in sync mode, time managed by BPM clock");
+    // }
 }
 
 //-----------------------------------------------------------------------------

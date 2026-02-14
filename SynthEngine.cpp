@@ -3,6 +3,7 @@
 #include "Mapping.h"
 #include "CCDefs.h"
 #include "Waveforms.h"   // ensure waveformFromCC + names are available
+ 
 
 using namespace CC;
 
@@ -135,28 +136,68 @@ static inline const char* ccname(uint8_t cc) {
 
 void SynthEngine::setNotifier(NotifyFn fn) { _notify = fn; }
 
-// ADD method implementations:
+// ============================================================================
+// BPM CLOCK MANAGEMENT & TIMING SYNC
+// ============================================================================
+
 void SynthEngine::setBPMClock(BPMClockManager* clock) {
     _bpmClock = clock;
 }
 
 void SynthEngine::updateBPMSync() {
-    if (!_bpmClock) return;  // No clock configured
+    // Called from update() to refresh BPM-synced parameters
+    if (!_bpmClock) return;
     
-    // Update LFOs if they're in sync mode
-    _lfo1.updateFromBPMClock(*_bpmClock);
-    _lfo2.updateFromBPMClock(*_bpmClock);
+    // Update LFO1 if synced
+    TimingMode lfo1Mode = _lfo1.getTimingMode();
+    if (lfo1Mode != TimingMode::TIMING_FREE) {
+        float hz = _bpmClock->getFrequencyForMode(lfo1Mode);
+        _lfo1.setFrequency(hz);
+    }
     
-    // Update delay timing through FX chain
-    _fxChain.updateFromBPMClock(*_bpmClock);
+    // Update LFO2 if synced
+    TimingMode lfo2Mode = _lfo2.getTimingMode();
+    if (lfo2Mode != TimingMode::TIMING_FREE) {
+        float hz = _bpmClock->getFrequencyForMode(lfo2Mode);
+        _lfo2.setFrequency(hz);
+    }
+    
+    // Update delay if synced
+    TimingMode delayMode = _fxChain.getDelayTimingMode();
+    if (delayMode != TimingMode::TIMING_FREE) {
+        float ms = _bpmClock->getTimeForMode(delayMode);
+        _fxChain.setDelayTime(ms);
+    }
 }
+
+// ============================================================================
+// LFO TIMING MODE CONTROLS
+// ============================================================================
 
 void SynthEngine::setLFO1TimingMode(TimingMode mode) {
     _lfo1.setTimingMode(mode);
+    
+    if (mode == TimingMode::TIMING_FREE) {
+        // Restore manual frequency control
+        _lfo1.setFrequency(_lfo1Frequency);
+    } else if (_bpmClock) {
+        // Lock to BPM
+        float hz = _bpmClock->getFrequencyForMode(mode);
+        _lfo1.setFrequency(hz);
+    }
 }
 
 void SynthEngine::setLFO2TimingMode(TimingMode mode) {
     _lfo2.setTimingMode(mode);
+    
+    if (mode == TimingMode::TIMING_FREE) {
+        // Restore manual frequency control
+        _lfo2.setFrequency(_lfo2Frequency);
+    } else if (_bpmClock) {
+        // Lock to BPM
+        float hz = _bpmClock->getFrequencyForMode(mode);
+        _lfo2.setFrequency(hz);
+    }
 }
 
 TimingMode SynthEngine::getLFO1TimingMode() const {
@@ -167,8 +208,21 @@ TimingMode SynthEngine::getLFO2TimingMode() const {
     return _lfo2.getTimingMode();
 }
 
+// ============================================================================
+// DELAY TIMING MODE CONTROLS
+// ============================================================================
+
 void SynthEngine::setDelayTimingMode(TimingMode mode) {
     _fxChain.setDelayTimingMode(mode);
+    
+    if (mode == TimingMode::TIMING_FREE) {
+        // Restore manual delay time control
+        _fxChain.setDelayTime(_fxDelayTime);
+    } else if (_bpmClock) {
+        // Lock to BPM
+        float ms = _bpmClock->getTimeForMode(mode);
+        _fxChain.setDelayTime(ms);
+    }
 }
 
 TimingMode SynthEngine::getDelayTimingMode() const {
@@ -221,9 +275,18 @@ void SynthEngine::noteOff(byte note) {
 }
 
 void SynthEngine::update() {
-    for (int i = 0; i < MAX_VOICES; ++i) _voices[i].update();
-     // Update BPM-synced parameters (if clock is configured)
-    updateBPMSync();  // << ADD THIS LINE
+    // Update BPM-synced parameters
+    if (_bpmClock) {
+        updateBPMSync();
+    }
+    
+    // Update all voices
+    for (uint8_t v = 0; v < MAX_VOICES; v++) {
+        if (_activeNotes[v] || v == 0) {
+            _voices[v].update();
+        }
+    }
+
 }
 
 // ---- Filter / Env ----
@@ -851,13 +914,13 @@ void SynthEngine::handleControlChange(byte /*channel*/, byte control, byte value
 
         case CC::OSC1_FEEDBACK_MIX: {
             float a = norm;
-            setOsc1FeedbackAmount(norm);
+            setOsc1FeedbackMix(norm);
             JT_LOGF("[CC %u:%s] Osc1 feedback mix = %.3f \n", control, ccName, a);
         } break;
 
          case CC::OSC2_FEEDBACK_MIX: {
             float a = norm;
-            setOsc1FeedbackAmount(norm);
+            setOsc1FeedbackMix(norm);
             JT_LOGF("[CC %u:%s] Osc2 feedback mix = %.3f \n", control, ccName, a);
         } break;
 
@@ -1130,6 +1193,98 @@ case CC::FX_REVERB_BYPASS: {
 
         //AMP_MOD_FIXED_LEVEL
         case CC::AMP_MOD_FIXED_LEVEL: { SetAmpModFixedLevel(norm); JT_LOGF("[CC %u:%s] Amp mod fixed level = %.3f\n", control, ccName, norm); } break;
+
+case CC::BPM_CLOCK_SOURCE: {
+    // 0-63 = Internal, 64-127 = External
+    bool useExternal = (value >= 64);
+    if (_bpmClock) {
+        _bpmClock->setClockSource(useExternal ? 
+            ClockSource::CLOCK_EXTERNAL_MIDI : 
+            ClockSource::CLOCK_INTERNAL);
+        JT_LOGF("[CC %u:%s] Clock Source = %s\n", 
+                control, ccName, useExternal ? "EXTERNAL" : "INTERNAL");
+    }
+    
+    break;
+}
+
+case CC::BPM_INTERNAL_TEMPO: {
+    // 0-127 → 40-300 BPM
+    float bpm = 40.0f + (value / 127.0f) * (300.0f - 40.0f);
+    if (_bpmClock) {
+        _bpmClock->setInternalBPM(bpm);
+        JT_LOGF("[CC %u:%s] Internal BPM = %.1f\n", control, ccName, bpm);
+    }
+    break;
+}
+
+case CC::LFO1_TIMING_MODE: {
+    // Map value 0-127 to 12 timing modes
+    TimingMode mode = TimingMode::TIMING_FREE;
+    if (value >= 0 && value <= 10)       mode = TimingMode::TIMING_FREE;
+    else if (value >= 11 && value <= 21) mode = TimingMode::TIMING_4_BARS;
+    else if (value >= 22 && value <= 32) mode = TimingMode::TIMING_2_BARS;
+    else if (value >= 33 && value <= 43) mode = TimingMode::TIMING_1_BAR;
+    else if (value >= 44 && value <= 54) mode = TimingMode::TIMING_1_2;
+    else if (value >= 55 && value <= 65) mode = TimingMode::TIMING_1_4;
+    else if (value >= 66 && value <= 76) mode = TimingMode::TIMING_1_8;
+    else if (value >= 77 && value <= 87) mode = TimingMode::TIMING_1_16;
+    else if (value >= 88 && value <= 98) mode = TimingMode::TIMING_1_32;
+    else if (value >= 99 && value <= 109) mode = TimingMode::TIMING_1_4T;
+    else if (value >= 110 && value <= 120) mode = TimingMode::TIMING_1_8T;
+    else if (value >= 121 && value <= 127) mode = TimingMode::TIMING_1_16T;
+    
+    setLFO1TimingMode(mode);
+    JT_LOGF("[CC %u:%s] LFO1 Timing = %s\n", 
+            control, ccName, TimingModeNames[(int)mode]);
+    break;
+}
+
+case CC::LFO2_TIMING_MODE: {
+    // Same mapping as LFO1
+    TimingMode mode = TimingMode::TIMING_FREE;
+    if (value >= 0 && value <= 10)       mode = TimingMode::TIMING_FREE;
+    else if (value >= 11 && value <= 21) mode = TimingMode::TIMING_4_BARS;
+    else if (value >= 22 && value <= 32) mode = TimingMode::TIMING_2_BARS;
+    else if (value >= 33 && value <= 43) mode = TimingMode::TIMING_1_BAR;
+    else if (value >= 44 && value <= 54) mode = TimingMode::TIMING_1_2;
+    else if (value >= 55 && value <= 65) mode = TimingMode::TIMING_1_4;
+    else if (value >= 66 && value <= 76) mode = TimingMode::TIMING_1_8;
+    else if (value >= 77 && value <= 87) mode = TimingMode::TIMING_1_16;
+    else if (value >= 88 && value <= 98) mode = TimingMode::TIMING_1_32;
+    else if (value >= 99 && value <= 109) mode = TimingMode::TIMING_1_4T;
+    else if (value >= 110 && value <= 120) mode = TimingMode::TIMING_1_8T;
+    else if (value >= 121 && value <= 127) mode = TimingMode::TIMING_1_16T;
+    
+    setLFO2TimingMode(mode);
+    JT_LOGF("[CC %u:%s] LFO2 Timing = %s\n", 
+            control, ccName, TimingModeNames[(int)mode]);
+    break;
+}
+
+case CC::DELAY_TIMING_MODE: {
+    // Same mapping as LFOs
+    TimingMode mode = TimingMode::TIMING_FREE;
+    if (value >= 0 && value <= 10)       mode = TimingMode::TIMING_FREE;
+    else if (value >= 11 && value <= 21) mode = TimingMode::TIMING_4_BARS;
+    else if (value >= 22 && value <= 32) mode = TimingMode::TIMING_2_BARS;
+    else if (value >= 33 && value <= 43) mode = TimingMode::TIMING_1_BAR;
+    else if (value >= 44 && value <= 54) mode = TimingMode::TIMING_1_2;
+    else if (value >= 55 && value <= 65) mode = TimingMode::TIMING_1_4;
+    else if (value >= 66 && value <= 76) mode = TimingMode::TIMING_1_8;
+    else if (value >= 77 && value <= 87) mode = TimingMode::TIMING_1_16;
+    else if (value >= 88 && value <= 98) mode = TimingMode::TIMING_1_32;
+    else if (value >= 99 && value <= 109) mode = TimingMode::TIMING_1_4T;
+    else if (value >= 110 && value <= 120) mode = TimingMode::TIMING_1_8T;
+    else if (value >= 121 && value <= 127) mode = TimingMode::TIMING_1_16T;
+    
+    setDelayTimingMode(mode);
+    JT_LOGF("[CC %u:%s] Delay Timing = %s\n", 
+            control, ccName, TimingModeNames[(int)mode]);
+    break;
+}
+
+
 
         // ------------------- Fallback -------------------
         default:

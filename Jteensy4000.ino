@@ -9,6 +9,7 @@
 
 #include "Presets.h"
 #include "AudioScopeTap.h" 
+#include "BPMClockManager.h"
 
 // ---------------------- Audio endpoints ----------------------
 AudioOutputI2S2 i2sOut;                 // I2S audio out (to SGTL5000 / PCM path)
@@ -191,6 +192,13 @@ void setup() {
   // MIDI clock handlers (for external tempo sync)
   usbMIDI.setHandleRealTimeSystem(handleMIDIRealTime);  // See below
   midiHost.setHandleRealTimeSystem(handleMIDIRealTime);
+
+      // INITIALIZE BPM CLOCK (ADD THIS BLOCK)
+    bpmClock.setInternalBPM(120.0f);              // Start at 120 BPM
+    bpmClock.setClockSource(CLOCK_INTERNAL);      // Use internal clock
+    synth.setBPMClock(&bpmClock);                 // Connect to synth ← CRITICAL!
+    
+    JT_LOGF("[SETUP] BPM Clock initialized at 120 BPM\n");
 
   Serial.println("JTeensy 4000 Synth Ready");
 

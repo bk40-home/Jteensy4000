@@ -11,6 +11,8 @@
 #include "Waveforms.h"
 #include "DebugTrace.h"
 #include "AKWF_All.h"
+#include "BPMClockManager.h"
+
 
 using namespace JT4000Map;
 

@@ -322,52 +322,6 @@ void OscillatorBlock::update() {
 // FEEDBACK OSCILLATION - FIXED SIGNAL PATH
 // ============================================================================
 
-void OscillatorBlock::setFeedbackEnabled(bool enable) {
-    if (enable == _feedbackEnabled) return;
-    
-    _feedbackEnabled = enable;
-
-    AudioNoInterrupts();
-    
-    if (enable) {
-        // ====================================================================
-        // ENABLE FEEDBACK - KEY FIX: Don't mute normal output!
-        // ====================================================================
-        
-        // Determine which oscillator feeds the comb
-        if (_currentType == WAVEFORM_SUPERSAW && _supersaw) {
-            _combMixer.gain(0, 0.0f);  // Mute main to comb
-            _combMixer.gain(1, 1.0f);  // Supersaw to comb
-        } else {
-            _combMixer.gain(0, 1.0f);  // Main to comb
-            _combMixer.gain(1, 0.0f);  // Mute supersaw to comb
-        }
-        
-        // Enable feedback loop
-        _combMixer.gain(2, _feedbackGain);
-        
-        // Enable comb output (ADDS to normal output, doesn't replace!)
-        _outputMix.gain(2, _feedbackMixLevel);
-        
-        // CRITICAL: Normal oscillator output stays active!
-        // Channels 0/1 are NOT touched here - they remain as set by setWaveformType()
-        
-    } else {
-        // ====================================================================
-        // DISABLE FEEDBACK
-        // ====================================================================
-        
-        // Disable feedback loop
-        _combMixer.gain(2, 0.0f);
-        
-        // Disable comb output
-        _outputMix.gain(2, 0.0f);
-        
-        // Normal oscillator stays active (no change to gain 0/1)
-    }
-    
-    AudioInterrupts();
-}
 
 void OscillatorBlock::setFeedbackAmount(float amount) {
     // Clamp to safe range (prevents runaway oscillation)
@@ -376,8 +330,7 @@ void OscillatorBlock::setFeedbackAmount(float amount) {
         
     _feedbackEnabled = _feedbackGain > 0.0f;
 
-    AudioNoInterrupts();
-    
+        
     if (_feedbackEnabled) {
         // ====================================================================
         // ENABLE FEEDBACK - KEY FIX: Don't mute normal output!
@@ -422,9 +375,9 @@ void OscillatorBlock::setFeedbackMix(float mix) {
     _feedbackMixLevel = constrain(mix, 0.0f, 1.0f);
     
     if (_feedbackEnabled) {
-        AudioNoInterrupts();
+
         _outputMix.gain(2, _feedbackMixLevel);
-        AudioInterrupts();
+
     }
 }
 
