@@ -20,33 +20,21 @@ TouchInput::TouchInput()
     , _detectedGesture(GESTURE_NONE)
     , _touchStartTime(0)
     , _touchEndTime(0)
-{
-    // Resistive touch: XPT2046 needs CS/IRQ pins passed at construction;
-    // capacitive FT6206 uses I2C so nothing is needed here.
-}
+{}
 
 // ============================================================================
 // begin() — hardware initialisation
 // ============================================================================
 
 bool TouchInput::begin() {
-#ifdef USE_CAPACITIVE_TOUCH
+
     if (!_touchController.begin(40)) {
         Serial.println("TouchInput: FT6206 not found");
         return false;
     }
     Serial.println("TouchInput: FT6206 ready");
     return true;
-#endif
 
-#ifdef USE_RESISTIVE_TOUCH
-    _touchController.begin();
-    _touchController.setRotation(1);   // Match ILI9341 landscape rotation
-    Serial.println("TouchInput: XPT2046 ready");
-    return true;
-#endif
-
-    return false;  // No touch controller selected
 }
 
 // ============================================================================
@@ -157,7 +145,7 @@ void TouchInput::detectGesture() {
 // ============================================================================
 
 TouchInput::Point TouchInput::mapCoordinates(int16_t rawX, int16_t rawY) {
-#ifdef USE_CAPACITIVE_TOUCH
+
     // FT6206 native resolution is typically 240×320 (portrait).
     // In landscape mode the axes are swapped: raw X → screen Y, raw Y → screen X.
     // Adjust the input ranges below if touch feels offset or mirrored.
@@ -167,14 +155,6 @@ TouchInput::Point TouchInput::mapCoordinates(int16_t rawX, int16_t rawY) {
     // If touch is mirrored horizontally: return Point(319 - x, y);
     // If mirrored vertically:            return Point(x, 239 - y);
     return Point(x, y);
-#endif
 
-#ifdef USE_RESISTIVE_TOUCH
-    // XPT2046 ADC values — calibrate min/max from your specific panel.
-    const int16_t x = (int16_t)map(rawX, 300, 3800, 0, 320);
-    const int16_t y = (int16_t)map(rawY, 300, 3800, 0, 240);
-    return Point(x, y);
-#endif
 
-    return Point(0, 0);
 }
