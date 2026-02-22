@@ -84,14 +84,14 @@ private:
     // You may need to adjust based on your specific build/PCB variant.
     
     // Left encoder (ENC_L): Navigation, back, cancel
-    static constexpr uint8_t ENC_L_A_PIN  = 24;   // Phase A (interrupt-capable)
-    static constexpr uint8_t ENC_L_B_PIN  = 23;   // Phase B (interrupt-capable)
-    static constexpr uint8_t ENC_L_SW_PIN = 22;   // Button/switch
+    static constexpr uint8_t ENC_L_A_PIN  = 32;   // Phase A (interrupt-capable)
+    static constexpr uint8_t ENC_L_B_PIN  = 31;   // Phase B (interrupt-capable)
+    static constexpr uint8_t ENC_L_SW_PIN = 30;   // Button/switch
 
     // Right encoder (ENC_R): Value adjust, confirm, select
-    static constexpr uint8_t ENC_R_A_PIN  = 20;   // Phase A (interrupt-capable)
-    static constexpr uint8_t ENC_R_B_PIN  = 21;   // Phase B (interrupt-capable)
-    static constexpr uint8_t ENC_R_SW_PIN = 17;   // Button/switch
+    static constexpr uint8_t ENC_R_A_PIN  = 28;   // Phase A (interrupt-capable)
+    static constexpr uint8_t ENC_R_B_PIN  = 29;   // Phase B (interrupt-capable)
+    static constexpr uint8_t ENC_R_SW_PIN = 25;   // Button/switch
 
     // --- Encoder objects ---
     // Using EncoderTool library for interrupt-driven, zero-copy reading
