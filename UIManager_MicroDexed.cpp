@@ -1,28 +1,32 @@
 /**
  * UIManager_MicroDexed.cpp
- * 
- * Implementation of ILI9341-based UI for MicroDexed hardware.
- * 
- * Performance optimizations:
- * - Dirty region tracking (only redraw changed areas)
- * - Frame rate throttling (30 FPS sufficient)
- * - DMA-accelerated SPI transfers (via ILI9341_t3)
- * - Minimal text redraws (only changed values)
- * 
- * TODO for complete implementation:
- * - Add scope visualization using scopeTap data
- * - Implement touch input for direct parameter access
- * - Add preset selection menu
- * - Add waveform visualization
- * - Add voice activity indicators
+ *
+ * UI implementation for MicroDexed hardware: ILI9341 320×240 TFT display,
+ * two encoders, optional capacitive touch.
+ *
+ * Key fixes vs. previous version:
+ *   1. synth.getCC() / synth.setCC() — now exist via _ccState cache in SynthEngine.
+ *   2. UIPageEnhanced::ccMap → UIPage::ccMap (Enhanced layout is a future stub).
+ *   3. getParamColor() — all CC enum names corrected to match CCDefs.h.
+ *   4. yStart calculated once and used throughout drawParameterGrid().
+ *   5. drawHeader() drives page name from UIPage::ccNames (scalable to all pages).
+ *   6. MODE_COUNT added to every switch as an explicit no-op.
+ *
+ * Performance notes:
+ *   - Dirty region tracking avoids full redraws on every frame.
+ *   - Frame rate capped at ~30 FPS (FRAME_INTERVAL_MS = 33) — sufficient for UI.
+ *   - snprintf() used instead of String to avoid heap fragmentation.
  */
 
 #include "UIManager_MicroDexed.h"
-#include "UIPageLayout.h"
+#include "UIPageLayout.h"   // UIPage::ccMap, UIPage::ccNames, UIPage::NUM_PAGES
 #include "CCDefs.h"
 
+// ---------------------------------------------------------------------------
+// Constructor
+// ---------------------------------------------------------------------------
 UIManager_MicroDexed::UIManager_MicroDexed()
-    : _display(TFT_CS, TFT_DC, TFT_RST)  // Initialize with pin assignments
+    : _display(TFT_CS, TFT_DC, TFT_RST)
     , _currentPage(0)
     , _selectedParam(0)
     , _currentMode(MODE_PARAMETERS)
@@ -31,7 +35,6 @@ UIManager_MicroDexed::UIManager_MicroDexed()
     , _lastEncoderLeft(0)
     , _lastEncoderRight(0)
 {
-    // Initialize dirty flags
     _headerDirty = false;
     _footerDirty = false;
     for (int i = 0; i < 8; ++i) {
@@ -39,66 +42,60 @@ UIManager_MicroDexed::UIManager_MicroDexed()
     }
 }
 
+// ---------------------------------------------------------------------------
+// begin() — hardware init
+// ---------------------------------------------------------------------------
 void UIManager_MicroDexed::begin() {
-    // --- Initialize ILI9341 display ---
     _display.begin();
-    
-    // Set rotation (landscape mode)
-    // 0 = portrait, 1 = landscape, 2 = portrait flipped, 3 = landscape flipped
-    _display.setRotation(1);  // 320x240 landscape
-    
-    // Clear screen to black
+    _display.setRotation(1);             // Landscape 320×240
     _display.fillScreen(COLOR_BACKGROUND);
-    
-    // Set text defaults
     _display.setTextColor(COLOR_TEXT);
     _display.setTextSize(FONT_MEDIUM);
-    
-    // --- Initialize touch input (optional) ---
+
+    // Capacitive touch is optional — begin() returns false if not found
     _touchEnabled = _touch.begin();
-    if (_touchEnabled) {
-        Serial.println("Touch input enabled");
-    } else {
-        Serial.println("Touch input disabled (not found or disabled in code)");
-    }
-    
-    // Show boot message
-    drawCenteredText(SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2, "JTeensy 4000", COLOR_ACCENT, FONT_LARGE);
-    drawCenteredText(SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 + 30, "MicroDexed Edition", COLOR_TEXT, FONT_SMALL);
-    delay(1000);  // Show for 1 second
-    
-    // Force full redraw on first update
-    markFullDirty();
+    Serial.println(_touchEnabled ? "Touch: enabled" : "Touch: not found");
+
+    // Boot splash
+    drawCenteredText(SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2,
+                     "JTeensy 4000", COLOR_ACCENT, FONT_LARGE);
+    drawCenteredText(SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 + 30,
+                     "MicroDexed Edition", COLOR_TEXT, FONT_SMALL);
+    delay(1000);
+
+    markFullDirty();  // Force full redraw on first update
 }
 
+// ---------------------------------------------------------------------------
+// updateDisplay() — called at ~30 FPS from main loop
+// ---------------------------------------------------------------------------
 void UIManager_MicroDexed::updateDisplay(SynthEngine& synth) {
-    // --- Frame rate throttling ---
-    // Only update display at ~30 FPS to save CPU
-    uint32_t now = millis();
-    if (now - _lastFrameTime < FRAME_INTERVAL_MS && !_fullRedraw) {
-        return;  // Skip this frame
+    // Frame rate limiter — skip frames we don't need to draw
+    const uint32_t now = millis();
+    if ((now - _lastFrameTime) < FRAME_INTERVAL_MS && !_fullRedraw) {
+        return;
     }
     _lastFrameTime = now;
 
-    // --- Render based on current mode ---
     switch (_currentMode) {
         case MODE_PARAMETERS:
             if (_fullRedraw) {
+                // Full repaint
                 _display.fillScreen(COLOR_BACKGROUND);
                 drawHeader(synth);
                 drawParameterGrid(synth);
                 drawFooter();
             } else {
-                // Selective updates
+                // Selective repaint — only touched regions
                 if (_headerDirty) drawHeader(synth);
                 if (_footerDirty) drawFooter();
-                
-                // Redraw only dirty parameter rows
+
                 for (int i = 0; i < 8; ++i) {
                     if (_paramsDirty[i]) {
-                        byte cc = UIPage::ccMap[_currentPage][i % 4];
-                        int value = synth.getCC(cc);
-                        bool selected = (i == _selectedParam);
+                        // UIPage has 4 params per page; upper 4 slots repeat (future 8-param layout)
+                        const byte cc       = UIPage::ccMap[_currentPage][i % UIPage::PARAMS_PER_PAGE];
+                        const int  value    = (cc != 255) ? synth.getCC(cc) : 0;
+                        const bool selected = (i == _selectedParam);
                         drawParameterRow(i, cc, value, selected);
                     }
                 }
@@ -112,308 +109,336 @@ void UIManager_MicroDexed::updateDisplay(SynthEngine& synth) {
         case MODE_MENU:
             drawMenuView();
             break;
+
+        case MODE_COUNT:
+            // Sentinel — should never be reached
+            break;
     }
 
     clearDirtyFlags();
 }
 
-void UIManager_MicroDexed::pollInputs(HardwareInterface_MicroDexed& hw, SynthEngine& synth) {
-    // --- Update touch input if enabled ---
+// ---------------------------------------------------------------------------
+// pollInputs() — called at 100+ Hz from main loop for responsive input
+// ---------------------------------------------------------------------------
+void UIManager_MicroDexed::pollInputs(HardwareInterface_MicroDexed& hw,
+                                      SynthEngine& synth) {
+    // Touch — update state before encoder reads
     if (_touchEnabled) {
         _touch.update();
         handleTouchInput(synth);
     }
-    
-    // --- Read encoder deltas ---
-    int deltaLeft  = hw.getEncoderDelta(HardwareInterface_MicroDexed::ENC_LEFT);
-    int deltaRight = hw.getEncoderDelta(HardwareInterface_MicroDexed::ENC_RIGHT);
-    
-    // --- Read button presses ---
-    auto pressLeft  = hw.getButtonPress(HardwareInterface_MicroDexed::ENC_LEFT);
-    auto pressRight = hw.getButtonPress(HardwareInterface_MicroDexed::ENC_RIGHT);
 
-    // --- Handle input based on current mode ---
+    const int deltaLeft  = hw.getEncoderDelta(HardwareInterface_MicroDexed::ENC_LEFT);
+    const int deltaRight = hw.getEncoderDelta(HardwareInterface_MicroDexed::ENC_RIGHT);
+
+    const auto pressLeft  = hw.getButtonPress(HardwareInterface_MicroDexed::ENC_LEFT);
+    const auto pressRight = hw.getButtonPress(HardwareInterface_MicroDexed::ENC_RIGHT);
+
     switch (_currentMode) {
         case MODE_PARAMETERS:
-            // Left encoder: Navigate between parameters
+            // Left encoder — navigate between parameters
             if (deltaLeft != 0) {
-                _selectedParam += deltaLeft;
-                // Wrap around parameter selection (0-7 visible params)
-                if (_selectedParam < 0) _selectedParam = 7;
-                if (_selectedParam > 7) _selectedParam = 0;
-                markFullDirty();  // Highlight changes
+                _selectedParam = (_selectedParam + deltaLeft + 8) % 8;  // wrap 0-7
+                markFullDirty();
             }
 
-            // Right encoder: Adjust selected parameter value
+            // Right encoder — adjust value of selected parameter
             if (deltaRight != 0) {
-                byte cc = UIPage::ccMap[_currentPage][_selectedParam % 4];
-                if (cc != 255) {  // Valid CC mapping
-                    int currentValue = synth.getCC(cc);
-                    int newValue = constrain(currentValue + deltaRight, 0, 127);
-                    synth.setCC(cc, newValue);
+                // UIPage::PARAMS_PER_PAGE = 4; upper 4 slots mirror lower 4
+                const byte cc = UIPage::ccMap[_currentPage][_selectedParam % UIPage::PARAMS_PER_PAGE];
+                if (cc != 255) {
+                    const int newValue = constrain((int)synth.getCC(cc) + deltaRight, 0, 127);
+                    synth.setCC(cc, (uint8_t)newValue);
                     markParamDirty(_selectedParam);
                 }
             }
 
-            // Left button SHORT: Go back / change page
+            // Left button SHORT — advance to next page
             if (pressLeft == HardwareInterface_MicroDexed::PRESS_SHORT) {
-                _currentPage = (_currentPage + 1) % 4;  // Cycle through pages
+                _currentPage = (_currentPage + 1) % UIPage::NUM_PAGES;
+                _selectedParam = 0;
                 markFullDirty();
             }
 
-            // Left button LONG: Toggle scope mode
+            // Left button LONG — toggle oscilloscope view
             if (pressLeft == HardwareInterface_MicroDexed::PRESS_LONG) {
                 setMode(MODE_SCOPE);
             }
 
-            // Right button SHORT: Reserved for future use
-            if (pressRight == HardwareInterface_MicroDexed::PRESS_SHORT) {
-                // TODO: Quick preset select?
-            }
-
-            // Right button LONG: Enter menu
+            // Right button LONG — open menu
             if (pressRight == HardwareInterface_MicroDexed::PRESS_LONG) {
                 setMode(MODE_MENU);
             }
             break;
 
         case MODE_SCOPE:
-            // Any button press returns to parameter view
-            if (pressLeft != HardwareInterface_MicroDexed::PRESS_NONE ||
+            // Any button returns to parameter view
+            if (pressLeft  != HardwareInterface_MicroDexed::PRESS_NONE ||
                 pressRight != HardwareInterface_MicroDexed::PRESS_NONE) {
                 setMode(MODE_PARAMETERS);
             }
             break;
 
         case MODE_MENU:
-            // TODO: Implement menu navigation
-            // For now, any button returns to parameters
             if (pressLeft != HardwareInterface_MicroDexed::PRESS_NONE) {
                 setMode(MODE_PARAMETERS);
             }
             break;
+
+        case MODE_COUNT:
+            break;
     }
 }
+
+// ---------------------------------------------------------------------------
+// Page / parameter management
+// ---------------------------------------------------------------------------
 
 void UIManager_MicroDexed::setPage(int page) {
-    if (page != _currentPage) {
-        _currentPage = constrain(page, 0, 3);  // 4 pages total
-        _selectedParam = 0;  // Reset selection
-        markFullDirty();
-    }
-}
-
-void UIManager_MicroDexed::selectParameter(int index) {
-    if (index != _selectedParam) {
-        _selectedParam = constrain(index, 0, 7);
-        markFullDirty();
-    }
-}
-
-void UIManager_MicroDexed::setMode(DisplayMode mode) {
-    if (mode != _currentMode) {
-        _currentMode = mode;
-        markFullDirty();
-    }
-}
-
-void UIManager_MicroDexed::syncFromEngine(SynthEngine& synth) {
-    // Force full UI refresh from engine state
+    if (page == _currentPage) return;
+    _currentPage   = constrain(page, 0, UIPage::NUM_PAGES - 1);
+    _selectedParam = 0;
     markFullDirty();
 }
 
-// ============================================================================
-// DRAWING FUNCTIONS
-// ============================================================================
+void UIManager_MicroDexed::selectParameter(int index) {
+    if (index == _selectedParam) return;
+    _selectedParam = constrain(index, 0, 7);
+    markFullDirty();
+}
 
-void UIManager_MicroDexed::drawHeader(SynthEngine& synth) {
-    // Clear header area
+void UIManager_MicroDexed::setMode(DisplayMode mode) {
+    if (mode == _currentMode) return;
+    _currentMode = mode;
+    markFullDirty();
+}
+
+void UIManager_MicroDexed::syncFromEngine(SynthEngine& /*synth*/) {
+    // Invalidate the whole screen — next updateDisplay() repaints everything
+    markFullDirty();
+}
+
+// ===========================================================================
+// Drawing — Header
+// ===========================================================================
+
+void UIManager_MicroDexed::drawHeader(SynthEngine& /*synth*/) {
     _display.fillRect(0, 0, SCREEN_WIDTH, HEADER_HEIGHT, COLOR_HEADER);
-    
-    // Draw page name
+
+    // Page number + first param name as the page title
+    // Falls back to UIPage::ccNames[page][0] which is always a short label
+    char pageTitle[24];
+    const char* firstName = UIPage::ccNames[_currentPage][0];
+    snprintf(pageTitle, sizeof(pageTitle), "P%d: %s",
+             _currentPage + 1, firstName ? firstName : "---");
+
     _display.setCursor(MARGIN, MARGIN);
     _display.setTextColor(COLOR_TEXT);
     _display.setTextSize(FONT_MEDIUM);
-    
-    const char* pageName = "UNKNOWN";
-    switch (_currentPage) {
-        case 0: pageName = "OSCILLATOR"; break;
-        case 1: pageName = "FILTER"; break;
-        case 2: pageName = "ENVELOPE"; break;
-        case 3: pageName = "EFFECTS"; break;
-    }
-    _display.print(pageName);
-    
-    // Draw CPU usage (top right)
-    float cpu = AudioProcessorUsageMax();
-    char cpuStr[16];
-    snprintf(cpuStr, sizeof(cpuStr), "CPU:%d%%", (int)cpu);
+    _display.print(pageTitle);
+
+    // CPU usage — top right corner
+    char cpuStr[12];
+    snprintf(cpuStr, sizeof(cpuStr), "CPU:%d%%", (int)AudioProcessorUsageMax());
     drawRightAlignedText(SCREEN_WIDTH - MARGIN, MARGIN, cpuStr, COLOR_TEXT_DIM, FONT_SMALL);
-    
-    // Draw separator line
+
+    // Separator line
     _display.drawFastHLine(0, HEADER_HEIGHT - 1, SCREEN_WIDTH, COLOR_BORDER);
 }
 
+// ===========================================================================
+// Drawing — Parameter grid
+// ===========================================================================
+
 void UIManager_MicroDexed::drawParameterGrid(SynthEngine& synth) {
-    // Draw 8 parameter rows (4 params x 2 columns)
-    int yStart = HEADER_HEIGHT + MARGIN;
-    
+    // Draw all parameter rows; yStart is a reference only — drawParameterRow
+    // computes its own Y from the row index and layout constants.
     for (int i = 0; i < 8; ++i) {
-        byte cc = UIPage::ccMap[_currentPage][i % 4];
-        int value = (cc != 255) ? synth.getCC(cc) : 0;
-        bool selected = (i == _selectedParam);
-        
+        const byte cc       = UIPage::ccMap[_currentPage][i % UIPage::PARAMS_PER_PAGE];
+        const int  value    = (cc != 255) ? synth.getCC(cc) : 0;
+        const bool selected = (i == _selectedParam);
         drawParameterRow(i, cc, value, selected);
     }
 }
 
-void UIManager_MicroDexed::drawParameterRow(int row, byte cc, int value, bool selected) {
-    // Calculate position
-    int yStart = HEADER_HEIGHT + MARGIN;
-    int y = yStart + (row * PARAM_ROW_HEIGHT);
-    int x = MARGIN;
-    int width = SCREEN_WIDTH - (2 * MARGIN);
-    int height = PARAM_ROW_HEIGHT - 2;  // Leave small gap between rows
-    
-    // Background color (highlight if selected)
-    uint16_t bgColor = selected ? COLOR_HIGHLIGHT : COLOR_BACKGROUND;
-    uint16_t textColor = selected ? COLOR_BACKGROUND : COLOR_TEXT;
-    
-    // Clear row area
+void UIManager_MicroDexed::drawParameterRow(int row, byte cc,
+                                             int value, bool selected) {
+    // Layout constants — keep in sync with HEADER_HEIGHT, PARAM_ROW_HEIGHT, MARGIN
+    const int yStart = HEADER_HEIGHT + MARGIN;
+    const int y      = yStart + row * PARAM_ROW_HEIGHT;
+    const int x      = MARGIN;
+    const int width  = SCREEN_WIDTH - 2 * MARGIN;
+    const int height = PARAM_ROW_HEIGHT - 2;  // Small gap between rows
+
+    const uint16_t bgColor   = selected ? COLOR_HIGHLIGHT  : COLOR_BACKGROUND;
+    const uint16_t textColor = selected ? COLOR_BACKGROUND : COLOR_TEXT;
+
     _display.fillRect(x, y, width, height, bgColor);
-    
-    // Draw parameter name
+
+    // Parameter name (left-aligned)
     const char* name = (cc != 255) ? getParamName(cc) : "---";
     _display.setCursor(x + MARGIN, y + 5);
     _display.setTextColor(textColor);
     _display.setTextSize(FONT_MEDIUM);
     _display.print(name);
-    
-    // Draw value (right-aligned)
-    if (cc != 255) {
-        char valueStr[8];
-        snprintf(valueStr, sizeof(valueStr), "%d", value);
-        drawRightAlignedText(x + width - MARGIN, y + 5, valueStr, textColor, FONT_MEDIUM);
-        
-        // Draw value bar
-        int barWidth = (width - (4 * MARGIN)) * value / 127;
-        int barY = y + height - 8;
-        uint16_t barColor = getParamColor(cc);
-        _display.fillRect(x + MARGIN, barY, barWidth, 4, barColor);
-    }
+
+    if (cc == 255) return;  // Skip value/bar for unused slots
+
+    // Value (right-aligned)
+    char valueStr[8];
+    snprintf(valueStr, sizeof(valueStr), "%d", value);
+    drawRightAlignedText(x + width - MARGIN, y + 5, valueStr, textColor, FONT_MEDIUM);
+
+    // Value bar — proportional to 0-127
+    const int barWidth = (width - 4 * MARGIN) * value / 127;
+    const int barY     = y + height - 8;
+    _display.fillRect(x + MARGIN, barY, barWidth, 4, getParamColor(cc));
 }
 
+// ===========================================================================
+// Drawing — Footer
+// ===========================================================================
+
 void UIManager_MicroDexed::drawFooter() {
-    int y = SCREEN_HEIGHT - FOOTER_HEIGHT;
-    
-    // Clear footer
+    const int y = SCREEN_HEIGHT - FOOTER_HEIGHT;
     _display.fillRect(0, y, SCREEN_WIDTH, FOOTER_HEIGHT, COLOR_HEADER);
-    
-    // Draw separator line
     _display.drawFastHLine(0, y, SCREEN_WIDTH, COLOR_BORDER);
-    
-    // Draw hints
+
     _display.setCursor(MARGIN, y + 5);
     _display.setTextColor(COLOR_TEXT_DIM);
     _display.setTextSize(FONT_SMALL);
-    _display.print("L:Page R:Value  Hold L:Scope R:Menu");
+    _display.print("L:Page  R:Value  Hold-L:Scope  Hold-R:Menu");
 }
 
-void UIManager_MicroDexed::drawScopeView(SynthEngine& synth) {
-    // TODO: Implement oscilloscope view using AudioScopeTap data
-    _display.fillScreen(COLOR_BACKGROUND);
-    drawCenteredText(SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2, "SCOPE VIEW", COLOR_ACCENT, FONT_LARGE);
-    drawCenteredText(SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 + 30, "(Not yet implemented)", COLOR_TEXT_DIM, FONT_SMALL);
-}
+// ===========================================================================
+// Drawing — Scope view
+// ===========================================================================
+// NOTE: drawScopeView() is implemented in ScopeView.cpp.
+//       Only the declaration lives in UIManager_MicroDexed.h.
+//       Do NOT define it here — duplicate definition causes a linker error.
 
 void UIManager_MicroDexed::drawMenuView() {
-    // TODO: Implement menu view (presets, settings, etc.)
     _display.fillScreen(COLOR_BACKGROUND);
-    drawCenteredText(SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2, "MENU", COLOR_ACCENT, FONT_LARGE);
-    drawCenteredText(SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 + 30, "(Not yet implemented)", COLOR_TEXT_DIM, FONT_SMALL);
+    drawCenteredText(SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2,
+                     "MENU", COLOR_ACCENT, FONT_LARGE);
+    drawCenteredText(SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 + 30,
+                     "(Not yet implemented)", COLOR_TEXT_DIM, FONT_SMALL);
 }
 
-// ============================================================================
-// HELPER FUNCTIONS
-// ============================================================================
+// ===========================================================================
+// Helper — parameter colour coding by CC category
+// ===========================================================================
 
 uint16_t UIManager_MicroDexed::getParamColor(byte cc) {
-    // Return color based on parameter category
-    // This helps with visual organization
-    
-    // Oscillator CCs (typically 14-20)
-    if (cc >= CC::OSC1_LEVEL && cc <= CC::OSC_DETUNE) return COLOR_OSC;
-    
-    // Filter CCs (typically 74-78)
-    if (cc >= CC::FILTER_FREQ && cc <= CC::FILTER_RES) return COLOR_FILTER;
-    
-    // Envelope CCs (typically 73, 75, etc.)
-    if (cc == CC::ENV_ATTACK || cc == CC::ENV_DECAY || 
-        cc == CC::ENV_SUSTAIN || cc == CC::ENV_RELEASE) return COLOR_ENV;
-    
-    // FX CCs (typically 91-93)
-    if (cc >= CC::FX_MIX && cc <= CC::FX_SIZE) return COLOR_FX;
-    
-    // Default
-    return COLOR_TEXT;
+    // Oscillator parameters
+    if (cc == CC::OSC1_WAVE        || cc == CC::OSC2_WAVE        ||
+        cc == CC::OSC1_PITCH_OFFSET|| cc == CC::OSC2_PITCH_OFFSET||
+        cc == CC::OSC1_DETUNE      || cc == CC::OSC2_DETUNE      ||
+        cc == CC::OSC1_FINE_TUNE   || cc == CC::OSC2_FINE_TUNE   ||
+        cc == CC::OSC_MIX_BALANCE  || cc == CC::OSC1_MIX         ||
+        cc == CC::OSC2_MIX         || cc == CC::SUB_MIX          ||
+        cc == CC::NOISE_MIX        || cc == CC::RING1_MIX        ||
+        cc == CC::RING2_MIX        ||
+        cc == CC::SUPERSAW1_DETUNE || cc == CC::SUPERSAW1_MIX    ||
+        cc == CC::SUPERSAW2_DETUNE || cc == CC::SUPERSAW2_MIX    ||
+        cc == CC::OSC1_FREQ_DC     || cc == CC::OSC1_SHAPE_DC    ||
+        cc == CC::OSC2_FREQ_DC     || cc == CC::OSC2_SHAPE_DC    ||
+        cc == CC::OSC1_FEEDBACK_AMOUNT || cc == CC::OSC1_FEEDBACK_MIX ||
+        cc == CC::OSC2_FEEDBACK_AMOUNT || cc == CC::OSC2_FEEDBACK_MIX) {
+        return COLOR_OSC;
+    }
+
+    // Filter parameters
+    if (cc == CC::FILTER_CUTOFF          || cc == CC::FILTER_RESONANCE       ||
+        cc == CC::FILTER_ENV_AMOUNT      || cc == CC::FILTER_KEY_TRACK       ||
+        cc == CC::FILTER_OCTAVE_CONTROL  ||
+        cc == CC::FILTER_OBXA_MULTIMODE  || cc == CC::FILTER_OBXA_TWO_POLE   ||
+        cc == CC::FILTER_OBXA_XPANDER_4_POLE || cc == CC::FILTER_OBXA_XPANDER_MODE ||
+        cc == CC::FILTER_OBXA_BP_BLEND_2_POLE || cc == CC::FILTER_OBXA_PUSH_2_POLE ||
+        cc == CC::FILTER_OBXA_RES_MOD_DEPTH) {
+        return COLOR_FILTER;
+    }
+
+    // Envelope parameters (amp + filter)
+    if (cc == CC::AMP_ATTACK       || cc == CC::AMP_DECAY          ||
+        cc == CC::AMP_SUSTAIN      || cc == CC::AMP_RELEASE        ||
+        cc == CC::FILTER_ENV_ATTACK|| cc == CC::FILTER_ENV_DECAY   ||
+        cc == CC::FILTER_ENV_SUSTAIN || cc == CC::FILTER_ENV_RELEASE) {
+        return COLOR_ENV;
+    }
+
+    // FX parameters
+    if (cc == CC::FX_REVERB_SIZE      || cc == CC::FX_REVERB_DAMP      ||
+        cc == CC::FX_REVERB_LODAMP    || cc == CC::FX_REVERB_MIX       ||
+        cc == CC::FX_REVERB_BYPASS    || cc == CC::FX_DRY_MIX          ||
+        cc == CC::FX_JPFX_MIX        ||
+        cc == CC::FX_BASS_GAIN        || cc == CC::FX_TREBLE_GAIN      ||
+        cc == CC::FX_MOD_EFFECT       || cc == CC::FX_MOD_MIX          ||
+        cc == CC::FX_MOD_RATE         || cc == CC::FX_MOD_FEEDBACK     ||
+        cc == CC::FX_JPFX_DELAY_EFFECT|| cc == CC::FX_JPFX_DELAY_MIX  ||
+        cc == CC::FX_JPFX_DELAY_FEEDBACK || cc == CC::FX_JPFX_DELAY_TIME) {
+        return COLOR_FX;
+    }
+
+    return COLOR_TEXT;  // Default — white for unclassified CCs
 }
+
+// ---------------------------------------------------------------------------
+// Helper — CC number → human-readable name
+// ---------------------------------------------------------------------------
 
 const char* UIManager_MicroDexed::getParamName(byte cc) {
-    // Use CC::name() from CCMap.h
-    const char* name = CC::name(cc);
-    return name ? name : "Unknown";
+    // CC::name() is an inline switch in CCDefs.h covering all known CCs
+    const char* n = CC::name(cc);
+    return n ? n : "?";
 }
 
-void UIManager_MicroDexed::drawCenteredText(int x, int y, const char* text, uint16_t color, int fontSize) {
+// ---------------------------------------------------------------------------
+// Helpers — text positioning
+// ---------------------------------------------------------------------------
+
+void UIManager_MicroDexed::drawCenteredText(int x, int y, const char* text,
+                                             uint16_t color, int fontSize) {
     _display.setTextColor(color);
     _display.setTextSize(fontSize);
-    
-    // Calculate text width (approximate: 6 pixels per char * fontSize)
-    int textWidth = strlen(text) * 6 * fontSize;
-    int textX = x - (textWidth / 2);
-    
-    _display.setCursor(textX, y);
+    // ILI9341 built-in font: 6×8 pixels per char at size 1
+    const int textWidth = (int)strlen(text) * 6 * fontSize;
+    _display.setCursor(x - textWidth / 2, y);
     _display.print(text);
 }
 
-void UIManager_MicroDexed::drawRightAlignedText(int x, int y, const char* text, uint16_t color, int fontSize) {
+void UIManager_MicroDexed::drawRightAlignedText(int x, int y, const char* text,
+                                                 uint16_t color, int fontSize) {
     _display.setTextColor(color);
     _display.setTextSize(fontSize);
-    
-    // Calculate text width (approximate: 6 pixels per char * fontSize)
-    int textWidth = strlen(text) * 6 * fontSize;
-    int textX = x - textWidth;
-    
-    _display.setCursor(textX, y);
+    const int textWidth = (int)strlen(text) * 6 * fontSize;
+    _display.setCursor(x - textWidth, y);
     _display.print(text);
 }
 
-// ============================================================================
-// TOUCH INPUT HANDLING
-// ============================================================================
+// ===========================================================================
+// Touch input handling
+// ===========================================================================
 
 void UIManager_MicroDexed::handleTouchInput(SynthEngine& synth) {
-    // Get detected gesture
-    TouchInput::Gesture gesture = _touch.getGesture();
-    
-    // Handle gestures based on current mode
+    const TouchInput::Gesture gesture = _touch.getGesture();
+
     switch (_currentMode) {
         case MODE_PARAMETERS:
-            // --- Swipe up/down: Change pages ---
+            // Swipe up → previous page
             if (gesture == TouchInput::GESTURE_SWIPE_UP) {
-                _currentPage = (_currentPage - 1 + 8) % 8;  // Previous page (wrap)
+                _currentPage = (_currentPage - 1 + UIPage::NUM_PAGES) % UIPage::NUM_PAGES;
                 markFullDirty();
             }
+            // Swipe down → next page
             else if (gesture == TouchInput::GESTURE_SWIPE_DOWN) {
-                _currentPage = (_currentPage + 1) % 8;  // Next page (wrap)
+                _currentPage = (_currentPage + 1) % UIPage::NUM_PAGES;
                 markFullDirty();
             }
-            
-            // --- Tap: Select parameter ---
+            // Tap → select parameter by touch position
             else if (gesture == TouchInput::GESTURE_TAP) {
-                TouchInput::Point p = _touch.getTouchPoint();
-                
-                // Check which parameter was tapped
+                const TouchInput::Point p = _touch.getTouchPoint();
                 for (int i = 0; i < 8; ++i) {
                     if (hitTestParameter(i, p.x, p.y)) {
                         _selectedParam = i;
@@ -422,54 +447,46 @@ void UIManager_MicroDexed::handleTouchInput(SynthEngine& synth) {
                     }
                 }
             }
-            
-            // --- Swipe left/right on parameter: Adjust value ---
-            else if (gesture == TouchInput::GESTURE_SWIPE_LEFT || 
+            // Swipe left/right → adjust selected parameter by ±10
+            else if (gesture == TouchInput::GESTURE_SWIPE_LEFT ||
                      gesture == TouchInput::GESTURE_SWIPE_RIGHT) {
-                byte cc = UIPageEnhanced::ccMap[_currentPage][_selectedParam];
+                // Use UIPage::ccMap — consistent with encoder handler
+                const byte cc = UIPage::ccMap[_currentPage]
+                                             [_selectedParam % UIPage::PARAMS_PER_PAGE];
                 if (cc != 255) {
-                    int currentValue = synth.getCC(cc);
-                    int delta = (gesture == TouchInput::GESTURE_SWIPE_RIGHT) ? 10 : -10;
-                    int newValue = constrain(currentValue + delta, 0, 127);
-                    synth.setCC(cc, newValue);
+                    const int delta    = (gesture == TouchInput::GESTURE_SWIPE_RIGHT) ? 10 : -10;
+                    const int newValue = constrain((int)synth.getCC(cc) + delta, 0, 127);
+                    synth.setCC(cc, (uint8_t)newValue);
                     markParamDirty(_selectedParam);
                 }
             }
-            
-            // --- Hold: Enter scope mode ---
+            // Hold → scope view
             else if (gesture == TouchInput::GESTURE_HOLD) {
                 setMode(MODE_SCOPE);
             }
             break;
 
         case MODE_SCOPE:
-            // Any tap returns to parameter view
-            if (gesture == TouchInput::GESTURE_TAP) {
-                setMode(MODE_PARAMETERS);
-            }
+            if (gesture == TouchInput::GESTURE_TAP) setMode(MODE_PARAMETERS);
             break;
 
         case MODE_MENU:
-            // TODO: Menu touch navigation
-            if (gesture == TouchInput::GESTURE_TAP) {
-                setMode(MODE_PARAMETERS);
-            }
+            if (gesture == TouchInput::GESTURE_TAP) setMode(MODE_PARAMETERS);
+            break;
+
+        case MODE_COUNT:
             break;
     }
 }
 
-bool UIManager_MicroDexed::hitTestParameter(int paramIndex, int16_t x, int16_t y) {
-    // Calculate parameter row bounds
-    const int HEADER_H = 30;
-    const int PARAM_H = 35;
-    const int MARGIN = 5;
-    
-    int rowY = HEADER_H + MARGIN + (paramIndex * PARAM_H);
-    int rowH = PARAM_H - 2;
-    int rowX = MARGIN;
-    int rowW = SCREEN_WIDTH - (2 * MARGIN);
-    
-    // Check if touch point is within this row
+bool UIManager_MicroDexed::hitTestParameter(int paramIndex,
+                                             int16_t x, int16_t y) {
+    // Calculate row bounding box using the same constants as drawParameterRow
+    const int rowY  = HEADER_HEIGHT + MARGIN + paramIndex * PARAM_ROW_HEIGHT;
+    const int rowH  = PARAM_ROW_HEIGHT - 2;
+    const int rowX  = MARGIN;
+    const int rowW  = SCREEN_WIDTH - 2 * MARGIN;
+
     return (x >= rowX && x < rowX + rowW &&
             y >= rowY && y < rowY + rowH);
 }

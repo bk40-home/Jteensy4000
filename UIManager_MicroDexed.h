@@ -94,6 +94,12 @@ public:
      */
     void syncFromEngine(SynthEngine& synth);
 
+    // --- Parameter labels ---
+    // No-op stub for API compatibility with UIManager (OLED) setup() calls.
+    // MicroDexed derives all names live from UIPage::ccNames / CC::name()
+    // at draw time, so stored labels are unnecessary.
+    inline void setParameterLabel(int /*index*/, const char* /*label*/) {}
+
     // --- Display mode ---
     enum DisplayMode {
         MODE_PARAMETERS,  // Standard parameter grid view
@@ -113,10 +119,11 @@ private:
     bool _touchEnabled;
     
     // --- Pin definitions for ILI9341 (SPI) ---
-    static constexpr uint8_t TFT_CS   = 10;  // Chip select
-    static constexpr uint8_t TFT_DC   = 9;   // Data/command
-    static constexpr uint8_t TFT_RST  = -1;  // Reset (tied to Teensy reset or 3.3V)
-    // Hardware SPI uses pins 11 (MOSI), 12 (MISO), 13 (SCK)
+    static constexpr uint8_t TFT_CS   = 41;  // Chip select
+    static constexpr uint8_t TFT_DC   = 37;   // Data/command
+    static constexpr uint8_t TFT_RST  = 24;  // Reset (tied to Teensy reset or 3.3V)
+
+// #define TFT_SCK 27
 
     // --- UI state ---
     int _currentPage;           // Current parameter page (0-N)

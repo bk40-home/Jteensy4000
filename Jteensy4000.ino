@@ -4,23 +4,11 @@
 #include <USBHost_t36.h>
 #include "SynthEngine.h"
 #include "UIPageLayout.h"   // UI-only page->CC layout and labels
-// Option A: Conditional compilation (supports both hardware configs)
-#define USE_MICRODEXED_HARDWARE  // Comment out for original hardware
 
-#ifdef USE_MICRODEXED_HARDWARE
   #include "HardwareInterface_MicroDexed.h"
   #include "UIManager_MicroDexed.h"
-  HardwareInterface_MicroDexed hw;
-  UIManager_MicroDexed ui;
-#else
-  #include "HardwareInterface.h"
-  #include "UIManager.h"
-  HardwareInterface hw;
-  UIManager ui;
-#endif
 
-// Rest of code remains the same!
-// SynthEngine, audio patching, MIDI handling are unchanged
+
 
 #include "Presets.h"
 #include "AudioScopeTap.h" 
@@ -30,7 +18,7 @@
 AudioOutputI2S2 i2sOut;                 // I2S audio out (to SGTL5000 / PCM path)
 AudioInputUSB usbIn;                 // USB audio in
 AudioOutputUSB usbOut;                 // USB audio out
-AudioControlSGTL5000 audioShield;      // Audio shield control
+// AudioControlSGTL5000 audioShield;      // Audio shield control
 AudioScopeTap scopeTap;                    // ➋ create the tap (always-on)
 
 // Patch-cord pointers (kept alive for the program lifetime)
@@ -50,8 +38,8 @@ AudioConnection* patchOutScope  = nullptr;   // scope feed
 
 // ---------------------- Engine & UI --------------------------
 SynthEngine synth;
-// HardwareInterface hw;
-// UIManager ui;
+HardwareInterface_MicroDexed hw;
+UIManager_MicroDexed ui;
 // ---------------------- BPM Clock Manager --------------------
 BPMClockManager bpmClock;
 
@@ -189,10 +177,10 @@ void setup() {
   myusb.begin();
 
   // Audio shield config
-  audioShield.enable();
-  audioShield.volume(0.3f);
-  audioShield.lineOutLevel(0);
-  audioShield.lineInLevel(0);
+  // audioShield.enable();
+  // audioShield.volume(0.3f);
+  // audioShield.lineOutLevel(0);
+  // audioShield.lineInLevel(0);
 
   // Attach MIDI host handlers
   midiHost.setHandleNoteOn(handleNoteOn);

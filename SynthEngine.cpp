@@ -1291,8 +1291,10 @@ case CC::DELAY_TIMING_MODE: {
             JT_LOGF("[CC %u:%s] Unmapped value=%u\n", control, ccName, value);
             break;
     }
+
+    // Keep raw CC cache in sync — lets the UI read back any value via getCC()
+    // without needing a typed getter for every parameter.
+    if (control < 128) {
+        _ccState[control] = value;
+    }
 }
-
-
-
-
