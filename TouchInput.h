@@ -95,14 +95,8 @@ private:
     // -------------------------------------------------------------------------
     // Hardware driver
     // -------------------------------------------------------------------------
-#ifdef USE_CAPACITIVE_TOUCH
     Adafruit_FT6206 _touchController;
-#endif
-#ifdef USE_RESISTIVE_TOUCH
-    XPT2046_Touchscreen _touchController;
-    static constexpr uint8_t TOUCH_CS_PIN  = 8;
-    static constexpr uint8_t TOUCH_IRQ_PIN = 2;
-#endif
+
 
     // -------------------------------------------------------------------------
     // State
