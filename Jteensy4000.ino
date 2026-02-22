@@ -4,8 +4,23 @@
 #include <USBHost_t36.h>
 #include "SynthEngine.h"
 #include "UIPageLayout.h"   // UI-only page->CC layout and labels
-#include "HardwareInterface.h"
-#include "UIManager.h"
+// Option A: Conditional compilation (supports both hardware configs)
+#define USE_MICRODEXED_HARDWARE  // Comment out for original hardware
+
+#ifdef USE_MICRODEXED_HARDWARE
+  #include "HardwareInterface_MicroDexed.h"
+  #include "UIManager_MicroDexed.h"
+  HardwareInterface_MicroDexed hw;
+  UIManager_MicroDexed ui;
+#else
+  #include "HardwareInterface.h"
+  #include "UIManager.h"
+  HardwareInterface hw;
+  UIManager ui;
+#endif
+
+// Rest of code remains the same!
+// SynthEngine, audio patching, MIDI handling are unchanged
 
 #include "Presets.h"
 #include "AudioScopeTap.h" 
@@ -35,8 +50,8 @@ AudioConnection* patchOutScope  = nullptr;   // scope feed
 
 // ---------------------- Engine & UI --------------------------
 SynthEngine synth;
-HardwareInterface hw;
-UIManager ui;
+// HardwareInterface hw;
+// UIManager ui;
 // ---------------------- BPM Clock Manager --------------------
 BPMClockManager bpmClock;
 
@@ -61,36 +76,36 @@ static void onParam(uint8_t cc, uint8_t v) {
   // ui.syncFromEngine(synth);  // uncomment if you want immediate reflection
 }
 
-// --- Debug: dump current page mapping and values -----------------------------
-static void debugDumpPage(UIManager& ui, HardwareInterface& hw, SynthEngine& synth) {
-  const int page = ui.getCurrentPage();
-  Serial.printf("\n[PAGE] %d\n", page);
+// // --- Debug: dump current page mapping and values -----------------------------
+// static void debugDumpPage(UIManager& ui, HardwareInterface& hw, SynthEngine& synth) {
+//   const int page = ui.getCurrentPage();
+//   Serial.printf("\n[PAGE] %d\n", page);
 
-  for (int i = 0; i < 4; ++i) {
-    const byte cc      = UIPage::ccMap[page][i];                 // UI routing
-    const char* label  = UIPage::ccNames[page][i];               // OLED label
-    const int  raw     = hw.readPot(i);                          // 0..1023
-    const int  ccVal   = (raw >> 3);                             // 0..127
-    const char* ccDesc = CC::name(cc);                           // friendly name or nullptr
+//   for (int i = 0; i < 4; ++i) {
+//     const byte cc      = UIPage::ccMap[page][i];                 // UI routing
+//     const char* label  = UIPage::ccNames[page][i];               // OLED label
+//     const int  raw     = hw.readPot(i);                          // 0..1023
+//     const int  ccVal   = (raw >> 3);                             // 0..127
+//     const char* ccDesc = CC::name(cc);                           // friendly name or nullptr
 
-    // Ask UIManager to compute the engine-reflected CC (inverse mapping)
-    const int engineCC = (cc != 255) ? ui.ccToDisplayValue(cc, synth) : -1;
+//     // Ask UIManager to compute the engine-reflected CC (inverse mapping)
+//     const int engineCC = (cc != 255) ? ui.ccToDisplayValue(cc, synth) : -1;
 
-    if (cc == 255) {
-      Serial.printf("  knob %d: label='%-10s'  [UNMAPPED]\n", i, label ? label : "");
-      continue;
-    }
+//     if (cc == 255) {
+//       Serial.printf("  knob %d: label='%-10s'  [UNMAPPED]\n", i, label ? label : "");
+//       continue;
+//     }
 
-    Serial.printf("  knob %d: label='%-10s'  map→ CC %3u  (%s)"
-                  "  potRaw=%4d  potCC=%3d  engineCC=%3d\n",
-                  i,
-                  label ? label : "",
-                  cc,
-                  ccDesc ? ccDesc : "unnamed",
-                  raw, ccVal, engineCC);
-  }
-  Serial.println();
-}
+//     Serial.printf("  knob %d: label='%-10s'  map→ CC %3u  (%s)"
+//                   "  potRaw=%4d  potCC=%3d  engineCC=%3d\n",
+//                   i,
+//                   label ? label : "",
+//                   cc,
+//                   ccDesc ? ccDesc : "unnamed",
+//                   raw, ccVal, engineCC);
+//   }
+//   Serial.println();
+// }
 
 //   // Jteensy4000.ino  (in setup() after synth/ui begin)
 // static void onParam(uint8_t cc, uint8_t v) {
@@ -136,17 +151,17 @@ void handleMIDIContinue() {
 }
 
 // Example: type a number 0..8 in Serial Monitor and press Enter to load template
-void handleSerialPresets(SynthEngine& synth, UIManager& ui) {
-  if (!Serial.available()) return;
-  int idx = Serial.parseInt();
-  if (idx >= 0 && idx <= 8) {
-    Serial.printf("Loading template %d: %s\n", idx, Presets::templateName(idx));
-    Presets::loadTemplateByIndex(synth, (uint8_t)idx);
-    ui.syncFromEngine(synth);
-  } else {
-    Serial.println("Enter a preset index 0..8");
-  }
-}
+// void handleSerialPresets(SynthEngine& synth, UIManager& ui) {
+//   if (!Serial.available()) return;
+//   int idx = Serial.parseInt();
+//   if (idx >= 0 && idx <= 8) {
+//     Serial.printf("Loading template %d: %s\n", idx, Presets::templateName(idx));
+//     Presets::loadTemplateByIndex(synth, (uint8_t)idx);
+//     ui.syncFromEngine(synth);
+//   } else {
+//     Serial.println("Enter a preset index 0..8");
+//   }
+// }
 
 // Dispatch MIDI real-time messages to appropriate handlers
 void handleMIDIRealTime(uint8_t realtimeByte) {
