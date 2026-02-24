@@ -18,43 +18,100 @@
  *   - snprintf() used instead of String to avoid heap fragmentation.
  */
 
+// UIManager_MicroDexed.h must be first — defines the class, pulls in Arduino.h,
+// ILI9341_t3n.h, SPI, SynthEngine etc. Everything below depends on those types.
 #include "UIManager_MicroDexed.h"
 #include "UIPageLayout.h"   // UIPage::ccMap, UIPage::ccNames, UIPage::NUM_PAGES
 #include "CCDefs.h"
 
 // ---------------------------------------------------------------------------
+// Stubs required by ILI9341_t3n.cpp when built outside the full MicroDexed project.
+//
+// remote_active — bool that suppresses display drawing during remote MIDI streaming.
+//   Always false here; the display is always local.
+//
+// ColorHSV — declared extern in ILI9341_t3n.cpp; only called by fillRectRainbow()
+//   which we never invoke. Minimal HSV→RGB565 implementation satisfies the linker.
+//
+// IMPORTANT: these must appear AFTER all #includes so that Arduino.h has already
+// defined uint8_t / uint16_t and the class declaration is visible.
+// ---------------------------------------------------------------------------
+
+bool remote_active = false;
+
+uint16_t ColorHSV(uint16_t hue, uint8_t sat, uint8_t val) {
+    uint8_t r, g, b;
+    if (sat == 0) {
+        r = g = b = val;
+    } else {
+        const uint8_t  region = (uint8_t)(hue / 11000u);
+        const uint16_t rem    = (uint16_t)((hue - region * 11000u) * 6u);
+        const uint8_t  p = (uint8_t)((val * (255u - sat)) >> 8);
+        const uint8_t  q = (uint8_t)((val * (255u - ((sat * (rem >> 8)) >> 8))) >> 8);
+        const uint8_t  t = (uint8_t)((val * (255u - ((sat * (255u - (rem >> 8))) >> 8))) >> 8);
+        switch (region % 6u) {
+            case 0: r=val; g=t;   b=p;   break;
+            case 1: r=q;   g=val; b=p;   break;
+            case 2: r=p;   g=val; b=t;   break;
+            case 3: r=p;   g=q;   b=val; break;
+            case 4: r=t;   g=p;   b=val; break;
+            default:r=val; g=p;   b=q;   break;
+        }
+    }
+    return (uint16_t)(((r & 0xF8u) << 8) | ((g & 0xFCu) << 3) | (b >> 3));
+}
+
+// ---------------------------------------------------------------------------
 // Constructor
 // ---------------------------------------------------------------------------
 UIManager_MicroDexed::UIManager_MicroDexed()
-    : _display(TFT_CS, TFT_DC, TFT_RST)
+    // ILI9341_t3n requires all 6 SPI pins so it can configure SPI1 at runtime.
+    // (The 3-pin form would silently use SPI0 — display stays blank.)
+    : _display(TFT_CS, TFT_DC, TFT_RST, TFT_MOSI, TFT_SCK, TFT_MISO)
+    , _touchEnabled(false)
     , _currentPage(0)
     , _selectedParam(0)
     , _currentMode(MODE_PARAMETERS)
     , _fullRedraw(true)
+    , _headerDirty(true)
+    , _footerDirty(true)
     , _lastFrameTime(0)
     , _lastEncoderLeft(0)
     , _lastEncoderRight(0)
 {
-    _headerDirty = false;
-    _footerDirty = false;
-    for (int i = 0; i < 8; ++i) {
-        _paramsDirty[i] = false;
-    }
+    // Zero all per-row dirty flags
+    memset(_paramsDirty, 0, sizeof(_paramsDirty));
 }
 
 // ---------------------------------------------------------------------------
 // begin() — hardware init
 // ---------------------------------------------------------------------------
 void UIManager_MicroDexed::begin() {
+    // SPI.begin() must be called before display.begin() — ILI9341_t3n calls
+    // _pspi->begin() internally but the outer SPI object needs initialising first.
+    // MicroDexed does this at line 1298 of MicroDexed-touch.ino.
+    SPI.begin();
+
+    // ILI9341_t3n::begin() selects SPI1, sets MOSI/SCK/MISO pins,
+    // pulses RST (pin 24), then sends the full init command sequence.
     _display.begin();
-    _display.setRotation(1);             // Landscape 320×240
+
+    // Rotation 3 = MicroDexed default landscape (matches DISPLAY_ROTATION_DEFAULT in config.h)
+    // Rotation 1 = landscape but flipped 180° — was wrong for this hardware
+    _display.setRotation(3);
+
+    Serial.println("[UI] Display begin() called — expecting red flash");
     _display.fillScreen(COLOR_BACKGROUND);
+    delay(400);
+    _display.fillScreen(COLOR_BACKGROUND);
+    Serial.println("[UI] Display init OK");
+
     _display.setTextColor(COLOR_TEXT);
     _display.setTextSize(FONT_MEDIUM);
 
-    // Capacitive touch is optional — begin() returns false if not found
+    // Capacitive touch is optional — begin() returns false if controller not found
     _touchEnabled = _touch.begin();
-    Serial.println(_touchEnabled ? "Touch: enabled" : "Touch: not found");
+    Serial.println(_touchEnabled ? "[UI] Touch: enabled" : "[UI] Touch: not found (I2C check wiring)");
 
     // Boot splash
     drawCenteredText(SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2,
@@ -63,14 +120,20 @@ void UIManager_MicroDexed::begin() {
                      "MicroDexed Edition", COLOR_TEXT, FONT_SMALL);
     delay(1000);
 
-    markFullDirty();  // Force full redraw on first update
+    // Force full repaint on first updateDisplay() call
+    _fullRedraw  = true;
+    _headerDirty = true;
+    _footerDirty = true;
+    for (int i = 0; i < 8; ++i) _paramsDirty[i] = true;
+    Serial.println("[UI] begin() complete — ready");
 }
 
 // ---------------------------------------------------------------------------
 // updateDisplay() — called at ~30 FPS from main loop
 // ---------------------------------------------------------------------------
 void UIManager_MicroDexed::updateDisplay(SynthEngine& synth) {
-    // Frame rate limiter — skip frames we don't need to draw
+    // Frame rate limiter — updateDisplay() owns the gate; remove the external
+    // millis() gate in loop() to avoid double-gating at mismatched intervals.
     const uint32_t now = millis();
     if ((now - _lastFrameTime) < FRAME_INTERVAL_MS && !_fullRedraw) {
         return;
@@ -86,14 +149,15 @@ void UIManager_MicroDexed::updateDisplay(SynthEngine& synth) {
                 drawParameterGrid(synth);
                 drawFooter();
             } else {
-                // Selective repaint — only touched regions
+                // Selective repaint — only dirty regions
                 if (_headerDirty) drawHeader(synth);
                 if (_footerDirty) drawFooter();
 
-                for (int i = 0; i < 8; ++i) {
+                // Cap at PARAMS_PER_PAGE — the 8-slot dirty array is for the future
+                // Enhanced layout. For now only 4 rows exist per page.
+                for (int i = 0; i < UIPage::PARAMS_PER_PAGE; ++i) {
                     if (_paramsDirty[i]) {
-                        // UIPage has 4 params per page; upper 4 slots repeat (future 8-param layout)
-                        const byte cc       = UIPage::ccMap[_currentPage][i % UIPage::PARAMS_PER_PAGE];
+                        const byte cc       = UIPage::ccMap[_currentPage][i];
                         const int  value    = (cc != 255) ? synth.getCC(cc) : 0;
                         const bool selected = (i == _selectedParam);
                         drawParameterRow(i, cc, value, selected);
@@ -111,7 +175,6 @@ void UIManager_MicroDexed::updateDisplay(SynthEngine& synth) {
             break;
 
         case MODE_COUNT:
-            // Sentinel — should never be reached
             break;
     }
 
@@ -135,22 +198,34 @@ void UIManager_MicroDexed::pollInputs(HardwareInterface_MicroDexed& hw,
     const auto pressLeft  = hw.getButtonPress(HardwareInterface_MicroDexed::ENC_LEFT);
     const auto pressRight = hw.getButtonPress(HardwareInterface_MicroDexed::ENC_RIGHT);
 
+    // DEBUG: Print any encoder/button activity so we can confirm the HW layer delivers data.
+    // Remove these prints once confirmed working (they add ~10 µs Serial overhead per call).
+    if (deltaLeft  != 0) Serial.printf("[UI] Enc LEFT  delta=%d  page=%d param=%d\n",  deltaLeft,  _currentPage, _selectedParam);
+    if (deltaRight != 0) Serial.printf("[UI] Enc RIGHT delta=%d  page=%d param=%d  CC=%d\n", deltaRight, _currentPage, _selectedParam,
+                                       (int)UIPage::ccMap[_currentPage][_selectedParam % UIPage::PARAMS_PER_PAGE]);
+    if (pressLeft  != HardwareInterface_MicroDexed::PRESS_NONE) Serial.printf("[UI] Btn LEFT  press=%d\n",  (int)pressLeft);
+    if (pressRight != HardwareInterface_MicroDexed::PRESS_NONE) Serial.printf("[UI] Btn RIGHT press=%d\n", (int)pressRight);
+
     switch (_currentMode) {
         case MODE_PARAMETERS:
-            // Left encoder — navigate between parameters
+            // Left encoder — navigate between parameters on this page
             if (deltaLeft != 0) {
-                _selectedParam = (_selectedParam + deltaLeft + 8) % 8;  // wrap 0-7
+                // Wrap within the actual number of params on this page
+                _selectedParam = (_selectedParam + deltaLeft + UIPage::PARAMS_PER_PAGE)
+                                  % UIPage::PARAMS_PER_PAGE;
                 markFullDirty();
             }
 
             // Right encoder — adjust value of selected parameter
             if (deltaRight != 0) {
-                // UIPage::PARAMS_PER_PAGE = 4; upper 4 slots mirror lower 4
                 const byte cc = UIPage::ccMap[_currentPage][_selectedParam % UIPage::PARAMS_PER_PAGE];
                 if (cc != 255) {
                     const int newValue = constrain((int)synth.getCC(cc) + deltaRight, 0, 127);
+                    Serial.printf("[UI] setCC %d → %d\n", (int)cc, newValue);
                     synth.setCC(cc, (uint8_t)newValue);
                     markParamDirty(_selectedParam);
+                } else {
+                    Serial.println("[UI] Enc RIGHT: slot is empty (CC=255) — no CC sent");
                 }
             }
 
@@ -159,6 +234,7 @@ void UIManager_MicroDexed::pollInputs(HardwareInterface_MicroDexed& hw,
                 _currentPage = (_currentPage + 1) % UIPage::NUM_PAGES;
                 _selectedParam = 0;
                 markFullDirty();
+                Serial.printf("[UI] Page → %d\n", _currentPage);
             }
 
             // Left button LONG — toggle oscilloscope view
@@ -173,7 +249,7 @@ void UIManager_MicroDexed::pollInputs(HardwareInterface_MicroDexed& hw,
             break;
 
         case MODE_SCOPE:
-            // Any button returns to parameter view
+            // Any button press returns to parameter view
             if (pressLeft  != HardwareInterface_MicroDexed::PRESS_NONE ||
                 pressRight != HardwareInterface_MicroDexed::PRESS_NONE) {
                 setMode(MODE_PARAMETERS);
@@ -252,10 +328,14 @@ void UIManager_MicroDexed::drawHeader(SynthEngine& /*synth*/) {
 // ===========================================================================
 
 void UIManager_MicroDexed::drawParameterGrid(SynthEngine& synth) {
-    // Draw all parameter rows; yStart is a reference only — drawParameterRow
-    // computes its own Y from the row index and layout constants.
-    for (int i = 0; i < 8; ++i) {
-        const byte cc       = UIPage::ccMap[_currentPage][i % UIPage::PARAMS_PER_PAGE];
+    // UIPage has PARAMS_PER_PAGE (4) slots per page.
+    // Previously this looped to 8 and used (i % PARAMS_PER_PAGE) which silently
+    // drew the same 4 parameters twice, and with PARAM_ROW_HEIGHT=35 the rows
+    // at i=4..7 started at y = 30+5+(4*35) = 175 which runs off the 240px screen
+    // into/over the footer. Cap the loop at PARAMS_PER_PAGE.
+    // When the Enhanced 8-param layout is adopted, increase PARAMS_PER_PAGE to 8.
+    for (int i = 0; i < UIPage::PARAMS_PER_PAGE; ++i) {
+        const byte cc       = UIPage::ccMap[_currentPage][i];
         const int  value    = (cc != 255) ? synth.getCC(cc) : 0;
         const bool selected = (i == _selectedParam);
         drawParameterRow(i, cc, value, selected);

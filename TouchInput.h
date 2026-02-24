@@ -16,16 +16,10 @@
 #include <Arduino.h>
 #include <Wire.h>
 
-// Select touch controller — uncomment exactly one:
-#define USE_CAPACITIVE_TOUCH   // FT6206 (I2C)
-// #define USE_RESISTIVE_TOUCH // XPT2046 (SPI)
 
-#ifdef USE_CAPACITIVE_TOUCH
-  #include "Adafruit_FT6206.h"
-#endif
-#ifdef USE_RESISTIVE_TOUCH
-  #include <XPT2046_Touchscreen.h>
-#endif
+#define MICRODEXED_ADAFRUIT_DISPLAY  // Adafruit capacitive touch (FT6206)
+#include "Adafruit_FT6206.h"
+
 
 class TouchInput {
 public:
@@ -95,14 +89,8 @@ private:
     // -------------------------------------------------------------------------
     // Hardware driver
     // -------------------------------------------------------------------------
-#ifdef USE_CAPACITIVE_TOUCH
     Adafruit_FT6206 _touchController;
-#endif
-#ifdef USE_RESISTIVE_TOUCH
-    XPT2046_Touchscreen _touchController;
-    static constexpr uint8_t TOUCH_CS_PIN  = 8;
-    static constexpr uint8_t TOUCH_IRQ_PIN = 2;
-#endif
+
 
     // -------------------------------------------------------------------------
     // State

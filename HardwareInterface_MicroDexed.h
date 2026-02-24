@@ -1,120 +1,165 @@
 /**
  * HardwareInterface_MicroDexed.h
- * 
+ *
  * Hardware abstraction for MicroDexed-style hardware:
- * - 2x rotary encoders with buttons (left/right)
- * - ILI9341 320x240 TFT display (SPI)
- * - PCM5102A I2S DAC
- * - No potentiometers (encoder-based parameter control)
- * 
- * Performance optimizations:
- * - Interrupt-driven encoders for zero-latency input
- * - Minimal polling overhead
- * - Button debouncing in hardware ISR
+ *   - 2x rotary encoders with push buttons (left / right)
+ *   - ILI9341 320×240 TFT display via SPI1 (MOSI=26, SCK=27, MISO=39)
+ *   - PCM5102A I2S DAC
+ *
+ * Performance notes:
+ *   - Encoders are fully interrupt-driven (EncoderTool) – zero polling overhead
+ *   - update() only runs the lightweight button state machines
+ *   - All timing constants are compile-time constexpr
  */
 
 #pragma once
 #include <Arduino.h>
-#include <EncoderTool.h>  // Interrupt-based encoder library
+#include <EncoderTool.h>   // Interrupt-based encoder library
 using namespace EncoderTool;
+
+// ---------------------------------------------------------------------------
+// Debug switch – set to 1 to enable Serial diagnostics, 0 for release build
+// ---------------------------------------------------------------------------
+#define HW_DEBUG 1
+
+#if HW_DEBUG
+  #define HW_LOG(fmt, ...) Serial.printf("[HW] " fmt "\n", ##__VA_ARGS__)
+#else
+  #define HW_LOG(fmt, ...) /* nothing */
+#endif
+
+// ---------------------------------------------------------------------------
 
 class HardwareInterface_MicroDexed {
 public:
-    // --- Encoder identifiers ---
-    enum EncoderID {
-        ENC_LEFT  = 0,  // Navigation encoder (back, cancel, parameter select)
-        ENC_RIGHT = 1,  // Value encoder (confirm, adjust, select)
+
+    // -----------------------------------------------------------------------
+    // Types
+    // -----------------------------------------------------------------------
+
+    enum EncoderID : uint8_t {
+        ENC_LEFT  = 0,   // Navigation – back / cancel / parameter select
+        ENC_RIGHT = 1,   // Value     – confirm / adjust / select
         ENC_COUNT = 2
     };
 
-    // --- Button press types ---
-    enum ButtonPress {
+    enum ButtonPress : uint8_t {
         PRESS_NONE  = 0,
-        PRESS_SHORT = 1,  // Momentary press
-        PRESS_LONG  = 2   // Hold for ~2 seconds
+        PRESS_SHORT = 1,  // Tap  (< LONG_PRESS_MS)
+        PRESS_LONG  = 2   // Hold (≥ LONG_PRESS_MS)
     };
 
+    // -----------------------------------------------------------------------
+    // Lifecycle
+    // -----------------------------------------------------------------------
+
     HardwareInterface_MicroDexed();
-    
+
     /**
-     * Initialize hardware:
-     * - Configure encoder pins with interrupts
-     * - Setup button pins with pull-ups
-     * - No analog setup needed (no pots)
+     * Initialise encoder interrupts and button pull-ups.
+     * Call once from setup().
      */
     void begin();
-    
+
     /**
-     * Update button states and timing.
-     * Call this in main loop at ~100Hz or faster for responsive buttons.
-     * Encoders are interrupt-driven and don't need polling.
+     * Run button state machines.
+     * Encoders are interrupt-driven so no rotation polling is needed here.
+     * Call at ≥ 100 Hz for responsive button response.
      */
     void update();
 
-    // --- Encoder interface ---
-    /**
-     * Get encoder rotation delta since last call.
-     * Returns: Positive for clockwise, negative for counter-clockwise.
-     * Uses 4X counting (4 counts per detent).
-     */
-    int  getEncoderDelta(EncoderID encoder);
-    
-    /**
-     * Check if encoder button was pressed (edge detection).
-     * Returns: PRESS_SHORT, PRESS_LONG, or PRESS_NONE
-     * Automatically clears the press state after reading.
-     */
-    ButtonPress getButtonPress(EncoderID encoder);
+    // -----------------------------------------------------------------------
+    // Encoder interface
+    // -----------------------------------------------------------------------
 
     /**
-     * Check if encoder button is currently held down (level detection).
-     * Useful for real-time hold detection without consuming the press.
+     * Return rotation delta since last call.
+     * Positive = clockwise, negative = counter-clockwise.
+     * Thread-safe: reads interrupt-maintained counter atomically.
      */
-    bool isButtonHeld(EncoderID encoder);
+    int  getEncoderDelta(EncoderID enc);
 
     /**
-     * Reset encoder count to zero.
-     * Useful for mode changes or parameter boundaries.
+     * Return and consume any pending button press.
+     * Returns PRESS_NONE if nothing is waiting.
      */
-    void resetEncoder(EncoderID encoder);
+    ButtonPress getButtonPress(EncoderID enc);
+
+    /** True while button is physically held (level, not edge). */
+    bool isButtonHeld(EncoderID enc);
+
+    /** Reset encoder count to zero (e.g. on mode change). */
+    void resetEncoder(EncoderID enc);
+
+    // -----------------------------------------------------------------------
+    // SPI pin definitions – exposed so UIManager can pass them to ILI9341_t3
+    // -----------------------------------------------------------------------
+    //
+    // *** ROOT CAUSE OF BLANK DISPLAY ***
+    // ILI9341_t3 defaults to the primary SPI bus (MOSI=11, SCK=13).
+    // This hardware uses the SPI1 bus: MOSI=26, SCK=27, MISO=39.
+    // These must be passed explicitly to the ILI9341_t3 constructor.
+    //
+    static constexpr uint8_t TFT_CS   = 41;  // Chip select
+    static constexpr uint8_t TFT_DC   = 37;  // Data / command
+    static constexpr uint8_t TFT_RST  = 24;  // Reset (or tie to 3.3 V)
+    static constexpr uint8_t TFT_MOSI = 26;  // SPI1 MOSI  ← non-default, must be explicit
+    static constexpr uint8_t TFT_SCK  = 27;  // SPI1 SCK   ← non-default, must be explicit
+    static constexpr uint8_t TFT_MISO = 39;  // SPI1 MISO  ← non-default, must be explicit
 
 private:
-    // --- Pin definitions for MicroDexed Touch hardware ---
-    // NOTE: These pins are based on common MicroDexed configurations.
-    // You may need to adjust based on your specific build/PCB variant.
-    
-    // Left encoder (ENC_L): Navigation, back, cancel
-    static constexpr uint8_t ENC_L_A_PIN  = 2;   // Phase A (interrupt-capable)
-    static constexpr uint8_t ENC_L_B_PIN  = 3;   // Phase B (interrupt-capable)
-    static constexpr uint8_t ENC_L_SW_PIN = 8;   // Button/switch
 
-    // Right encoder (ENC_R): Value adjust, confirm, select
-    static constexpr uint8_t ENC_R_A_PIN  = 4;   // Phase A (interrupt-capable)
-    static constexpr uint8_t ENC_R_B_PIN  = 5;   // Phase B (interrupt-capable)
-    static constexpr uint8_t ENC_R_SW_PIN = 6;   // Button/switch
+    // -----------------------------------------------------------------------
+    // Encoder pin definitions
+    // -----------------------------------------------------------------------
 
-    // --- Encoder objects ---
-    // Using EncoderTool library for interrupt-driven, zero-copy reading
+    // Left encoder – navigation
+    // WARNING: Pins 28-32 on Teensy 4.1 have a known attachInterrupt() bug
+    // (wrong ICR register for pins with index >= 31) that can crash the MCU.
+    // EncoderTool uses interrupts internally. If the left encoder causes a crash,
+    // replace Encoder with PollEncoder (see HardwareTest3) and use any pin safely.
+    // Confirmed working wiring: A=32, B=31, SW=30
+    static constexpr uint8_t ENC_L_A_PIN  = 32;
+    static constexpr uint8_t ENC_L_B_PIN  = 31;
+    static constexpr uint8_t ENC_L_SW_PIN = 30;
+
+    // Right encoder – value adjust
+    // Confirmed working wiring: A=28, B=29, SW=25
+    static constexpr uint8_t ENC_R_A_PIN  = 28;
+    static constexpr uint8_t ENC_R_B_PIN  = 29;
+    static constexpr uint8_t ENC_R_SW_PIN = 25;
+
+    // -----------------------------------------------------------------------
+    // Encoder objects
+    // -----------------------------------------------------------------------
+
     Encoder _encoders[ENC_COUNT];
     int32_t _lastEncoderValues[ENC_COUNT] = {0, 0};
 
-    // --- Button state tracking ---
+    // -----------------------------------------------------------------------
+    // Button state
+    // -----------------------------------------------------------------------
+
     struct ButtonState {
-        bool     current;       // Current physical button state (LOW = pressed)
-        bool     lastState;     // Previous state for edge detection
-        uint32_t pressTime;     // Millis when button was first pressed
-        uint32_t releaseTime;   // Millis when button was released
-        ButtonPress pendingPress; // Press type detected but not yet consumed
+        bool        current;       // Current physical level (LOW = pressed)
+        bool        lastState;     // Previous level for edge detection
+        uint32_t    pressTime;     // millis() when first pressed
+        uint32_t    releaseTime;   // millis() when released
+        ButtonPress pendingPress;  // Classified press waiting to be consumed
     };
+
     ButtonState _buttons[ENC_COUNT];
 
-    // --- Button timing constants ---
-    static constexpr uint32_t DEBOUNCE_MS = 50;    // Ignore bounces < 50ms
-    static constexpr uint32_t LONG_PRESS_MS = 1500; // Hold for 1.5s = long press
+    // -----------------------------------------------------------------------
+    // Timing constants
+    // -----------------------------------------------------------------------
 
-    /**
-     * Update a single button's state.
-     * Handles debouncing and long press detection.
-     */
-    void updateButton(EncoderID encoder, uint8_t pin);
+    static constexpr uint32_t DEBOUNCE_MS    =   50;   // Reject bounces shorter than this
+    static constexpr uint32_t LONG_PRESS_MS  = 1500;   // Hold threshold for long press
+
+    // -----------------------------------------------------------------------
+    // Internal helpers
+    // -----------------------------------------------------------------------
+
+    void updateButton(EncoderID enc, uint8_t pin);
 };

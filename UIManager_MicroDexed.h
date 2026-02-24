@@ -25,7 +25,11 @@
 
 #pragma once
 #include <Arduino.h>
-#include <ILI9341_t3.h>  // Teensy-optimized ILI9341 driver (faster than Adafruit)
+// ILI9341_t3n: Kurt's extended driver — hardcodes SPI1 bus internally,
+// which is what this hardware uses (MOSI=26, SCK=27, MISO=39).
+// Must be a local copy alongside the .h/.cpp in the project folder.
+#define GENERIC_DISPLAY   // Enables MISO pin + 2-arg begin() overload in ILI9341_t3n
+#include "ILI9341_t3n.h"
 #include <Wire.h>
 #include "SynthEngine.h"
 #include "HardwareInterface_MicroDexed.h"
@@ -112,18 +116,22 @@ public:
 
 private:
     // --- Display driver ---
-    ILI9341_t3 _display;
+    // ILI9341_t3n: Kurt's SPI1-aware driver — use instead of ILI9341_t3
+    ILI9341_t3n _display;
     
     // --- Touch input (optional) ---
     TouchInput _touch;
     bool _touchEnabled;
     
-    // --- Pin definitions for ILI9341 (SPI) ---
+    // --- Pin definitions for ILI9341 on SPI1 bus ---
+    // ILI9341_t3n hardcodes SPI1 internally and sets these pins via setMOSI/setSCK/setMISO.
+    // All six pins must be in the constructor so t3n knows which physical pins to configure.
     static constexpr uint8_t TFT_CS   = 41;  // Chip select
-    static constexpr uint8_t TFT_DC   = 37;   // Data/command
-    static constexpr uint8_t TFT_RST  = 24;  // Reset (tied to Teensy reset or 3.3V)
-
-// #define TFT_SCK 27
+    static constexpr uint8_t TFT_DC   = 37;  // Data/command
+    static constexpr uint8_t TFT_RST  = 24;  // Reset
+    static constexpr uint8_t TFT_MOSI = 26;  // SPI1 MOSI ← must be explicit
+    static constexpr uint8_t TFT_SCK  = 27;  // SPI1 SCK  ← must be explicit
+    static constexpr uint8_t TFT_MISO = 39;  // SPI1 MISO ← must be explicit
 
     // --- UI state ---
     int _currentPage;           // Current parameter page (0-N)

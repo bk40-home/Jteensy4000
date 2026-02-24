@@ -20,33 +20,26 @@ TouchInput::TouchInput()
     , _detectedGesture(GESTURE_NONE)
     , _touchStartTime(0)
     , _touchEndTime(0)
-{
-    // Resistive touch: XPT2046 needs CS/IRQ pins passed at construction;
-    // capacitive FT6206 uses I2C so nothing is needed here.
-}
+#ifdef USE_RESISTIVE_TOUCH
+    , _touchController(38, 33)  // CS=38, IRQ=33 (MicroDexed pins)
+#endif
+{}
 
 // ============================================================================
 // begin() — hardware initialisation
 // ============================================================================
 
 bool TouchInput::begin() {
-#ifdef USE_CAPACITIVE_TOUCH
+
+    Serial.print("TouchInput: Initializing FT6206 (capacitive)... ");
     if (!_touchController.begin(40)) {
-        Serial.println("TouchInput: FT6206 not found");
+        Serial.println("FAILED - Not found on I2C");
         return false;
     }
-    Serial.println("TouchInput: FT6206 ready");
+    Serial.println("SUCCESS");
     return true;
-#endif
 
-#ifdef USE_RESISTIVE_TOUCH
-    _touchController.begin();
-    _touchController.setRotation(1);   // Match ILI9341 landscape rotation
-    Serial.println("TouchInput: XPT2046 ready");
-    return true;
-#endif
 
-    return false;  // No touch controller selected
 }
 
 // ============================================================================
@@ -57,23 +50,13 @@ void TouchInput::update() {
     bool nowTouched = false;
     int16_t rawX = 0, rawY = 0;
 
-#ifdef USE_CAPACITIVE_TOUCH
-    if (_touchController.touched()) {
-        TS_Point p = _touchController.getPoint();
-        rawX = p.x;
-        rawY = p.y;
-        nowTouched = true;
-    }
-#endif
 
-#ifdef USE_RESISTIVE_TOUCH
     if (_touchController.touched()) {
         TS_Point p = _touchController.getPoint();
         rawX = p.x;
         rawY = p.y;
         nowTouched = true;
     }
-#endif
 
     if (nowTouched) {
         _currentPoint = mapCoordinates(rawX, rawY);
@@ -157,24 +140,17 @@ void TouchInput::detectGesture() {
 // ============================================================================
 
 TouchInput::Point TouchInput::mapCoordinates(int16_t rawX, int16_t rawY) {
-#ifdef USE_CAPACITIVE_TOUCH
-    // FT6206 native resolution is typically 240×320 (portrait).
-    // In landscape mode the axes are swapped: raw X → screen Y, raw Y → screen X.
-    // Adjust the input ranges below if touch feels offset or mirrored.
-    const int16_t x = (int16_t)map(rawX, 0, 240, 0, 320);
-    const int16_t y = (int16_t)map(rawY, 0, 320, 0, 240);
 
-    // If touch is mirrored horizontally: return Point(319 - x, y);
-    // If mirrored vertically:            return Point(x, 239 - y);
+    // FT6206 native portrait resolution: 240 wide × 320 tall.
+    // In landscape (rotation=3), both axes are inverted relative to screen.
+    //
+    // Confirmed by hardware measurement:
+    //   raw (  0,   0) → screen top-right    (320, 240)
+    //   raw (239, 319) → screen bottom-left  (  0,   0)
+    //
+    // Fix: reverse both map ranges so raw max → screen 0, raw 0 → screen max.
+    const int16_t x = (int16_t)map(rawX, 239, 0, 0, 320);
+    const int16_t y = (int16_t)map(rawY, 319, 0, 0, 240);
+
     return Point(x, y);
-#endif
-
-#ifdef USE_RESISTIVE_TOUCH
-    // XPT2046 ADC values — calibrate min/max from your specific panel.
-    const int16_t x = (int16_t)map(rawX, 300, 3800, 0, 320);
-    const int16_t y = (int16_t)map(rawY, 300, 3800, 0, 240);
-    return Point(x, y);
-#endif
-
-    return Point(0, 0);
 }
