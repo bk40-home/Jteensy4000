@@ -1,175 +1,150 @@
 /**
  * HardwareInterface_MicroDexed.cpp
  *
- * Interrupt-driven encoder + debounced button implementation.
- * See header for architecture notes.
+ * Polled Gray-code encoder + debounced button implementation.
+ * No interrupts — safe on Teensy 4.1 GPIO6/7 pins (28-32).
+ *
+ * Encoder resolution: 4 quarter-steps per detent.
+ * delta() returns whole detents, sub-detent remainder is retained.
+ *
+ * Button: 50 ms debounce, 1.5 s long-press.
+ * PRESS_LONG fires once while still held (doesn't wait for release).
+ * PRESS_SHORT fires on release (after debounce, before long-press threshold).
  */
 
 #include "HardwareInterface_MicroDexed.h"
 
 // ---------------------------------------------------------------------------
-// Constructor
+// Gray-code transition table
+// Index = (prevAB << 2) | currAB  (4 bits, 16 entries)
+// +1 = CW step, -1 = CCW step, 0 = no motion or illegal transition
 // ---------------------------------------------------------------------------
+const int8_t HardwareInterface_MicroDexed::PollEncoder::kTable[16] = {
+//  00  01  10  11   <- currAB
+     0, -1, +1,  0,  // prevAB = 00
+    +1,  0,  0, -1,  // prevAB = 01
+    -1,  0,  0, +1,  // prevAB = 10
+     0, +1, -1,  0   // prevAB = 11
+};
 
+// ---------------------------------------------------------------------------
+// Constructor — button states zero-initialised by member defaults in header
+// ---------------------------------------------------------------------------
 HardwareInterface_MicroDexed::HardwareInterface_MicroDexed() {
-    for (int i = 0; i < ENC_COUNT; ++i) {
-        _buttons[i].current = false;
-        _buttons[i].lastState = false;
-        _buttons[i].pressTime = 0;
-        _buttons[i].releaseTime = 0;
-        _buttons[i].pendingPress = PRESS_NONE;
-    }
+    // ButtonState and PollEncoder use C++ member default-initialisers.
+    // Nothing extra needed here.
 }
 
 // ---------------------------------------------------------------------------
-// begin()
+// begin() — configure pins, sample initial encoder state
 // ---------------------------------------------------------------------------
-
 void HardwareInterface_MicroDexed::begin() {
-
-    // --- Left encoder (navigation) ---
-    // CountMode::quarter = 1 logical count per physical detent (most natural for menus)
-    _encoders[ENC_LEFT].begin(
-        ENC_L_A_PIN,
-        ENC_L_B_PIN,
-        EncoderTool::CountMode::quarter,  // 1 increment per physical click
-        INPUT_PULLUP                       // Enable internal pull-ups
-    );
+    // Left encoder (navigation)
+    _encoders[ENC_LEFT].begin(ENC_L_A_PIN, ENC_L_B_PIN);
     pinMode(ENC_L_SW_PIN, INPUT_PULLUP);
 
-    // --- Right encoder (value adjust) ---
-    _encoders[ENC_RIGHT].begin(
-        ENC_R_A_PIN, ENC_R_B_PIN,
-        EncoderTool::CountMode::quarter,
-        INPUT_PULLUP
-    );
+    // Right encoder (value)
+    _encoders[ENC_RIGHT].begin(ENC_R_A_PIN, ENC_R_B_PIN);
     pinMode(ENC_R_SW_PIN, INPUT_PULLUP);
 
-    HW_LOG("Encoders initialised – L:[A=%d B=%d SW=%d] R:[A=%d B=%d SW=%d]",
-           ENC_L_A_PIN, ENC_L_B_PIN, ENC_L_SW_PIN,
-           ENC_R_A_PIN, ENC_R_B_PIN, ENC_R_SW_PIN);
-
-    // -----------------------------------------------------------------------
-    // ENCODER DEBUG: Verify interrupts fired up correctly.
-    // Turn each encoder one click – you should see delta prints in Serial.
-    // If delta is always 0, check:
-    //   1. Pins wired correctly (A/B swapped causes wrong direction, not zero)
-    //   2. EncoderTool version supports Teensy 4.x interrupts on these pins
-    //   3. CountMode – try CountMode::full if quarter gives 0
-    // -----------------------------------------------------------------------
+    Serial.println("HW: encoders polled (no interrupts), buttons ready");
 }
 
 // ---------------------------------------------------------------------------
-// update() – button state machines only; encoders are interrupt-driven
+// update() — must be called every loop() iteration
 // ---------------------------------------------------------------------------
-
 void HardwareInterface_MicroDexed::update() {
+    // Tick both encoders — reads pins, updates rawCount
+    _encoders[ENC_LEFT].tick();
+    _encoders[ENC_RIGHT].tick();
+
+    // Update button state machines
     updateButton(ENC_LEFT,  ENC_L_SW_PIN);
     updateButton(ENC_RIGHT, ENC_R_SW_PIN);
 }
 
 // ---------------------------------------------------------------------------
-// getEncoderDelta()
+// getEncoderDelta() — return detents moved since last call
 // ---------------------------------------------------------------------------
-
-int HardwareInterface_MicroDexed::getEncoderDelta(EncoderID enc) {
-    if (enc >= ENC_COUNT) return 0;
-
-    // Read interrupt-maintained counter
-    int32_t current = _encoders[enc].getValue();
-    int32_t delta   = current - _lastEncoderValues[enc];
-    _lastEncoderValues[enc] = current;
-
-#if HW_DEBUG
-    // Only print when something actually moved – avoids serial flood
-    if (delta != 0) {
-        HW_LOG("Encoder %s delta=%d  (raw=%d)",
-               (enc == ENC_LEFT) ? "LEFT" : "RIGHT",
-               (int)delta, (int)current);
-    }
-#endif
-
-    return (int)delta;
+int HardwareInterface_MicroDexed::getEncoderDelta(EncoderID encoder) {
+    if (encoder >= ENC_COUNT) return 0;
+    return _encoders[encoder].delta();
 }
 
 // ---------------------------------------------------------------------------
-// getButtonPress() – returns and clears pending press
+// getButtonPress() — return and consume pending press event
 // ---------------------------------------------------------------------------
-
 HardwareInterface_MicroDexed::ButtonPress
-HardwareInterface_MicroDexed::getButtonPress(EncoderID enc) {
-    if (enc >= ENC_COUNT) return PRESS_NONE;
-
-    ButtonPress press = _buttons[enc].pendingPress;
-    _buttons[enc].pendingPress = PRESS_NONE;
-
-#if HW_DEBUG
-    if (press != PRESS_NONE) {
-        HW_LOG("Button %s press: %s",
-               (enc == ENC_LEFT) ? "LEFT" : "RIGHT",
-               (press == PRESS_SHORT) ? "SHORT" : "LONG");
-    }
-#endif
-
-    return press;
+HardwareInterface_MicroDexed::getButtonPress(EncoderID encoder) {
+    if (encoder >= ENC_COUNT) return PRESS_NONE;
+    ButtonPress p = _buttons[encoder].pendingPress;
+    _buttons[encoder].pendingPress = PRESS_NONE;  // consume
+    return p;
 }
 
 // ---------------------------------------------------------------------------
-// isButtonHeld()
+// isButtonHeld() — level detect, does not consume pending press
 // ---------------------------------------------------------------------------
-
-bool HardwareInterface_MicroDexed::isButtonHeld(EncoderID enc) {
-    if (enc >= ENC_COUNT) return false;
-    return _buttons[enc].current;
+bool HardwareInterface_MicroDexed::isButtonHeld(EncoderID encoder) {
+    if (encoder >= ENC_COUNT) return false;
+    return _buttons[encoder].current;
 }
 
 // ---------------------------------------------------------------------------
-// resetEncoder()
+// resetEncoder() — clear accumulated count on page/mode change
 // ---------------------------------------------------------------------------
-
-void HardwareInterface_MicroDexed::resetEncoder(EncoderID enc) {
-    if (enc >= ENC_COUNT) return;
-    _encoders[enc].setValue(0);
-    _lastEncoderValues[enc] = 0;
-    HW_LOG("Encoder %s reset", (enc == ENC_LEFT) ? "LEFT" : "RIGHT");
+void HardwareInterface_MicroDexed::resetEncoder(EncoderID encoder) {
+    if (encoder >= ENC_COUNT) return;
+    _encoders[encoder].rawCount = 0;
 }
 
 // ---------------------------------------------------------------------------
-// updateButton() – internal: debounce + long-press classification
+// updateButton() — debounce + short/long press state machine
+//
+// State machine:
+//   IDLE -> PRESSED (falling edge, after DEBOUNCE_MS since last release)
+//   PRESSED -> LONG FIRE (still held, >= LONG_PRESS_MS) -> sets PRESS_LONG once
+//   PRESSED -> RELEASED (rising edge, before LONG_PRESS_MS) -> sets PRESS_SHORT
 // ---------------------------------------------------------------------------
-
-void HardwareInterface_MicroDexed::updateButton(EncoderID enc, uint8_t pin) {
-    ButtonState& btn = _buttons[enc];
+void HardwareInterface_MicroDexed::updateButton(EncoderID id, uint8_t pin) {
+    ButtonState& btn = _buttons[id];
     const uint32_t now = millis();
 
-    // INPUT_PULLUP: pin reads LOW when button is pressed
+    // Buttons are INPUT_PULLUP — LOW when pressed
     const bool pressed = (digitalRead(pin) == LOW);
     btn.current = pressed;
 
     if (pressed && !btn.lastState) {
         // --- Falling edge: button just pressed ---
-        if ((now - btn.releaseTime) > DEBOUNCE_MS) {
-            btn.pressTime = now;   // Latch start time for duration measurement
+        // Apply debounce: ignore if released very recently (contact bounce)
+        if ((now - btn.releaseTime) >= DEBOUNCE_MS) {
+            btn.pressTime  = now;
+            btn.longFired  = false;  // Reset long-press guard for new press
         }
-    }
-    else if (!pressed && btn.lastState) {
-        // --- Rising edge: button just released ---
-        const uint32_t duration = now - btn.pressTime;
 
-        if (duration > DEBOUNCE_MS) {          // Filter mechanical bounce
+    } else if (!pressed && btn.lastState) {
+        // --- Rising edge: button just released ---
+        const uint32_t held = now - btn.pressTime;
+
+        // Only count if held long enough to be real (not a bounce on release)
+        if (held >= DEBOUNCE_MS) {
             btn.releaseTime = now;
-            // Only classify on release if a long-press wasn't already fired mid-hold
-            if (btn.pendingPress == PRESS_NONE) {
-                btn.pendingPress = (duration >= LONG_PRESS_MS) ? PRESS_LONG : PRESS_SHORT;
+
+            // Short press: released before long-press threshold, and long
+            // event hasn't already fired (which would make this a long-press release)
+            if (held < LONG_PRESS_MS && !btn.longFired) {
+                btn.pendingPress = PRESS_SHORT;
             }
+            // If longFired is true, we silently absorb the release —
+            // the action already fired when the threshold was crossed.
         }
-    }
-    else if (pressed && btn.lastState) {
-        // --- Button held: fire long-press early (before release) ---
-        // Allows UI to react immediately at the threshold rather than waiting for lift
-        if ((now - btn.pressTime) >= LONG_PRESS_MS &&
-            btn.pendingPress == PRESS_NONE) {
+
+    } else if (pressed && btn.lastState) {
+        // --- Button held: check for long-press threshold ---
+        // Fires exactly once per hold (longFired guard prevents repeat)
+        if (!btn.longFired && (now - btn.pressTime) >= LONG_PRESS_MS) {
             btn.pendingPress = PRESS_LONG;
+            btn.longFired    = true;  // Prevent repeat fires during continued hold
         }
     }
 

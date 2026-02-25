@@ -1,287 +1,245 @@
+/**
+ * Jteensy4000.ino — JT-4000 polyphonic synthesizer main sketch
+ *
+ * Audio path:
+ *   SynthEngine (8 voices) -> FXChainBlock -> AudioMixer4 (I2S split)
+ *                                           -> AudioAmplifier  (USB split)
+ *   I2S output: AudioOutputI2S2 -> PCM5102A DAC
+ *   USB output: AudioOutputUSB  (for DAW monitoring)
+ *
+ * PCM5102A DAC notes:
+ *   XSMT (mute) pin MUST be driven HIGH after I2S starts or DAC stays silent.
+ *   FMT  pin = LOW  -> I2S format (default)
+ *   SCK  pin = LOW  -> no master clock needed (I2S2 supplies BCK/LRCK)
+ *   Pin used: DAC_MUTE_PIN (34) — wire to PCM5102A XSMT.
+ *
+ * Encoder notes:
+ *   Pins 28-32 must NOT use attachInterrupt() on Teensy 4.1.
+ *   GPIO6/7 ICR register overflow -> memory corruption -> crash.
+ *   HardwareInterface_MicroDexed uses polled Gray-code decode instead.
+ */
+
 #include <Audio.h>
 #include <Wire.h>
 #include <usb_midi.h>
 #include <USBHost_t36.h>
 #include "SynthEngine.h"
-#include "UIPageLayout.h"   // UI-only page->CC layout and labels
-
-  #include "HardwareInterface_MicroDexed.h"
-  #include "UIManager_MicroDexed.h"
-
-
-
+#include "UIPageLayout.h"
+#include "HardwareInterface_MicroDexed.h"
+#include "UIManager_MicroDexed.h"
 #include "Presets.h"
-#include "AudioScopeTap.h" 
+#include "AudioScopeTap.h"
 #include "BPMClockManager.h"
 
-// ---------------------- Audio endpoints ----------------------
-AudioOutputI2S2 i2sOut;                 // I2S audio out (to SGTL5000 / PCM path)
-AudioInputUSB usbIn;                 // USB audio in
-AudioOutputUSB usbOut;                 // USB audio out
-// AudioControlSGTL5000 audioShield;      // Audio shield control
-AudioScopeTap scopeTap;                    // ➋ create the tap (always-on)
+// ---------------------------------------------------------------------------
+// PCM5102A mute control
+//   XSMT = HIGH -> DAC active
+//   XSMT = LOW  -> DAC hardware muted (power-up default)
+//   Wire this pin to the XSMT pad on your PCM5102A board.
+// ---------------------------------------------------------------------------
+static constexpr uint8_t DAC_MUTE_PIN = 34;  // Change to match your wiring
 
-// Patch-cord pointers (kept alive for the program lifetime)
-AudioConnection* patchMixerI2SL = nullptr;
-AudioConnection* patchMixerI2SR = nullptr;
-AudioConnection* patchUSBINMixerI2SL = nullptr;
-AudioConnection* patchUSBINMixerI2SR = nullptr;
-AudioConnection* patchOutL    = nullptr;
-AudioConnection* patchOutR    = nullptr;
+// ---------------------------------------------------------------------------
+// Audio endpoints
+// ---------------------------------------------------------------------------
+AudioOutputI2S2 i2sOut;    // I2S2 output -> PCM5102A (BCK=26, LRCK=27, DATA=7)
+AudioInputUSB   usbIn;     // USB audio in  (for DAW loopback / monitoring)
+AudioOutputUSB  usbOut;    // USB audio out
+AudioScopeTap   scopeTap;  // Waveform capture for oscilloscope view
 
-AudioConnection* patchAmpUSBL = nullptr;
-AudioConnection* patchAmpUSBR = nullptr;
-AudioConnection* patchOutUSBL = nullptr;
-AudioConnection* patchOutUSBR = nullptr;
+// ---------------------------------------------------------------------------
+// Signal split: synth FX output fans to I2S path and USB path independently.
+//   mixerI2S{L/R}: slot 0 = synth, slot 1 = USB audio in (pass-through)
+// ---------------------------------------------------------------------------
+AudioMixer4    mixerI2SL;
+AudioMixer4    mixerI2SR;
+AudioAmplifier ampUSBL;    // Separate gain trim for USB output
+AudioAmplifier ampUSBR;
 
-AudioConnection* patchOutScope  = nullptr;   // scope feed
+// Audio patch cords — heap-allocated, live for program lifetime
+AudioConnection* patchMixerI2SL    = nullptr;  // Synth FX L -> I2S mixer L
+AudioConnection* patchMixerI2SR    = nullptr;  // Synth FX R -> I2S mixer R
+AudioConnection* patchUSBInL       = nullptr;  // USB in L   -> I2S mixer L slot 1
+AudioConnection* patchUSBInR       = nullptr;  // USB in R   -> I2S mixer R slot 1
+AudioConnection* patchOutL         = nullptr;  // I2S mixer L -> I2S out L
+AudioConnection* patchOutR         = nullptr;  // I2S mixer R -> I2S out R
+AudioConnection* patchAmpUSBL      = nullptr;  // Synth FX L -> USB amp L
+AudioConnection* patchAmpUSBR      = nullptr;  // Synth FX R -> USB amp R
+AudioConnection* patchOutUSBL      = nullptr;  // USB amp L  -> USB out L
+AudioConnection* patchOutUSBR      = nullptr;  // USB amp R  -> USB out R
+AudioConnection* patchOutScope     = nullptr;  // Synth FX L -> scope tap
 
-// ---------------------- Engine & UI --------------------------
-SynthEngine synth;
+// ---------------------------------------------------------------------------
+// Core objects
+// ---------------------------------------------------------------------------
+SynthEngine                 synth;
 HardwareInterface_MicroDexed hw;
-UIManager_MicroDexed ui;
-// ---------------------- BPM Clock Manager --------------------
-BPMClockManager bpmClock;
+UIManager_MicroDexed        ui;
+BPMClockManager             bpmClock;
 
-// Split to 2 independent paths 
-AudioMixer4  mixerI2SL;
-AudioMixer4  mixerI2SR;
-AudioAmplifier  ampUSBL;
-AudioAmplifier  ampUSBR;
+// ---------------------------------------------------------------------------
+// USB Host MIDI (for class-compliant USB MIDI controllers)
+// ---------------------------------------------------------------------------
+USBHost     myusb;
+USBHub      hub1(myusb);
+MIDIDevice  midiHost(myusb);
 
-
-// ---------------------- USB Host MIDI ------------------------
-USBHost myusb;
-USBHub hub1(myusb);       // if a hub is used
-MIDIDevice midiHost(myusb);
-
-unsigned long lastDisplayUpdate = 0;
-const unsigned long displayRefreshMs = 16;
-
-static void onParam(uint8_t cc, uint8_t v) {
-  Serial.printf("[NOTIFY] CC %u = %u\n", cc, v);
-  // Optional: keep screen values fresh even if change came via MIDI/menu
-  // ui.syncFromEngine(synth);  // uncomment if you want immediate reflection
+// ---------------------------------------------------------------------------
+// CC change notifier — called by SynthEngine after every handled CC.
+// Keeps the display in sync when MIDI arrives from external sources.
+// ---------------------------------------------------------------------------
+static void onParam(uint8_t cc, uint8_t val) {
+    // Uncomment to log all CC changes to Serial:
+    // Serial.printf("[NOTIFY] CC %u = %u\n", cc, val);
+    (void)cc; (void)val;
 }
 
-// // --- Debug: dump current page mapping and values -----------------------------
-// static void debugDumpPage(UIManager& ui, HardwareInterface& hw, SynthEngine& synth) {
-//   const int page = ui.getCurrentPage();
-//   Serial.printf("\n[PAGE] %d\n", page);
-
-//   for (int i = 0; i < 4; ++i) {
-//     const byte cc      = UIPage::ccMap[page][i];                 // UI routing
-//     const char* label  = UIPage::ccNames[page][i];               // OLED label
-//     const int  raw     = hw.readPot(i);                          // 0..1023
-//     const int  ccVal   = (raw >> 3);                             // 0..127
-//     const char* ccDesc = CC::name(cc);                           // friendly name or nullptr
-
-//     // Ask UIManager to compute the engine-reflected CC (inverse mapping)
-//     const int engineCC = (cc != 255) ? ui.ccToDisplayValue(cc, synth) : -1;
-
-//     if (cc == 255) {
-//       Serial.printf("  knob %d: label='%-10s'  [UNMAPPED]\n", i, label ? label : "");
-//       continue;
-//     }
-
-//     Serial.printf("  knob %d: label='%-10s'  map→ CC %3u  (%s)"
-//                   "  potRaw=%4d  potCC=%3d  engineCC=%3d\n",
-//                   i,
-//                   label ? label : "",
-//                   cc,
-//                   ccDesc ? ccDesc : "unnamed",
-//                   raw, ccVal, engineCC);
-//   }
-//   Serial.println();
-// }
-
-//   // Jteensy4000.ino  (in setup() after synth/ui begin)
-// static void onParam(uint8_t cc, uint8_t v) {
-//   Serial.printf("[NOTIFY] CC %u = %u\n", cc, v);
-//   // Optional: keep screen values fresh even if change came via MIDI/menu
-//   // ui.syncFromEngine(synth);  // uncomment if you want immediate reflection
-// }
-// ---------------------- MIDI handlers ------------------------
+// ---------------------------------------------------------------------------
+// MIDI note handlers
+// ---------------------------------------------------------------------------
 void handleNoteOn(byte channel, byte note, byte velocity) {
-  float normvelocity = velocity / 127.0f;
-  Serial.printf("handleNoteOn : %d vel %0.2f\n", note, normvelocity);
-  synth.noteOn(note, velocity);
+    Serial.printf("NoteOn  ch=%d note=%d vel=%d\n", channel, note, velocity);
+    synth.noteOn(note, velocity / 127.0f);
 }
 
-void handleNoteOff(byte channel, byte note, byte velocity) {
-  Serial.printf("handleNoteOff: %d\n", note);
-  synth.noteOff(note);
+void handleNoteOff(byte channel, byte note, byte /*velocity*/) {
+    Serial.printf("NoteOff ch=%d note=%d\n", channel, note);
+    synth.noteOff(note);
 }
 
 void handleControlChange(byte channel, byte control, byte value) {
-  Serial.printf("MIDI CC: ch=%d ctrl=%d val=%d\n", channel, control, value);
-  synth.handleControlChange(channel, control, value);
+    Serial.printf("CC ch=%d ctrl=%d val=%d\n", channel, control, value);
+    synth.handleControlChange(channel, control, value);
 }
 
-// ---------------------- MIDI Clock handlers ------------------
-void handleMIDIClock() {
-  bpmClock.handleMIDIClock();  // Process tempo calculation
+// ---------------------------------------------------------------------------
+// MIDI clock / transport handlers
+// ---------------------------------------------------------------------------
+void handleMIDIClock()    { bpmClock.handleMIDIClock(); }
+void handleMIDIStart()    { bpmClock.handleMIDIStart();    Serial.println("MIDI Start"); }
+void handleMIDIStop()     { bpmClock.handleMIDIStop();     Serial.println("MIDI Stop");  }
+void handleMIDIContinue() { bpmClock.handleMIDIContinue(); Serial.println("MIDI Cont");  }
+
+/** Route MIDI real-time bytes (0xF8-0xFF) to transport handlers. */
+void handleMIDIRealTime(uint8_t byte) {
+    switch (byte) {
+        case 0xF8: handleMIDIClock();    break;
+        case 0xFA: handleMIDIStart();    break;
+        case 0xFC: handleMIDIStop();     break;
+        case 0xFB: handleMIDIContinue(); break;
+    }
 }
 
-void handleMIDIStart() {
-  bpmClock.handleMIDIStart();
-  Serial.println("MIDI Start received");
-}
-
-void handleMIDIStop() {
-  bpmClock.handleMIDIStop();
-  Serial.println("MIDI Stop received");
-}
-
-void handleMIDIContinue() {
-  bpmClock.handleMIDIContinue();
-  Serial.println("MIDI Continue received");
-}
-
-// Example: type a number 0..8 in Serial Monitor and press Enter to load template
-// void handleSerialPresets(SynthEngine& synth, UIManager& ui) {
-//   if (!Serial.available()) return;
-//   int idx = Serial.parseInt();
-//   if (idx >= 0 && idx <= 8) {
-//     Serial.printf("Loading template %d: %s\n", idx, Presets::templateName(idx));
-//     Presets::loadTemplateByIndex(synth, (uint8_t)idx);
-//     ui.syncFromEngine(synth);
-//   } else {
-//     Serial.println("Enter a preset index 0..8");
-//   }
-// }
-
-// Dispatch MIDI real-time messages to appropriate handlers
-void handleMIDIRealTime(uint8_t realtimeByte) {
-  switch (realtimeByte) {
-    case 0xF8:  // MIDI Clock
-      handleMIDIClock();
-      break;
-    case 0xFA:  // MIDI Start
-      handleMIDIStart();
-      break;
-    case 0xFC:  // MIDI Stop
-      handleMIDIStop();
-      break;
-    case 0xFB:  // MIDI Continue
-      handleMIDIContinue();
-      break;
-  }
-}
-
+// ---------------------------------------------------------------------------
+// setup()
+// ---------------------------------------------------------------------------
 void setup() {
-  Serial.begin(115200);                 // debug prints
-  AudioMemory(200);                     // audio buffers before starting graph
+    Serial.begin(115200);
 
-  // Start USB host
-  myusb.begin();
+    // --- PCM5102A unmute ---
+    // Drive XSMT HIGH before I2S starts.  The PCM5102A holds its own internal
+    // mute until it sees valid LRCK, but XSMT must be HIGH or the output stage
+    // stays disabled regardless of I2S signal.
+    pinMode(DAC_MUTE_PIN, OUTPUT);
+    digitalWrite(DAC_MUTE_PIN, HIGH);  // Un-mute DAC — CRITICAL for audio output
+    Serial.println("DAC unmuted");
 
-  // Audio shield config
-  // audioShield.enable();
-  // audioShield.volume(0.3f);
-  // audioShield.lineOutLevel(0);
-  // audioShield.lineInLevel(0);
+    // --- Audio memory (must be before any audio object initialises) ---
+    // 200 blocks * 128 samples * 2 bytes = 51,200 bytes DMAMEM.
+    // Reduce if RAM is tight; 128 is safe minimum for 8 voices + FX.
+    AudioMemory(200);
 
-  // Attach MIDI host handlers
-  midiHost.setHandleNoteOn(handleNoteOn);
-  midiHost.setHandleNoteOff(handleNoteOff);
-  midiHost.setHandleControlChange(handleControlChange);
+    // --- USB Host ---
+    myusb.begin();
 
-  // USB device MIDI handlers
-  usbMIDI.setHandleNoteOn(handleNoteOn);
-  usbMIDI.setHandleNoteOff(handleNoteOff);
-  usbMIDI.setHandleControlChange(handleControlChange);
+    // --- MIDI handlers: USB host device ---
+    midiHost.setHandleNoteOn(handleNoteOn);
+    midiHost.setHandleNoteOff(handleNoteOff);
+    midiHost.setHandleControlChange(handleControlChange);
+    midiHost.setHandleRealTimeSystem(handleMIDIRealTime);
 
-  // MIDI clock handlers (for external tempo sync)
-  usbMIDI.setHandleRealTimeSystem(handleMIDIRealTime);  // See below
-  midiHost.setHandleRealTimeSystem(handleMIDIRealTime);
+    // --- MIDI handlers: Teensy USB-MIDI device ---
+    usbMIDI.setHandleNoteOn(handleNoteOn);
+    usbMIDI.setHandleNoteOff(handleNoteOff);
+    usbMIDI.setHandleControlChange(handleControlChange);
+    usbMIDI.setHandleRealTimeSystem(handleMIDIRealTime);
 
-      // INITIALIZE BPM CLOCK (ADD THIS BLOCK)
-    bpmClock.setInternalBPM(120.0f);              // Start at 120 BPM
-    bpmClock.setClockSource(CLOCK_INTERNAL);      // Use internal clock
-    synth.setBPMClock(&bpmClock);                 // Connect to synth ← CRITICAL!
-    
-    JT_LOGF("[SETUP] BPM Clock initialized at 120 BPM\n");
+    // --- BPM clock ---
+    bpmClock.setInternalBPM(120.0f);
+    bpmClock.setClockSource(CLOCK_INTERNAL);
+    synth.setBPMClock(&bpmClock);
+    Serial.println("BPM clock: 120 BPM internal");
 
-  Serial.println("JTeensy 4000 Synth Ready");
+    // --- Audio patch cords ---
+    // Synth FX stereo output -> I2S mixer
+    patchMixerI2SL = new AudioConnection(synth.getFXOutL(), 0, mixerI2SL, 0);
+    patchMixerI2SR = new AudioConnection(synth.getFXOutR(), 0, mixerI2SR, 0);
 
-  // ---------------------- AUDIO PATCHING ----------------------
-  // IMPORTANT:
-  // - For getters that return AudioStream& (e.g., getFXOutL(), ui.scopeIn()), call them with ().
-  // - For actual objects (ampI2SL/ampI2SR/i2sOut/usbOut), pass the object (NO parentheses).
+    // USB audio in -> I2S mixer (for external pass-through / monitoring)
+    patchUSBInL    = new AudioConnection(usbIn, 0, mixerI2SL, 1);
+    patchUSBInR    = new AudioConnection(usbIn, 1, mixerI2SR, 1);
 
-  // FX L/R -> I2S amp L/R
-  patchMixerI2SL = new AudioConnection(synth.getFXOutL(), 0, mixerI2SL, 0);
-  patchMixerI2SR = new AudioConnection(synth.getFXOutR(), 0, mixerI2SR, 0);
+    // I2S mixer -> I2S output (PCM5102A)
+    patchOutL      = new AudioConnection(mixerI2SL, 0, i2sOut, 0);
+    patchOutR      = new AudioConnection(mixerI2SR, 0, i2sOut, 1);
 
-  // FX L/R -> USB amp L/R
-  patchAmpUSBL = new AudioConnection(synth.getFXOutL(), 0, ampUSBL, 0);
-  patchAmpUSBR = new AudioConnection(synth.getFXOutR(), 0, ampUSBR, 0);
+    // Synth FX stereo output -> USB output (DAW monitoring)
+    patchAmpUSBL   = new AudioConnection(synth.getFXOutL(), 0, ampUSBL, 0);
+    patchAmpUSBR   = new AudioConnection(synth.getFXOutR(), 0, ampUSBR, 0);
+    patchOutUSBL   = new AudioConnection(ampUSBL, 0, usbOut, 0);
+    patchOutUSBR   = new AudioConnection(ampUSBR, 0, usbOut, 1);
 
-  // USB Audio
-  patchUSBINMixerI2SL = new AudioConnection(usbIn, 0, mixerI2SL, 1);
-  patchUSBINMixerI2SR = new AudioConnection(usbIn, 1, mixerI2SR, 1);
+    // Scope tap (left channel only — sufficient for waveform display)
+    patchOutScope  = new AudioConnection(synth.getFXOutL(), 0, scopeTap, 0);
 
-  // I2S amp L/R -> I2S out L/R
-  patchOutL    = new AudioConnection(mixerI2SL, 0, i2sOut, 0);
-  patchOutR    = new AudioConnection(mixerI2SR, 0, i2sOut, 1);
+    // --- Mixer/amp gains ---
+    mixerI2SL.gain(0, 1.0f);   // Synth -> I2S L (full level)
+    mixerI2SR.gain(0, 1.0f);   // Synth -> I2S R
+    mixerI2SL.gain(1, 0.4f);   // USB in -> I2S L (reduced — avoid clipping with synth)
+    mixerI2SR.gain(1, 0.4f);   // USB in -> I2S R
+    ampUSBL.gain(0.7f);        // USB output trim (slightly below full to leave headroom)
+    ampUSBR.gain(0.7f);
 
-  // USB amp L/R -> USB out L/R
-  patchOutUSBL = new AudioConnection(ampUSBL, 0, usbOut, 0);
-  patchOutUSBR = new AudioConnection(ampUSBR, 0, usbOut, 1);
+    // --- Hardware + UI init ---
+    hw.begin();   // Sets up polled encoders and button pins
+    ui.begin();   // Display init, splash screen
 
-  // Scope tap (FX L -> UI scope input)
-  // ui.scopeIn() must return an AudioStream& (e.g., an AudioAnalyze or custom scope sink)
-  patchOutScope  = new AudioConnection(synth.getFXOutL(), 0, scopeTap, 0);
+    synth.setNotifier(onParam);
 
-  // ---------------------- INIT UI/HW --------------------------
-  hw.begin();
-  ui.begin();
+    // Populate initial UI labels from current page
+    const int page = ui.getCurrentPage();
+    for (int i = 0; i < 4; ++i) {
+        ui.setParameterLabel(i, UIPage::ccNames[page][i]);
+    }
+    ui.syncFromEngine(synth);
 
-synth.setNotifier(onParam);
-
-
-  // Split-path gains (will later map to a master volume)
-  mixerI2SL.gain(0, 1.0f);
-  mixerI2SR.gain(0, 1.0f);
-  mixerI2SL.gain(1, 0.4f);
-  mixerI2SR.gain(1, 0.4f);
-  ampUSBL.gain(0.7f);
-  ampUSBR.gain(0.7f);
-
-  int page = ui.getCurrentPage();
-  for (int i = 0; i < 4; ++i) {
-    ui.setParameterLabel(i, UIPage::ccNames[page][i]);
-  }
-  ui.syncFromEngine(synth);
+    Serial.println("JTeensy 4000 ready");
 }
 
+// ---------------------------------------------------------------------------
+// loop()
+// ---------------------------------------------------------------------------
 void loop() {
-  // ----------------- MIDI handling (consistent callback flow) -----------------
-  // USB host stack + host MIDI (USBHost_t36)
-   myusb.Task();
-   while (midiHost.read()) {
-  //   // Handlers registered in setup() do the routing.
-  }
+    // --- USB Host stack — must be called every loop() ---
+    myusb.Task();
 
-  // USB device MIDI (Teensy as a USB-MIDI device)
-  while (usbMIDI.read()) {
-    // Handlers registered in setup() do the routing.
-  }
+    // --- MIDI read: USB host device ---
+    // midiHost.read() processes one message per call; loop until drained.
+    while (midiHost.read()) {}
 
-  // Engine + hardware
-  synth.update();
-  hw.update();
+    // --- MIDI read: Teensy USB-MIDI device ---
+    while (usbMIDI.read()) {}
 
-  // UI input polling (encoder + 4 pots)
-  ui.pollInputs(hw, synth);
+    // --- Synth engine update (BPM sync, voice updates) ---
+    synth.update();
 
-  // OLED refresh
-  if (millis() - lastDisplayUpdate > displayRefreshMs) {
+    // --- Hardware: poll encoders + buttons ---
+    // Must be called every loop() — polled Gray-code needs > 500 Hz.
+    hw.update();
+
+    // --- UI input: translate encoder/touch events to CC changes ---
+    ui.pollInputs(hw, synth);
+
+    // --- Display refresh (rate-limited internally to ~30 FPS) ---
     ui.updateDisplay(synth);
-    lastDisplayUpdate = millis();
-  }
-
-  // Serial-driven preset loader
-  //handleSerialPresets(synth, ui);
 }

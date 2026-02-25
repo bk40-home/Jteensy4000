@@ -22,8 +22,44 @@
 #include "ILI9341_t3n.h"
 #include <SPI.h>
 
-extern bool remote_active;
-extern uint16_t ColorHSV(uint16_t hue, uint8_t sat, uint8_t val);
+// ---------------------------------------------------------------------------
+// MicroDexed WebRemote stubs
+// ---------------------------------------------------------------------------
+// remote_active and ColorHSV are defined in the full MicroDexed project for
+// SYSEX-based browser screen-mirroring. This project does not use that feature.
+// Defining them here as local stubs satisfies the linker without any behaviour
+// change: remote_active = false means every "if (remote_active)" block is dead
+// code and will be optimised away by the compiler.
+// ---------------------------------------------------------------------------
+
+// remote_active = false: all remote-console SYSEX blocks are skipped at runtime.
+static bool remote_active = false;
+
+// ColorHSV: only called from fillRectRainbow(), which is not used in this project.
+// Minimal HSV->RGB565 conversion so it links cleanly if the function is ever called.
+static uint16_t ColorHSV(uint16_t hue, uint8_t sat, uint8_t val) {
+    // hue: 0-255 (mapped to 0-360 degrees)
+    // sat, val: 0-255
+    // Returns RGB565
+    uint8_t region   = hue / 43;
+    uint8_t rem      = (hue - region * 43) * 6;
+    uint8_t p = (uint32_t)val * (255 - sat) >> 8;
+    uint8_t q = (uint32_t)val * (255 - ((uint32_t)sat * rem >> 8)) >> 8;
+    uint8_t t = (uint32_t)val * (255 - ((uint32_t)sat * (255 - rem) >> 8)) >> 8;
+    uint8_t r, g, b;
+    switch (region) {
+        case 0: r = val; g = t;   b = p;   break;
+        case 1: r = q;   g = val; b = p;   break;
+        case 2: r = p;   g = val; b = t;   break;
+        case 3: r = p;   g = q;   b = val; break;
+        case 4: r = t;   g = p;   b = val; break;
+        default: r = val; g = p;  b = q;   break;
+    }
+    // Pack to RGB565
+    return ((uint16_t)(r & 0xF8) << 8)
+         | ((uint16_t)(g & 0xFC) << 3)
+         |  (uint16_t)(b >> 3);
+}
 
 // 5x7 font
 PROGMEM const unsigned char font[] = {

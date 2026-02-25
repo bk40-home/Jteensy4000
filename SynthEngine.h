@@ -82,6 +82,11 @@ public:
     float getOsc1FeedbackMix()     const;
     float getOsc2FeedbackMix()     const;
 
+    // Returns true if voice slot v is currently playing a note
+inline bool isVoiceActive(uint8_t v) const {
+    return (v < MAX_VOICES) && _activeNotes[v];
+}
+
     // =========================================================================
     // Arbitrary waveform (AKWF bank) selection
     // =========================================================================
@@ -295,9 +300,9 @@ private:
     // =========================================================================
     // 8-voice audio architecture
     //
-    //   Voices 0-3 → _voiceMixerA  \
+    //   Voices 0-3 → _voiceMixerA  
     //                                → _voiceMixerFinal → FX chain
-    //   Voices 4-7 → _voiceMixerB  /
+    //   Voices 4-7 → _voiceMixerB  
     //
     // Each voice contributes 1/8 of full scale.
     // CPU @ 44.1 kHz: ~30-40% for voices, leaves headroom for FX.

@@ -22,20 +22,7 @@ enum TimingMode {
 };
 
 // Human-readable names for UI display
-static const char* TimingModeNames[NUM_TIMING_MODES] = {
-    "Free",    // TIMING_FREE
-    "4 Bars",  // TIMING_4_BARS
-    "2 Bars",  // TIMING_2_BARS
-    "1 Bar",   // TIMING_1_BAR
-    "1/2",     // TIMING_1_2
-    "1/4",     // TIMING_1_4
-    "1/8",     // TIMING_1_8
-    "1/16",    // TIMING_1_16
-    "1/32",    // TIMING_1_32
-    "1/4T",    // TIMING_1_4T
-    "1/8T",    // TIMING_1_8T
-    "1/16T"    // TIMING_1_16T
-};
+extern const char* TimingModeNames[NUM_TIMING_MODES];
 
 // Clock source selection
 enum ClockSource {

@@ -1,583 +1,522 @@
-/*
- * CCDispatch.h - COMPLETE HANDLER IMPLEMENTATION WITH BPM TIMING
- *
- * Complete MIDI CC dispatch with all handlers implemented.
- * Includes BPM timing support for LFOs and delay.
- * 
- * USAGE:
- *   CCDispatch::handle(control, value, *synthEngine);
- */
+// CCDispatch.h
+// =============================================================================
+// MIDI CC → SynthEngine dispatcher.
+//
+// Layout:
+//   - One inline handler function per CC (or group of related CCs)
+//   - A constexpr HANDLER_TABLE[128] mapping CC numbers to handler pointers
+//   - A single handle() function called from SynthEngine::handleControlChange()
+//     (or main MIDI callback)
+//
+// All CC numbers are taken from CCDefs.h — do not hard-code numbers here.
+//
+// Mapping curves are from Mapping.h — keep conversion logic there, not here.
+//
+// NOTE: The envelope handlers were previously stubs that only logged.
+//       They now correctly call SynthEngine setter methods.
+//
+// NOTE: The HANDLER_TABLE is an alternative dispatch path.  SynthEngine.cpp
+//       has a large switch-case that also handles all CCs.  In the current
+//       architecture, SynthEngine::handleControlChange() is the authoritative
+//       dispatcher; CCDispatch::handle() is a convenience wrapper that can be
+//       called from anywhere that does not have full SynthEngine context (e.g.
+//       preset loaders, test harnesses).
+// =============================================================================
 
 #pragma once
 
 #include <Arduino.h>
 #include "CCDefs.h"
 #include "Mapping.h"
-#include "WaveForms.h"
+#include "Waveforms.h"
 #include "DebugTrace.h"
 
-// Forward declarations
+// Forward declaration — avoids including SynthEngine.h here
 class SynthEngine;
-class BPMClockManager;
 
 namespace CCDispatch {
 
-// -------------------------------------------------------------------------
-// HANDLER FUNCTION TYPE
-// -------------------------------------------------------------------------
+// Handler function signature: (raw CC value 0-127, pointer to engine)
 using HandlerFn = void (*)(uint8_t ccVal, SynthEngine* synth);
 
-// -------------------------------------------------------------------------
+// =============================================================================
 // OSCILLATOR HANDLERS
-// -------------------------------------------------------------------------
+// =============================================================================
 
 inline void handleOsc1Wave(uint8_t cc, SynthEngine* s) {
     WaveformType t = waveformFromCC(cc);
     s->setOsc1Waveform((int)t);
-    JT_LOGF("[CC %u] OSC1 Wave -> %s\n", CC::OSC1_WAVE, waveformShortName(t));
+    JT_LOGF("[CC OSC1_WAVE] -> %s\n", waveformShortName(t));
 }
-
 inline void handleOsc2Wave(uint8_t cc, SynthEngine* s) {
     WaveformType t = waveformFromCC(cc);
     s->setOsc2Waveform((int)t);
-    JT_LOGF("[CC %u] OSC2 Wave -> %s\n", CC::OSC2_WAVE, waveformShortName(t));
+    JT_LOGF("[CC OSC2_WAVE] -> %s\n", waveformShortName(t));
 }
 
+// Coarse pitch: CC spread across 5 semitone steps (−24/−12/0/+12/+24)
 inline void handleOsc1PitchOffset(uint8_t cc, SynthEngine* s) {
-    float semis;
-    if (cc <= 25)       semis = -24.0f;
-    else if (cc <= 51)  semis = -12.0f;
-    else if (cc <= 76)  semis =   0.0f;
-    else if (cc <= 101) semis = +12.0f;
-    else                semis = +24.0f;
+    float semis = (cc <= 25) ? -24.0f : (cc <= 51) ? -12.0f :
+                  (cc <= 76) ?   0.0f : (cc <= 101) ? 12.0f : 24.0f;
     s->setOsc1PitchOffset(semis);
-    JT_LOGF("[CC %u] OSC1 Pitch = %.0f semi\n", CC::OSC1_PITCH_OFFSET, semis);
+    JT_LOGF("[CC OSC1_PITCH] %.0f semi\n", semis);
 }
-
 inline void handleOsc2PitchOffset(uint8_t cc, SynthEngine* s) {
-    float semis;
-    if (cc <= 25)       semis = -24.0f;
-    else if (cc <= 51)  semis = -12.0f;
-    else if (cc <= 76)  semis =   0.0f;
-    else if (cc <= 101) semis = +12.0f;
-    else                semis = +24.0f;
+    float semis = (cc <= 25) ? -24.0f : (cc <= 51) ? -12.0f :
+                  (cc <= 76) ?   0.0f : (cc <= 101) ? 12.0f : 24.0f;
     s->setOsc2PitchOffset(semis);
-    JT_LOGF("[CC %u] OSC2 Pitch = %.0f semi\n", CC::OSC2_PITCH_OFFSET, semis);
+    JT_LOGF("[CC OSC2_PITCH] %.0f semi\n", semis);
 }
 
+// Detune: 0-127 → −1..+1 semitones (centred at 64)
 inline void handleOsc1Detune(uint8_t cc, SynthEngine* s) {
-    float d = (cc / 127.0f) * 2.0f - 1.0f;
+    const float d = (cc / 127.0f) * 2.0f - 1.0f;
     s->setOsc1Detune(d);
-    JT_LOGF("[CC %u] OSC1 Detune = %.3f\n", CC::OSC1_DETUNE, d);
+    JT_LOGF("[CC OSC1_DETUNE] %.3f\n", d);
 }
-
 inline void handleOsc2Detune(uint8_t cc, SynthEngine* s) {
-    float d = (cc / 127.0f) * 2.0f - 1.0f;
+    const float d = (cc / 127.0f) * 2.0f - 1.0f;
     s->setOsc2Detune(d);
-    JT_LOGF("[CC %u] OSC2 Detune = %.3f\n", CC::OSC2_DETUNE, d);
+    JT_LOGF("[CC OSC2_DETUNE] %.3f\n", d);
 }
 
+// Fine tune: 0-127 → −100..+100 cents (centred at 64)
 inline void handleOsc1FineTune(uint8_t cc, SynthEngine* s) {
-    float c = (cc / 127.0f) * 200.0f - 100.0f;
+    const float c = (cc / 127.0f) * 200.0f - 100.0f;
     s->setOsc1FineTune(c);
-    JT_LOGF("[CC %u] OSC1 Fine = %.1f cents\n", CC::OSC1_FINE_TUNE, c);
+    JT_LOGF("[CC OSC1_FINE] %.1f cents\n", c);
 }
-
 inline void handleOsc2FineTune(uint8_t cc, SynthEngine* s) {
-    float c = (cc / 127.0f) * 200.0f - 100.0f;
+    const float c = (cc / 127.0f) * 200.0f - 100.0f;
     s->setOsc2FineTune(c);
-    JT_LOGF("[CC %u] OSC2 Fine = %.1f cents\n", CC::OSC2_FINE_TUNE, c);
+    JT_LOGF("[CC OSC2_FINE] %.1f cents\n", c);
 }
 
+// OSC balance: 0 = full osc1, 127 = full osc2
 inline void handleOscMixBalance(uint8_t cc, SynthEngine* s) {
-    float norm = cc / 127.0f;
-    float l = 1.0f - norm;
-    float r = norm;
-    s->setOscMix(l, r);
-    JT_LOGF("[CC %u] Osc Balance L=%.3f R=%.3f\n", CC::OSC_MIX_BALANCE, l, r);
+    const float n = cc / 127.0f;
+    s->setOscMix(1.0f - n, n);
+    JT_LOGF("[CC OSC_BALANCE] L=%.3f R=%.3f\n", 1.0f - n, n);
 }
 
-inline void handleOsc1Mix(uint8_t cc, SynthEngine* s) {
-    float norm = cc / 127.0f;
-    s->setOsc1Mix(norm);
-    JT_LOGF("[CC %u] OSC1 Mix = %.3f\n", CC::OSC1_MIX, norm);
-}
+// Individual osc level: 0-127 → 0-1
+inline void handleOsc1Mix(uint8_t cc, SynthEngine* s) { s->setOsc1Mix(cc / 127.0f); }
+inline void handleOsc2Mix(uint8_t cc, SynthEngine* s) { s->setOsc2Mix(cc / 127.0f); }
+inline void handleSubMix(uint8_t cc, SynthEngine* s)  { s->setSubMix(cc / 127.0f); }
+inline void handleNoiseMix(uint8_t cc, SynthEngine* s){ s->setNoiseMix(cc / 127.0f); }
 
-inline void handleOsc2Mix(uint8_t cc, SynthEngine* s) {
-    float norm = cc / 127.0f;
-    s->setOsc2Mix(norm);
-    JT_LOGF("[CC %u] OSC2 Mix = %.3f\n", CC::OSC2_MIX, norm);
-}
+inline void handleSupersaw1Detune(uint8_t cc, SynthEngine* s) { s->setSupersawDetune(0, cc / 127.0f); }
+inline void handleSupersaw1Mix(uint8_t cc, SynthEngine* s)    { s->setSupersawMix(0,    cc / 127.0f); }
+inline void handleSupersaw2Detune(uint8_t cc, SynthEngine* s) { s->setSupersawDetune(1, cc / 127.0f); }
+inline void handleSupersaw2Mix(uint8_t cc, SynthEngine* s)    { s->setSupersawMix(1,    cc / 127.0f); }
 
-inline void handleSubMix(uint8_t cc, SynthEngine* s) {
-    float norm = cc / 127.0f;
-    s->setSubMix(norm);
-    JT_LOGF("[CC %u] Sub Mix = %.3f\n", CC::SUB_MIX, norm);
-}
+inline void handleOsc1FreqDC(uint8_t cc, SynthEngine* s)   { s->setOsc1FrequencyDcAmp(cc / 127.0f); }
+inline void handleOsc1ShapeDC(uint8_t cc, SynthEngine* s)  { s->setOsc1ShapeDcAmp(cc / 127.0f); }
+inline void handleOsc2FreqDC(uint8_t cc, SynthEngine* s)   { s->setOsc2FrequencyDcAmp(cc / 127.0f); }
+inline void handleOsc2ShapeDC(uint8_t cc, SynthEngine* s)  { s->setOsc2ShapeDcAmp(cc / 127.0f); }
+inline void handleRing1Mix(uint8_t cc, SynthEngine* s)     { s->setRing1Mix(cc / 127.0f); }
+inline void handleRing2Mix(uint8_t cc, SynthEngine* s)     { s->setRing2Mix(cc / 127.0f); }
 
-inline void handleNoiseMix(uint8_t cc, SynthEngine* s) {
-    float norm = cc / 127.0f;
-    s->setNoiseMix(norm);
-    JT_LOGF("[CC %u] Noise Mix = %.3f\n", CC::NOISE_MIX, norm);
-}
+inline void handleOsc1FeedbackAmount(uint8_t cc, SynthEngine* s) { s->setOsc1FeedbackAmount(cc / 127.0f); }
+inline void handleOsc2FeedbackAmount(uint8_t cc, SynthEngine* s) { s->setOsc2FeedbackAmount(cc / 127.0f); }
+inline void handleOsc1FeedbackMix(uint8_t cc, SynthEngine* s)    { s->setOsc1FeedbackMix(cc / 127.0f); }
+inline void handleOsc2FeedbackMix(uint8_t cc, SynthEngine* s)    { s->setOsc2FeedbackMix(cc / 127.0f); } // was calling setOsc1FeedbackMix — BUG FIX
 
-inline void handleSupersaw1Detune(uint8_t cc, SynthEngine* s) {
-    float norm = cc / 127.0f;
-    s->setSupersawDetune(0, norm);
-    JT_LOGF("[CC %u] Saw1 Detune = %.3f\n", CC::SUPERSAW1_DETUNE, norm);
-}
-
-inline void handleSupersaw1Mix(uint8_t cc, SynthEngine* s) {
-    float norm = cc / 127.0f;
-    s->setSupersawMix(0, norm);
-    JT_LOGF("[CC %u] Saw1 Mix = %.3f\n", CC::SUPERSAW1_MIX, norm);
-}
-
-inline void handleSupersaw2Detune(uint8_t cc, SynthEngine* s) {
-    float norm = cc / 127.0f;
-    s->setSupersawDetune(1, norm);
-    JT_LOGF("[CC %u] Saw2 Detune = %.3f\n", CC::SUPERSAW2_DETUNE, norm);
-}
-
-inline void handleSupersaw2Mix(uint8_t cc, SynthEngine* s) {
-    float norm = cc / 127.0f;
-    s->setSupersawMix(1, norm);
-    JT_LOGF("[CC %u] Saw2 Mix = %.3f\n", CC::SUPERSAW2_MIX, norm);
-}
-
-inline void handleOsc1FreqDC(uint8_t cc, SynthEngine* s) {
-    float norm = cc / 127.0f;
-    s->setOsc1FrequencyDcAmp(norm);
-    JT_LOGF("[CC %u] OSC1 Freq DC = %.3f\n", CC::OSC1_FREQ_DC, norm);
-}
-
-inline void handleOsc1ShapeDC(uint8_t cc, SynthEngine* s) {
-    float norm = cc / 127.0f;
-    s->setOsc1ShapeDcAmp(norm);
-    JT_LOGF("[CC %u] OSC1 Shape DC = %.3f\n", CC::OSC1_SHAPE_DC, norm);
-}
-
-inline void handleOsc2FreqDC(uint8_t cc, SynthEngine* s) {
-    float norm = cc / 127.0f;
-    s->setOsc2FrequencyDcAmp(norm);
-    JT_LOGF("[CC %u] OSC2 Freq DC = %.3f\n", CC::OSC2_FREQ_DC, norm);
-}
-
-inline void handleOsc2ShapeDC(uint8_t cc, SynthEngine* s) {
-    float norm = cc / 127.0f;
-    s->setOsc2ShapeDcAmp(norm);
-    JT_LOGF("[CC %u] OSC2 Shape DC = %.3f\n", CC::OSC2_SHAPE_DC, norm);
-}
-
-inline void handleRing1Mix(uint8_t cc, SynthEngine* s) {
-    float norm = cc / 127.0f;
-    s->setRing1Mix(norm);
-    JT_LOGF("[CC %u] Ring1 Mix = %.3f\n", CC::RING1_MIX, norm);
-}
-
-inline void handleRing2Mix(uint8_t cc, SynthEngine* s) {
-    float norm = cc / 127.0f;
-    s->setRing2Mix(norm);
-    JT_LOGF("[CC %u] Ring2 Mix = %.3f\n", CC::RING2_MIX, norm);
-}
-
-// -------------------------------------------------------------------------
+// =============================================================================
 // FILTER HANDLERS
-// -------------------------------------------------------------------------
+// =============================================================================
 
 inline void handleFilterCutoff(uint8_t cc, SynthEngine* s) {
-    float hz = JT4000Map::cc_to_obxa_cutoff_hz(cc);
-    s->setFilterCutoff(hz);
-    JT_LOGF("[CC %u] Cutoff = %.2f Hz\n", CC::FILTER_CUTOFF, hz);
+    s->setFilterCutoff(JT4000Map::cc_to_obxa_cutoff_hz(cc));
 }
-
 inline void handleFilterResonance(uint8_t cc, SynthEngine* s) {
-    float r = JT4000Map::cc_to_obxa_res01(cc);
-    s->setFilterResonance(r);
-    JT_LOGF("[CC %u] Resonance = %.4f\n", CC::FILTER_RESONANCE, r);
+    s->setFilterResonance(JT4000Map::cc_to_obxa_res01(cc));
 }
-
+// Env amount: 0-127 → −1..+1 (bipolar)
 inline void handleFilterEnvAmount(uint8_t cc, SynthEngine* s) {
-    float amt = (cc / 127.0f) * 2.0f - 1.0f;
-    s->setFilterEnvAmount(amt);
-    JT_LOGF("[CC %u] Flt Env Amt = %.3f\n", CC::FILTER_ENV_AMOUNT, amt);
+    s->setFilterEnvAmount((cc / 127.0f) * 2.0f - 1.0f);
 }
-
+// Key tracking: 0-127 → −1..+1 (bipolar)
 inline void handleFilterKeyTrack(uint8_t cc, SynthEngine* s) {
-    float amt = (cc / 127.0f) * 2.0f - 1.0f;
-    s->setFilterKeyTrackAmount(amt);
-    JT_LOGF("[CC %u] Key Track = %.3f\n", CC::FILTER_KEY_TRACK, amt);
+    s->setFilterKeyTrackAmount((cc / 127.0f) * 2.0f - 1.0f);
 }
-
+// Octave control: 0-127 → 0..10 octaves
 inline void handleFilterOctaveControl(uint8_t cc, SynthEngine* s) {
-    float oct = (cc / 127.0f) * 10.0f;
-    s->setFilterOctaveControl(oct);
-    JT_LOGF("[CC %u] Oct Ctrl = %.3f\n", CC::FILTER_OCTAVE_CONTROL, oct);
+    s->setFilterOctaveControl((cc / 127.0f) * 10.0f);
 }
+inline void handleFilterMultimode(uint8_t cc, SynthEngine* s)    { s->setFilterMultimode(cc / 127.0f); }
+inline void handleFilterTwoPole(uint8_t cc, SynthEngine* s)      { s->setFilterTwoPole(cc >= 64); }
+inline void handleFilterXpander4Pole(uint8_t cc, SynthEngine* s) { s->setFilterXpander4Pole(cc >= 64); }
+inline void handleFilterXpanderMode(uint8_t cc, SynthEngine* s)  {
+    uint8_t mode = (uint16_t(cc) * 15u) / 128u;
+    if (mode > 14) mode = 14;
+    s->setFilterXpanderMode(mode);
+}
+inline void handleFilterBPBlend2Pole(uint8_t cc, SynthEngine* s) { s->setFilterBPBlend2Pole(cc >= 64); }
+inline void handleFilterPush2Pole(uint8_t cc, SynthEngine* s)    { s->setFilterPush2Pole(cc >= 64); }
+inline void handleFilterResModDepth(uint8_t cc, SynthEngine* s)  { s->setFilterResonanceModDepth(cc / 127.0f); }
 
-// -------------------------------------------------------------------------
+// =============================================================================
 // ENVELOPE HANDLERS
-// -------------------------------------------------------------------------
+// Previously these only logged — now they call the engine setters.
+// =============================================================================
 
 inline void handleAmpAttack(uint8_t cc, SynthEngine* s) {
-    float ms = JT4000Map::cc_to_time_ms(cc);
-    // Apply to all voices through SynthEngine (it will iterate)
-    for (int i = 0; i < 8; ++i) {
-        // SynthEngine should handle this internally
-    }
-    JT_LOGF("[CC %u] Amp Attack = %.2f ms\n", CC::AMP_ATTACK, ms);
+    const float ms = JT4000Map::cc_to_time_ms(cc);
+    // Envelope setters are per-voice inside SynthEngine via handleControlChange().
+    // Dispatch through the engine so the voice loop runs correctly.
+    s->handleControlChange(1, CC::AMP_ATTACK, cc);
+    JT_LOGF("[CC AMP_ATTACK] %.2f ms\n", ms);
 }
-
 inline void handleAmpDecay(uint8_t cc, SynthEngine* s) {
-    float ms = JT4000Map::cc_to_time_ms(cc);
-    JT_LOGF("[CC %u] Amp Decay = %.2f ms\n", CC::AMP_DECAY, ms);
+    s->handleControlChange(1, CC::AMP_DECAY, cc);
+    JT_LOGF("[CC AMP_DECAY] %.2f ms\n", JT4000Map::cc_to_time_ms(cc));
 }
-
 inline void handleAmpSustain(uint8_t cc, SynthEngine* s) {
-    float norm = cc / 127.0f;
-    JT_LOGF("[CC %u] Amp Sustain = %.3f\n", CC::AMP_SUSTAIN, norm);
+    s->handleControlChange(1, CC::AMP_SUSTAIN, cc);
+    JT_LOGF("[CC AMP_SUSTAIN] %.3f\n", cc / 127.0f);
 }
-
 inline void handleAmpRelease(uint8_t cc, SynthEngine* s) {
-    float ms = JT4000Map::cc_to_time_ms(cc);
-    JT_LOGF("[CC %u] Amp Release = %.2f ms\n", CC::AMP_RELEASE, ms);
+    s->handleControlChange(1, CC::AMP_RELEASE, cc);
+    JT_LOGF("[CC AMP_RELEASE] %.2f ms\n", JT4000Map::cc_to_time_ms(cc));
 }
-
 inline void handleFilterEnvAttack(uint8_t cc, SynthEngine* s) {
-    float ms = JT4000Map::cc_to_time_ms(cc);
-    JT_LOGF("[CC %u] Flt Attack = %.2f ms\n", CC::FILTER_ENV_ATTACK, ms);
+    s->handleControlChange(1, CC::FILTER_ENV_ATTACK, cc);
+    JT_LOGF("[CC FLT_ATK] %.2f ms\n", JT4000Map::cc_to_time_ms(cc));
 }
-
 inline void handleFilterEnvDecay(uint8_t cc, SynthEngine* s) {
-    float ms = JT4000Map::cc_to_time_ms(cc);
-    JT_LOGF("[CC %u] Flt Decay = %.2f ms\n", CC::FILTER_ENV_DECAY, ms);
+    s->handleControlChange(1, CC::FILTER_ENV_DECAY, cc);
+    JT_LOGF("[CC FLT_DEC] %.2f ms\n", JT4000Map::cc_to_time_ms(cc));
 }
-
 inline void handleFilterEnvSustain(uint8_t cc, SynthEngine* s) {
-    float norm = cc / 127.0f;
-    JT_LOGF("[CC %u] Flt Sustain = %.3f\n", CC::FILTER_ENV_SUSTAIN, norm);
+    s->handleControlChange(1, CC::FILTER_ENV_SUSTAIN, cc);
+    JT_LOGF("[CC FLT_SUS] %.3f\n", cc / 127.0f);
 }
-
 inline void handleFilterEnvRelease(uint8_t cc, SynthEngine* s) {
-    float ms = JT4000Map::cc_to_time_ms(cc);
-    JT_LOGF("[CC %u] Flt Release = %.2f ms\n", CC::FILTER_ENV_RELEASE, ms);
+    s->handleControlChange(1, CC::FILTER_ENV_RELEASE, cc);
+    JT_LOGF("[CC FLT_REL] %.2f ms\n", JT4000Map::cc_to_time_ms(cc));
 }
 
-// -------------------------------------------------------------------------
+// =============================================================================
 // LFO HANDLERS
-// -------------------------------------------------------------------------
+// =============================================================================
 
-inline void handleLFO1Freq(uint8_t cc, SynthEngine* s) {
-    float hz = JT4000Map::cc_to_lfo_hz(cc);
-    s->setLFO1Frequency(hz);
-    JT_LOGF("[CC %u] LFO1 Freq = %.4f Hz\n", CC::LFO1_FREQ, hz);
-}
+inline void handleLFO1Freq(uint8_t cc, SynthEngine* s)  { s->setLFO1Frequency(JT4000Map::cc_to_lfo_hz(cc)); }
+inline void handleLFO1Depth(uint8_t cc, SynthEngine* s) { s->setLFO1Amount(cc / 127.0f); }
+inline void handleLFO1Dest(uint8_t cc, SynthEngine* s)  { s->setLFO1Destination((LFODestination)JT4000Map::lfoDestFromCC(cc)); }
+inline void handleLFO1Wave(uint8_t cc, SynthEngine* s)  { s->setLFO1Waveform((int)waveformFromCC(cc)); }
 
-inline void handleLFO1Depth(uint8_t cc, SynthEngine* s) {
-    float norm = cc / 127.0f;
-    s->setLFO1Amount(norm);
-    JT_LOGF("[CC %u] LFO1 Depth = %.3f\n", CC::LFO1_DEPTH, norm);
-}
-
-inline void handleLFO1Destination(uint8_t cc, SynthEngine* s) {
-    int dest = JT4000Map::lfoDestFromCC(cc);
-    s->setLFO1Destination((LFODestination)dest);
-    JT_LOGF("[CC %u] LFO1 Dest = %d\n", CC::LFO1_DESTINATION, dest);
-}
-
-inline void handleLFO1Waveform(uint8_t cc, SynthEngine* s) {
-    WaveformType t = waveformFromCC(cc);
-    s->setLFO1Waveform((int)t);
-    JT_LOGF("[CC %u] LFO1 Wave -> %s\n", CC::LFO1_WAVEFORM, waveformShortName(t));
-}
-
-inline void handleLFO2Freq(uint8_t cc, SynthEngine* s) {
-    float hz = JT4000Map::cc_to_lfo_hz(cc);
-    s->setLFO2Frequency(hz);
-    JT_LOGF("[CC %u] LFO2 Freq = %.4f Hz\n", CC::LFO2_FREQ, hz);
-}
-
-inline void handleLFO2Depth(uint8_t cc, SynthEngine* s) {
-    float norm = cc / 127.0f;
-    s->setLFO2Amount(norm);
-    JT_LOGF("[CC %u] LFO2 Depth = %.3f\n", CC::LFO2_DEPTH, norm);
-}
-
-inline void handleLFO2Destination(uint8_t cc, SynthEngine* s) {
-    int dest = JT4000Map::lfoDestFromCC(cc);
-    s->setLFO2Destination((LFODestination)dest);
-    JT_LOGF("[CC %u] LFO2 Dest = %d\n", CC::LFO2_DESTINATION, dest);
-}
-
-inline void handleLFO2Waveform(uint8_t cc, SynthEngine* s) {
-    WaveformType t = waveformFromCC(cc);
-    s->setLFO2Waveform((int)t);
-    JT_LOGF("[CC %u] LFO2 Wave -> %s\n", CC::LFO2_WAVEFORM, waveformShortName(t));
-}
-
-// -------------------------------------------------------------------------
-// JPFX EFFECT HANDLERS
-// -------------------------------------------------------------------------
-
-inline void handleFXBassGain(uint8_t cc, SynthEngine* s) {
-    float dB = (cc / 127.0f) * 24.0f - 12.0f;
-    s->setFXBassGain(dB);
-    JT_LOGF("[CC %u] Bass = %.1f dB\n", CC::FX_BASS_GAIN, dB);
-}
-
-inline void handleFXTrebleGain(uint8_t cc, SynthEngine* s) {
-    float dB = (cc / 127.0f) * 24.0f - 12.0f;
-    s->setFXTrebleGain(dB);
-    JT_LOGF("[CC %u] Treble = %.1f dB\n", CC::FX_TREBLE_GAIN, dB);
-}
-
-inline void handleFXModEffect(uint8_t cc, SynthEngine* s) {
-    int8_t variation = -1;
-    if (cc > 0) {
-        variation = ((uint16_t)(cc - 1) * 11) / 127;
-        if (variation > 10) variation = 10;
-    }
-    s->setFXModEffect(variation);
-    JT_LOGF("[CC %u] Mod Effect = %d\n", CC::FX_MOD_EFFECT, variation);
-}
-
-inline void handleFXModMix(uint8_t cc, SynthEngine* s) {
-    float mix = cc / 127.0f;
-    s->setFXModMix(mix);
-    JT_LOGF("[CC %u] Mod Mix = %.3f\n", CC::FX_MOD_MIX, mix);
-}
-
-inline void handleFXModRate(uint8_t cc, SynthEngine* s) {
-    float hz = (cc / 127.0f) * 20.0f;
-    s->setFXModRate(hz);
-    JT_LOGF("[CC %u] Mod Rate = %.2f Hz\n", CC::FX_MOD_RATE, hz);
-}
-
-inline void handleFXModFeedback(uint8_t cc, SynthEngine* s) {
-    float fb = -1.0f;
-    if (cc > 0) {
-        fb = ((cc - 1) / 126.0f) * 0.99f;
-    }
-    s->setFXModFeedback(fb);
-    JT_LOGF("[CC %u] Mod FB = %.3f\n", CC::FX_MOD_FEEDBACK, fb);
-}
-
-inline void handleFXDelayEffect(uint8_t cc, SynthEngine* s) {
-    int8_t variation = -1;
-    if (cc > 0) {
-        variation = ((uint16_t)(cc - 1) * 5) / 127;
-        if (variation > 4) variation = 4;
-    }
-    s->setFXDelayEffect(variation);
-    JT_LOGF("[CC %u] Delay Effect = %d\n", CC::FX_JPFX_DELAY_EFFECT, variation);
-}
-
-inline void handleFXDelayMix(uint8_t cc, SynthEngine* s) {
-    float mix = cc / 127.0f;
-    s->setFXDelayMix(mix);
-    JT_LOGF("[CC %u] Delay Mix = %.3f\n", CC::FX_JPFX_DELAY_MIX, mix);
-}
-
-inline void handleFXDelayFeedback(uint8_t cc, SynthEngine* s) {
-    float fb = -1.0f;
-    if (cc > 0) {
-        fb = ((cc - 1) / 126.0f) * 0.99f;
-    }
-    s->setFXDelayFeedback(fb);
-    JT_LOGF("[CC %u] Delay FB = %.3f\n", CC::FX_JPFX_DELAY_FEEDBACK, fb);
-}
-
-inline void handleFXDelayTime(uint8_t cc, SynthEngine* s) {
-    float ms = (cc / 127.0f) * 1500.0f;
-    s->setFXDelayTime(ms);
-    JT_LOGF("[CC %u] Delay Time = %.1f ms\n", CC::FX_JPFX_DELAY_TIME, ms);
-}
-
-inline void handleFXDryMix(uint8_t cc, SynthEngine* s) {
-    float mix = cc / 127.0f;
-    s->setFXDryMix(mix);
-    JT_LOGF("[CC %u] Dry Mix = %.3f\n", CC::FX_DRY_MIX, mix);
-}
-
-// -------------------------------------------------------------------------
-// GLOBAL HANDLERS
-// -------------------------------------------------------------------------
-
-inline void handleGlideEnable(uint8_t cc, SynthEngine* s) {
-    bool enable = (cc >= 64);
-    JT_LOGF("[CC %u] Glide = %s\n", CC::GLIDE_ENABLE, enable ? "On" : "Off");
-}
-
-inline void handleGlideTime(uint8_t cc, SynthEngine* s) {
-    float ms = JT4000Map::cc_to_time_ms(cc);
-    JT_LOGF("[CC %u] Glide Time = %.2f ms\n", CC::GLIDE_TIME, ms);
-}
-
-inline void handleAmpModFixedLevel(uint8_t cc, SynthEngine* s) {
-    float norm = cc / 127.0f;
-    s->SetAmpModFixedLevel(norm);
-    JT_LOGF("[CC %u] Amp Mod = %.3f\n", CC::AMP_MOD_FIXED_LEVEL, norm);
-}
-
-// -------------------------------------------------------------------------
-// BPM TIMING HANDLERS (NEW)
-// -------------------------------------------------------------------------
-
-// NOTE: These handlers need access to BPMClockManager instance
-// For now, they're placeholders - will be implemented in main sketch
-
-inline void handleBPMClockSource(uint8_t cc, SynthEngine* s) {
-    // Implementation in main sketch - needs bpmClock reference
-    JT_LOGF("[CC %u] Clock Source = %s\n", CC::BPM_CLOCK_SOURCE, 
-            (cc < 64) ? "Internal" : "External");
-}
-
-inline void handleBPMInternalTempo(uint8_t cc, SynthEngine* s) {
-    // Map 0-127 → 40-300 BPM
-    float bpm = 40.0f + (cc / 127.0f) * 260.0f;
-    JT_LOGF("[CC %u] Internal BPM = %.1f\n", CC::BPM_INTERNAL_TEMPO, bpm);
-}
+inline void handleLFO2Freq(uint8_t cc, SynthEngine* s)  { s->setLFO2Frequency(JT4000Map::cc_to_lfo_hz(cc)); }
+inline void handleLFO2Depth(uint8_t cc, SynthEngine* s) { s->setLFO2Amount(cc / 127.0f); }
+inline void handleLFO2Dest(uint8_t cc, SynthEngine* s)  { s->setLFO2Destination((LFODestination)JT4000Map::lfoDestFromCC(cc)); }
+inline void handleLFO2Wave(uint8_t cc, SynthEngine* s)  { s->setLFO2Waveform((int)waveformFromCC(cc)); }
 
 inline void handleLFO1TimingMode(uint8_t cc, SynthEngine* s) {
-    // Map 0-127 to 0-11 timing modes
-    uint8_t mode = (cc * 12) / 128;
+    // 12 modes spread evenly across 0-127
+    uint8_t mode = (uint16_t(cc) * 12u) / 128u;
     if (mode > 11) mode = 11;
     s->setLFO1TimingMode((TimingMode)mode);
-    JT_LOGF("[CC %u] LFO1 Sync Mode = %u\n", CC::LFO1_TIMING_MODE, mode);
 }
-
 inline void handleLFO2TimingMode(uint8_t cc, SynthEngine* s) {
-    uint8_t mode = (cc * 12) / 128;
+    uint8_t mode = (uint16_t(cc) * 12u) / 128u;
     if (mode > 11) mode = 11;
     s->setLFO2TimingMode((TimingMode)mode);
-    JT_LOGF("[CC %u] LFO2 Sync Mode = %u\n", CC::LFO2_TIMING_MODE, mode);
 }
+
+// =============================================================================
+// FX HANDLERS
+// =============================================================================
+
+// Bass/treble shelving: 0-127 → −12..+12 dB
+inline void handleFXBassGain(uint8_t cc, SynthEngine* s)   { s->setFXBassGain((cc / 127.0f) * 24.0f - 12.0f); }
+inline void handleFXTrebleGain(uint8_t cc, SynthEngine* s) { s->setFXTrebleGain((cc / 127.0f) * 24.0f - 12.0f); }
+
+// Modulation effect: CC 0 = off (−1), 1-127 → variation 0-10
+inline void handleFXModEffect(uint8_t cc, SynthEngine* s) {
+    int8_t v = (cc == 0) ? -1 : (int8_t)(((uint16_t)(cc - 1) * 11u) / 127u);
+    if (v > 10) v = 10;
+    s->setFXModEffect(v);
+}
+inline void handleFXModMix(uint8_t cc, SynthEngine* s)      { s->setFXModMix(cc / 127.0f); }
+inline void handleFXModRate(uint8_t cc, SynthEngine* s)     { s->setFXModRate((cc / 127.0f) * 20.0f); }
+inline void handleFXModFeedback(uint8_t cc, SynthEngine* s) {
+    // CC 0 = use preset default (pass −1); 1-127 → 0..0.99
+    const float fb = (cc == 0) ? -1.0f : ((cc - 1) / 126.0f) * 0.99f;
+    s->setFXModFeedback(fb);
+}
+
+// Delay effect: CC 0 = off (−1), 1-127 → variation 0-4
+inline void handleFXDelayEffect(uint8_t cc, SynthEngine* s) {
+    int8_t v = (cc == 0) ? -1 : (int8_t)(((uint16_t)(cc - 1) * 5u) / 127u);
+    if (v > 4) v = 4;
+    s->setFXDelayEffect(v);
+}
+inline void handleFXDelayMix(uint8_t cc, SynthEngine* s)      { s->setFXDelayMix(cc / 127.0f); }
+inline void handleFXDelayFeedback(uint8_t cc, SynthEngine* s) {
+    const float fb = (cc == 0) ? -1.0f : ((cc - 1) / 126.0f) * 0.99f;
+    s->setFXDelayFeedback(fb);
+}
+// Delay time: 0-127 → 0..1500 ms
+inline void handleFXDelayTime(uint8_t cc, SynthEngine* s) { s->setFXDelayTime((cc / 127.0f) * 1500.0f); }
 
 inline void handleDelayTimingMode(uint8_t cc, SynthEngine* s) {
-    uint8_t mode = (cc * 12) / 128;
+    uint8_t mode = (uint16_t(cc) * 12u) / 128u;
     if (mode > 11) mode = 11;
     s->setDelayTimingMode((TimingMode)mode);
-    JT_LOGF("[CC %u] Delay Sync Mode = %u\n", CC::DELAY_TIMING_MODE, mode);
 }
 
-// -------------------------------------------------------------------------
-// DISPATCH TABLE (128 entries)
-// -------------------------------------------------------------------------
+// Reverb
+inline void handleFXReverbSize(uint8_t cc, SynthEngine* s)    { s->setFXReverbRoomSize(cc / 127.0f); }
+inline void handleFXReverbHiDamp(uint8_t cc, SynthEngine* s)  { s->setFXReverbHiDamping(cc / 127.0f); }
+inline void handleFXReverbLoDamp(uint8_t cc, SynthEngine* s)  { s->setFXReverbLoDamping(cc / 127.0f); }
+inline void handleFXReverbMix(uint8_t cc, SynthEngine* s)     { s->setFXReverbMix(cc / 127.0f, cc / 127.0f); }
+inline void handleFXReverbBypass(uint8_t cc, SynthEngine* s)  { s->setFXReverbBypass(cc >= 64); }
+
+// Output mix levels
+inline void handleFXDryMix(uint8_t cc, SynthEngine* s)        { s->setFXDryMix(cc / 127.0f); }
+inline void handleFXJPFXMix(uint8_t cc, SynthEngine* s)       { const float m = cc / 127.0f; s->setFXJPFXMix(m, m); }
+
+// =============================================================================
+// GLOBAL HANDLERS
+// =============================================================================
+
+inline void handleGlideEnable(uint8_t cc, SynthEngine* s) { s->handleControlChange(1, CC::GLIDE_ENABLE, cc); }
+inline void handleGlideTime(uint8_t cc, SynthEngine* s)   { s->handleControlChange(1, CC::GLIDE_TIME, cc); }
+inline void handleAmpModFixed(uint8_t cc, SynthEngine* s) { s->SetAmpModFixedLevel(cc / 127.0f); }
+
+// BPM
+inline void handleBPMClockSource(uint8_t cc, SynthEngine* s)    { s->handleControlChange(1, CC::BPM_CLOCK_SOURCE, cc); }
+inline void handleBPMInternalTempo(uint8_t cc, SynthEngine* s)  { s->handleControlChange(1, CC::BPM_INTERNAL_TEMPO, cc); }
+
+// =============================================================================
+// DISPATCH TABLE — indexed by CC number (0-127)
+// nullptr = CC is not handled here (logged as unmapped)
+// =============================================================================
 
 constexpr HandlerFn HANDLER_TABLE[128] = {
-    // 0-20: Standard MIDI (mostly unmapped)
+    // 0: Bank Select MSB (unused)
+    nullptr,
+    // 1: Mod wheel (routed to LFO1 freq in SynthEngine switch — not in table)
+    nullptr,
+    // 2-20: Standard MIDI — unused
     nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
     nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
-    nullptr, nullptr, nullptr, nullptr, nullptr,
-    
-    // 21-32: Core synth
-    handleOsc1Wave,           // 21
-    handleOsc2Wave,           // 22
-    handleFilterCutoff,       // 23
-    handleFilterResonance,    // 24
-    handleAmpAttack,          // 25
-    handleAmpDecay,           // 26
-    handleAmpSustain,         // 27
-    handleAmpRelease,         // 28
-    handleFilterEnvAttack,    // 29
-    handleFilterEnvDecay,     // 30
-    handleFilterEnvSustain,   // 31
-    handleFilterEnvRelease,   // 32
-    
-    // 33-40: Unused
+    nullptr, nullptr,
+
+    // 21: OSC1_WAVE
+    handleOsc1Wave,
+    // 22: OSC2_WAVE
+    handleOsc2Wave,
+    // 23: FILTER_CUTOFF
+    handleFilterCutoff,
+    // 24: FILTER_RESONANCE
+    handleFilterResonance,
+    // 25: AMP_ATTACK
+    handleAmpAttack,
+    // 26: AMP_DECAY
+    handleAmpDecay,
+    // 27: AMP_SUSTAIN
+    handleAmpSustain,
+    // 28: AMP_RELEASE
+    handleAmpRelease,
+    // 29: FILTER_ENV_ATTACK
+    handleFilterEnvAttack,
+    // 30: FILTER_ENV_DECAY
+    handleFilterEnvDecay,
+    // 31: FILTER_ENV_SUSTAIN
+    handleFilterEnvSustain,
+    // 32: FILTER_ENV_RELEASE
+    handleFilterEnvRelease,
+
+    // 33-40: unused
     nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
-    
-    // 41-50: Oscillator tuning
-    handleOsc1PitchOffset,    // 41
-    handleOsc2PitchOffset,    // 42
-    handleOsc1Detune,         // 43
-    handleOsc2Detune,         // 44
-    handleOsc1FineTune,       // 45
-    handleOsc2FineTune,       // 46
-    handleOscMixBalance,      // 47
-    handleFilterEnvAmount,    // 48
-    nullptr,                  // 49
-    handleFilterKeyTrack,     // 50
-    
-    // 51-63: LFOs
-    handleLFO2Freq,           // 51
-    handleLFO2Depth,          // 52
-    handleLFO2Destination,    // 53
-    handleLFO1Freq,           // 54
-    handleLFO1Depth,          // 55
-    handleLFO1Destination,    // 56
-    nullptr,                  // 57
-    handleSubMix,             // 58
-    handleNoiseMix,           // 59
-    handleOsc1Mix,            // 60
-    handleOsc2Mix,            // 61
-    handleLFO1Waveform,       // 62
-    handleLFO2Waveform,       // 63
-    
-    // 64-76: Unused + effects
+
+    // 41: OSC1_PITCH_OFFSET
+    handleOsc1PitchOffset,
+    // 42: OSC2_PITCH_OFFSET
+    handleOsc2PitchOffset,
+    // 43: OSC1_DETUNE
+    handleOsc1Detune,
+    // 44: OSC2_DETUNE
+    handleOsc2Detune,
+    // 45: OSC1_FINE_TUNE
+    handleOsc1FineTune,
+    // 46: OSC2_FINE_TUNE
+    handleOsc2FineTune,
+    // 47: OSC_MIX_BALANCE
+    handleOscMixBalance,
+    // 48: FILTER_ENV_AMOUNT
+    handleFilterEnvAmount,
+    // 49: unused
+    nullptr,
+    // 50: FILTER_KEY_TRACK
+    handleFilterKeyTrack,
+
+    // 51: LFO2_FREQ
+    handleLFO2Freq,
+    // 52: LFO2_DEPTH
+    handleLFO2Depth,
+    // 53: LFO2_DESTINATION
+    handleLFO2Dest,
+    // 54: LFO1_FREQ
+    handleLFO1Freq,
+    // 55: LFO1_DEPTH
+    handleLFO1Depth,
+    // 56: LFO1_DESTINATION
+    handleLFO1Dest,
+    // 57: unused
+    nullptr,
+    // 58: SUB_MIX
+    handleSubMix,
+    // 59: NOISE_MIX
+    handleNoiseMix,
+    // 60: OSC1_MIX
+    handleOsc1Mix,
+    // 61: OSC2_MIX
+    handleOsc2Mix,
+    // 62: LFO1_WAVEFORM
+    handleLFO1Wave,
+    // 63: LFO2_WAVEFORM
+    handleLFO2Wave,
+
+    // 64-69: Standard MIDI (sustain pedal etc) — unused
     nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
+
+    // 70: FX_REVERB_SIZE
+    handleFXReverbSize,
+    // 71: FX_REVERB_DAMP
+    handleFXReverbHiDamp,
+    // 72: FX_DELAY_TIME (legacy, unused in JPFX path)
+    nullptr,
+    // 73: FX_DELAY_FEEDBACK (legacy, unused in JPFX path)
+    nullptr,
+    // 74: FX_DRY_MIX
+    handleFXDryMix,
+    // 75: FX_REVERB_MIX
+    handleFXReverbMix,
+    // 76: FX_JPFX_MIX
+    handleFXJPFXMix,
+
+    // 77: SUPERSAW1_DETUNE
+    handleSupersaw1Detune,
+    // 78: SUPERSAW1_MIX
+    handleSupersaw1Mix,
+    // 79: SUPERSAW2_DETUNE
+    handleSupersaw2Detune,
+    // 80: SUPERSAW2_MIX
+    handleSupersaw2Mix,
+    // 81: GLIDE_ENABLE
+    handleGlideEnable,
+    // 82: GLIDE_TIME
+    handleGlideTime,
+    // 83: OSC1_ARB_INDEX — routed through SynthEngine switch (needs bank context)
+    nullptr,
+    // 84: FILTER_OCTAVE_CONTROL
+    handleFilterOctaveControl,
+    // 85: OSC2_ARB_INDEX — routed through SynthEngine switch
+    nullptr,
+    // 86: OSC1_FREQ_DC
+    handleOsc1FreqDC,
+    // 87: OSC1_SHAPE_DC
+    handleOsc1ShapeDC,
+    // 88: OSC2_FREQ_DC
+    handleOsc2FreqDC,
+    // 89: OSC2_SHAPE_DC
+    handleOsc2ShapeDC,
+    // 90: AMP_MOD_FIXED_LEVEL
+    handleAmpModFixed,
+    // 91: RING1_MIX
+    handleRing1Mix,
+    // 92: RING2_MIX
+    handleRing2Mix,
+
+    // 93: FX_REVERB_LODAMP
+    handleFXReverbLoDamp,
+    // 94: FX_REVERB_BYPASS
+    handleFXReverbBypass,
+    // 95-98: legacy FX (unused)
     nullptr, nullptr, nullptr, nullptr,
-    handleFXDryMix,           // 74
-    nullptr,                  // 75 (FX_REVERB_MIX - handle in SynthEngine)
-    nullptr,                  // 76 (FX_JPFX_MIX - handle in SynthEngine)
-    
-    // 77-92: Supersaw + DC + Ring
-    handleSupersaw1Detune,    // 77
-    handleSupersaw1Mix,       // 78
-    handleSupersaw2Detune,    // 79
-    handleSupersaw2Mix,       // 80
-    handleGlideEnable,        // 81
-    handleGlideTime,          // 82
-    nullptr,                  // 83 (OSC1_ARB_INDEX - handle in SynthEngine)
-    handleFilterOctaveControl,// 84
-    nullptr,                  // 85 (OSC2_ARB_INDEX - handle in SynthEngine)
-    handleOsc1FreqDC,         // 86
-    handleOsc1ShapeDC,        // 87
-    handleOsc2FreqDC,         // 88
-    handleOsc2ShapeDC,        // 89
-    handleAmpModFixedLevel,   // 90
-    handleRing1Mix,           // 91
-    handleRing2Mix,           // 92
-    
-    // 93-110: Extended FX + JPFX
-    nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,  // 93-98
-    handleFXBassGain,         // 99
-    handleFXTrebleGain,       // 100
-    nullptr,                  // 101 (OSC1_ARB_BANK - handle in SynthEngine)
-    nullptr,                  // 102 (OSC2_ARB_BANK - handle in SynthEngine)
-    handleFXModEffect,        // 103
-    handleFXModMix,           // 104
-    handleFXModRate,          // 105
-    handleFXModFeedback,      // 106
-    handleFXDelayEffect,      // 107
-    handleFXDelayMix,         // 108
-    handleFXDelayFeedback,    // 109
-    handleFXDelayTime,        // 110
-    
-    // 111-122: Filter modes + BPM timing
-    nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,  // 111-117
-    handleBPMClockSource,     // 118
-    handleBPMInternalTempo,   // 119
-    handleLFO1TimingMode,     // 120
-    handleLFO2TimingMode,     // 121
-    handleDelayTimingMode,    // 122
-    
-    // 123-127: Unused
-    nullptr, nullptr, nullptr, nullptr, nullptr
+
+    // 99: FX_BASS_GAIN
+    handleFXBassGain,
+    // 100: FX_TREBLE_GAIN
+    handleFXTrebleGain,
+    // 101: OSC1_ARB_BANK — routed through SynthEngine switch
+    nullptr,
+    // 102: OSC2_ARB_BANK — routed through SynthEngine switch
+    nullptr,
+    // 103: FX_MOD_EFFECT
+    handleFXModEffect,
+    // 104: FX_MOD_MIX
+    handleFXModMix,
+    // 105: FX_MOD_RATE
+    handleFXModRate,
+    // 106: FX_MOD_FEEDBACK
+    handleFXModFeedback,
+    // 107: FX_JPFX_DELAY_EFFECT
+    handleFXDelayEffect,
+    // 108: FX_JPFX_DELAY_MIX
+    handleFXDelayMix,
+    // 109: FX_JPFX_DELAY_FEEDBACK
+    handleFXDelayFeedback,
+    // 110: FX_JPFX_DELAY_TIME
+    handleFXDelayTime,
+
+    // 111: FILTER_OBXA_MULTIMODE
+    handleFilterMultimode,
+    // 112: FILTER_OBXA_TWO_POLE
+    handleFilterTwoPole,
+    // 113: FILTER_OBXA_XPANDER_4_POLE
+    handleFilterXpander4Pole,
+    // 114: FILTER_OBXA_XPANDER_MODE
+    handleFilterXpanderMode,
+    // 115: FILTER_OBXA_BP_BLEND_2_POLE
+    handleFilterBPBlend2Pole,
+    // 116: FILTER_OBXA_PUSH_2_POLE
+    handleFilterPush2Pole,
+    // 117: FILTER_OBXA_RES_MOD_DEPTH
+    handleFilterResModDepth,
+
+    // 118: BPM_CLOCK_SOURCE
+    handleBPMClockSource,
+    // 119: BPM_INTERNAL_TEMPO
+    handleBPMInternalTempo,
+    // 120: LFO1_TIMING_MODE
+    handleLFO1TimingMode,
+    // 121: LFO2_TIMING_MODE
+    handleLFO2TimingMode,
+    // 122: DELAY_TIMING_MODE
+    handleDelayTimingMode,
+
+    // 123: OSC1_FEEDBACK_AMOUNT
+    handleOsc1FeedbackAmount,
+    // 124: OSC2_FEEDBACK_AMOUNT
+    handleOsc2FeedbackAmount,
+    // 125: OSC1_FEEDBACK_MIX
+    handleOsc1FeedbackMix,
+    // 126: OSC2_FEEDBACK_MIX
+    handleOsc2FeedbackMix,
+
+    // 127: unused
+    nullptr,
 };
 
-// -------------------------------------------------------------------------
-// MAIN DISPATCH FUNCTION
-// -------------------------------------------------------------------------
+// =============================================================================
+// MAIN DISPATCH ENTRY POINT
+// =============================================================================
 
+/**
+ * handle() — look up CC in the table and call the handler.
+ * Prefer using SynthEngine::handleControlChange() for normal operation;
+ * use this for preset loaders or places that only have a SynthEngine pointer.
+ */
 inline void handle(uint8_t cc, uint8_t value, SynthEngine* synth) {
-    if (cc >= 128) return;
-    
-    HandlerFn handler = HANDLER_TABLE[cc];
-    if (handler) {
-        handler(value, synth);
+    if (cc >= 128 || !synth) return;
+    HandlerFn fn = HANDLER_TABLE[cc];
+    if (fn) {
+        fn(value, synth);
     } else {
-        JT_LOGF("[CC %u] Unmapped (value=%u)\n", cc, value);
+        JT_LOGF("[CCDispatch] CC %u unmapped (val=%u)\n", cc, value);
     }
 }
 
