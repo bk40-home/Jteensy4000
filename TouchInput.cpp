@@ -20,10 +20,8 @@ TouchInput::TouchInput()
     , _detectedGesture(GESTURE_NONE)
     , _touchStartTime(0)
     , _touchEndTime(0)
-#ifdef USE_RESISTIVE_TOUCH
-    , _touchController(38, 33)  // CS=38, IRQ=33 (MicroDexed pins)
-#endif
 {}
+
 
 // ============================================================================
 // begin() — hardware initialisation
@@ -31,7 +29,10 @@ TouchInput::TouchInput()
 
 bool TouchInput::begin() {
 
+
     Serial.print("TouchInput: Initializing FT6206 (capacitive)... ");
+
+
     if (!_touchController.begin(40)) {
         Serial.println("FAILED - Not found on I2C");
         return false;
@@ -141,6 +142,13 @@ void TouchInput::detectGesture() {
 
 TouchInput::Point TouchInput::mapCoordinates(int16_t rawX, int16_t rawY) {
 
+    // // FT6206 native resolution is typically 240×320 (portrait).
+    // // In landscape mode the axes are swapped: raw X → screen Y, raw Y → screen X.
+    // // Adjust the input ranges below if touch feels offset or mirrored.
+    // const int16_t x = (int16_t)map(rawX, 0, 240, 0, 320);
+    // const int16_t y = (int16_t)map(rawY, 0, 320, 0, 240);
+
+
     // FT6206 native portrait resolution: 240 wide × 320 tall.
     // In landscape (rotation=3), both axes are inverted relative to screen.
     //
@@ -153,4 +161,5 @@ TouchInput::Point TouchInput::mapCoordinates(int16_t rawX, int16_t rawY) {
     const int16_t y = (int16_t)map(rawY, 319, 0, 0, 240);
 
     return Point(x, y);
+
 }
