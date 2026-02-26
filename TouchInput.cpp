@@ -61,6 +61,10 @@ void TouchInput::update() {
 
     if (nowTouched) {
         _currentPoint = mapCoordinates(rawX, rawY);
+            Serial.print("RAW: ");
+    Serial.print(rawX);
+    Serial.print(",");
+    Serial.println(rawY);
 
         if (!_isTouched) {
             // Finger just landed
@@ -157,8 +161,14 @@ TouchInput::Point TouchInput::mapCoordinates(int16_t rawX, int16_t rawY) {
     //   raw (239, 319) → screen bottom-left  (  0,   0)
     //
     // Fix: reverse both map ranges so raw max → screen 0, raw 0 → screen max.
-    const int16_t x = (int16_t)map(rawX, 239, 0, 0, 320);
-    const int16_t y = (int16_t)map(rawY, 319, 0, 0, 240);
+    const int16_t x = (int16_t)map(rawX, 0, 320, 0, 240);
+    const int16_t y = (int16_t)map(rawY, 240  , 0, 0,320);
+
+    //     const int16_t x = (int16_t)map(rawX, 219, 40, 0, 240);
+    // const int16_t y = (int16_t)map(rawY, 311  , 5, 0,320);
+    // top right is top left
+
+
 
     return Point(x, y);
 

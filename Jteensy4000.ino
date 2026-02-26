@@ -26,7 +26,7 @@
 #include "SynthEngine.h"
 #include "UIPageLayout.h"
 #include "HardwareInterface_MicroDexed.h"
-#include "UIManager_MicroDexed.h"
+#include "UIManager_TFT.h"
 #include "Presets.h"
 #include "AudioScopeTap.h"
 #include "BPMClockManager.h"
@@ -42,7 +42,7 @@ static constexpr uint8_t DAC_MUTE_PIN = 34;  // Change to match your wiring
 // ---------------------------------------------------------------------------
 // Audio endpoints
 // ---------------------------------------------------------------------------
-AudioOutputI2S2 i2sOut;    // I2S2 output -> PCM5102A (BCK=26, LRCK=27, DATA=7)
+AudioOutputI2S i2sOut;    // do not use I2S2 output -> PCM5102A (BCK=26, LRCK=27, DATA=7)
 AudioInputUSB   usbIn;     // USB audio in  (for DAW loopback / monitoring)
 AudioOutputUSB  usbOut;    // USB audio out
 AudioScopeTap   scopeTap;  // Waveform capture for oscilloscope view
@@ -74,7 +74,7 @@ AudioConnection* patchOutScope     = nullptr;  // Synth FX L -> scope tap
 // ---------------------------------------------------------------------------
 SynthEngine                 synth;
 HardwareInterface_MicroDexed hw;
-UIManager_MicroDexed        ui;
+UIManager_TFT               ui;
 BPMClockManager             bpmClock;
 
 // ---------------------------------------------------------------------------
@@ -202,7 +202,7 @@ void setup() {
 
     // --- Hardware + UI init ---
     hw.begin();   // Sets up polled encoders and button pins
-    ui.begin();   // Display init, splash screen
+    ui.begin(synth);   // Display init, splash screen
 
     synth.setNotifier(onParam);
 

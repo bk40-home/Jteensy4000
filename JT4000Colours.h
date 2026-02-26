@@ -1,5 +1,5 @@
 /**
- * JT4000_colours.h
+ * JT4000Colours.h
  *
  * Colour constants and font-size defines required by the MicroDexed-derived
  * ILI9341_t3n.cpp display driver.
@@ -17,16 +17,26 @@
 
 #pragma once
 
+
 // ---------------------------------------------------------------------------
 // UI background / text colours (used as switch-case labels in t3n.cpp)
 // ---------------------------------------------------------------------------
-#define COLOR_BACKGROUND  0x0000  // Black
-#define COLOR_SYSTEXT     0xFFFF  // White
-#define COLOR_INSTR       0x7BBD  // Light blue
-#define COLOR_CHORDS      0xE2FA  // Pale pink
-#define COLOR_ARP         0xFC80  // Orange
-#define COLOR_DRUMS       0xFE4F  // Salmon
-#define COLOR_PITCHSMP    0x159A  // Teal
+#define COLOUR_BACKGROUND  0x0000  // Black
+
+
+
+    #define COLOUR_TEXT          0xFD20   // white
+    #define COLOUR_TEXT_DIM      0x7BEF   // mid-grey
+    #define COLOUR_SELECTED      0x07FF   // cyan  — selected row highlight
+    #define COLOUR_ACCENT        0xF800   // red   — alerts / clip indicator
+    #define COLOUR_OSC           0x07E0   // green   — oscillator params
+    #define COLOUR_FILTER        0xFFE0   // yellow  — filter params
+    #define COLOUR_ENV           0xF81F   // magenta — envelope params
+    #define COLOUR_LFO           0xFD20   // orange  — LFO params
+    #define COLOUR_FX            0x07FF   // cyan    — FX params
+    #define COLOUR_GLOBAL        0x0000   // light grey — global params
+    #define COLOUR_HEADER_BG     0x4208   // dark grey  — header/footer bg
+    #define COLOUR_BORDER        0x2104   // darker grey — separators
 
 // ---------------------------------------------------------------------------
 // Named colours (used as switch-case labels in t3n.cpp)
