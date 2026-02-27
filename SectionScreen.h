@@ -48,7 +48,7 @@
 #include "SynthEngine.h"
 #include "UIPageLayout.h"
 #include "JT4000_Sections.h"
-#include "JT4000_Colours.h"
+#include "JT4000Colours.h"
 #include "TFTParamRow.h"
 #include "TFTNumericEntry.h"
 #include "Mapping.h"

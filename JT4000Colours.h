@@ -26,6 +26,7 @@
 
 
     #define COLOUR_TEXT          0xFD20   // white
+    #define COLOUR_SYSTEXT       0xFFE0   // yellow  — filter params
     #define COLOUR_TEXT_DIM      0x7BEF   // mid-grey
     #define COLOUR_SELECTED      0x07FF   // cyan  — selected row highlight
     #define COLOUR_ACCENT        0xF800   // red   — alerts / clip indicator

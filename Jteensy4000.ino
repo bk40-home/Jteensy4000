@@ -206,11 +206,11 @@ void setup() {
 
     synth.setNotifier(onParam);
 
-    // Populate initial UI labels from current page
-    const int page = ui.getCurrentPage();
-    for (int i = 0; i < 4; ++i) {
-        ui.setParameterLabel(i, UIPage::ccNames[page][i]);
-    }
+    // // Populate initial UI labels from current page
+    // const int page = ui.getCurrentPage();
+    // for (int i = 0; i < 4; ++i) {
+    //     ui.setParameterLabel(i, UIPage::ccNames[page][i]);
+    // }
     ui.syncFromEngine(synth);
 
     Serial.println("JTeensy 4000 ready");

@@ -18,7 +18,7 @@
 
 // config.h replaced with a minimal stub containing only the colour/font
 // constants this driver actually uses — no MicroDexed project dependency.
-#include "JT4000_colours.h"
+#include "JT4000Colours.h"
 #include "ILI9341_t3n.h"
 #include <SPI.h>
 
@@ -1386,9 +1386,9 @@ void ILI9341_t3n::drawChar(int16_t x, int16_t y, unsigned char c,
     if (fgcolor == bgcolor)
     {
       if (size_x == 2)
-        fillRect(x, y, CHAR_width, CHAR_height - 1, COLOR_BACKGROUND);
+        fillRect(x, y, CHAR_width, CHAR_height - 1, COLOUR_BACKGROUND);
       else
-        fillRect(x, y, CHAR_width_small, CHAR_height_small, COLOR_BACKGROUND);
+        fillRect(x, y, CHAR_width_small, CHAR_height_small, COLOUR_BACKGROUND);
     }
     else if (size_x == 2)
       fillRect(x, y, CHAR_width, CHAR_height - 1, bgcolor);
@@ -1820,26 +1820,8 @@ FLASHMEM uint8_t ILI9341_t3n::fillSysexDataColor(uint8_t* arr, uint8_t nbArg, ..
 
     uint8_t colorCode = 0;
     switch (val) {
-    case COLOR_BACKGROUND:
+    case COLOUR_BACKGROUND:
       colorCode = 0;
-      break;
-    case COLOR_SYSTEXT:
-      colorCode = 1;
-      break;
-    case COLOR_INSTR:
-      colorCode = 2;
-      break;
-    case COLOR_CHORDS:
-      colorCode = 3;
-      break;
-    case COLOR_ARP:
-      colorCode = 4;
-      break;
-    case COLOR_DRUMS:
-      colorCode = 5;
-      break;
-    case COLOR_PITCHSMP:
-      colorCode = 6;
       break;
 
     case RED:

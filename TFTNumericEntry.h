@@ -233,7 +233,7 @@ private:
 
     // Cancel button — top-right of title bar
     static constexpr int CANCEL_X = 240;
-     static constexpr int CANCEL_Y = 160;
+     static constexpr int CANCEL_Y =   4;  // top of title bar (was 160 — WRONG)
     static constexpr int CANCEL_W = 75;
     static constexpr int CANCEL_H = 22;
 
@@ -325,7 +325,7 @@ private:
             for (int col = 0; col < 3; ++col) {
                 const int16_t kx = KP_X + col * (KEY_WIDTH+ KEY_GAP);
                 const int16_t ky = KP_Y + row * (KEY_HEIGHT + KEY_GAP);
-                _drawKey(kx, ky, KEY_W, KEY_HEIGHT,
+                _drawKey(kx, ky, KEY_WIDTH, KEY_HEIGHT,
                          _digitStr(digits[row][col]), gTheme.keyBg, false);
             }
         }
