@@ -42,16 +42,21 @@ public:
     HomeScreen()
         : _display(nullptr), _scopeTap(nullptr), _onSection(nullptr)
         , _highlighted(0), _fullRedraw(true), _tilesDirty(true), _scopeTapped(false)
-        , _t0(1+0*(TILE_W+TILE_GAP), TILE_Y+2,      TILE_W, ROW_H-3, kSections[0])
-        , _t1(1+1*(TILE_W+TILE_GAP), TILE_Y+2,      TILE_W, ROW_H-3, kSections[1])
-        , _t2(1+2*(TILE_W+TILE_GAP), TILE_Y+2,      TILE_W, ROW_H-3, kSections[2])
-        , _t3(1+3*(TILE_W+TILE_GAP), TILE_Y+2,      TILE_W, ROW_H-3, kSections[3])
+        // Row 0: sections 0-3  (top row)
+        , _t0(1+0*(TILE_W+TILE_GAP), TILE_Y+2,       TILE_W, ROW_H-3, kSections[0])
+        , _t1(1+1*(TILE_W+TILE_GAP), TILE_Y+2,       TILE_W, ROW_H-3, kSections[1])
+        , _t2(1+2*(TILE_W+TILE_GAP), TILE_Y+2,       TILE_W, ROW_H-3, kSections[2])
+        , _t3(1+3*(TILE_W+TILE_GAP), TILE_Y+2,       TILE_W, ROW_H-3, kSections[3])
+        // Row 1: sections 4-7  (bottom row — _t7 is the PRESETS tile)
         , _t4(1+0*(TILE_W+TILE_GAP), TILE_Y+ROW_H+1, TILE_W, ROW_H-3, kSections[4])
         , _t5(1+1*(TILE_W+TILE_GAP), TILE_Y+ROW_H+1, TILE_W, ROW_H-3, kSections[5])
         , _t6(1+2*(TILE_W+TILE_GAP), TILE_Y+ROW_H+1, TILE_W, ROW_H-3, kSections[6])
+        , _t7(1+3*(TILE_W+TILE_GAP), TILE_Y+ROW_H+1, TILE_W, ROW_H-3, kSections[7])
     {
+        // MUST match SECTION_COUNT (currently 8). If SECTION_COUNT changes,
+        // add/remove a _tN member AND the corresponding pointer assignment here.
         _tiles[0]=&_t0; _tiles[1]=&_t1; _tiles[2]=&_t2; _tiles[3]=&_t3;
-        _tiles[4]=&_t4; _tiles[5]=&_t5; _tiles[6]=&_t6;
+        _tiles[4]=&_t4; _tiles[5]=&_t5; _tiles[6]=&_t6; _tiles[7]=&_t7;
     }
 
     void begin(ILI9341_t3n* disp, AudioScopeTap* tap, SectionSelectedCallback cb) {
@@ -65,6 +70,7 @@ public:
         _t4.setCallback([]{ if(_instance) _instance->_fire(4); });
         _t5.setCallback([]{ if(_instance) _instance->_fire(5); });
         _t6.setCallback([]{ if(_instance) _instance->_fire(6); });
+        _t7.setCallback([]{ if(_instance) _instance->_fire(7); });  // PRESETS tile
         markFullRedraw();
     }
 
@@ -204,7 +210,9 @@ private:
     SectionSelectedCallback _onSection;
     int                     _highlighted;
     bool                    _fullRedraw, _tilesDirty, _scopeTapped;
-    TFTSectionTile _t0,_t1,_t2,_t3,_t4,_t5,_t6;
+    // One TFTSectionTile per entry in kSections[]. Count MUST equal SECTION_COUNT.
+    // If you add a section, add a _tN member here AND wire it in the constructor.
+    TFTSectionTile _t0,_t1,_t2,_t3,_t4,_t5,_t6,_t7;  // 8 tiles = SECTION_COUNT
     TFTSectionTile* _tiles[SECTION_COUNT];
 };
 

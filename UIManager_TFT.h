@@ -1,7 +1,6 @@
 // UIManager_TFT.h
 // =============================================================================
 // Top-level UI manager for JT-4000 MicroDexed TFT variant.
-// Replaces UIManager_MicroDexed with section-based navigation.
 //
 // Navigation flow:
 //   HOME (scope + tiles) --> tap synth tile --> SECTION (page tabs + param rows)
@@ -9,26 +8,23 @@
 //                        --> tap PRESETS tile  --> BROWSER (full-screen preset list)
 //                        --> hold-L            --> SCOPE FULL SCREEN
 //
-// Call sites in your main sketch are UNCHANGED:
-//   ui.begin(synth)              in setup()
-//   ui.pollInputs(hw, synth)     in loop()
-//   ui.updateDisplay(synth)      in loop()
-//   ui.syncFromEngine(synth)     after preset load
+// Setup sequence (called from Jteensy4000.ino):
+//   1. ui.beginDisplay()     — SPI init + splash. Call BEFORE AudioMemory().
+//   2. ui.begin(synth)       — wire screens. Call AFTER synth is ready.
+//   3. ui.syncFromEngine()   — after preset load to force repaint.
+//   4. ui.pollInputs()       — call at >= 100 Hz in loop().
+//   5. ui.updateDisplay()    — call at ~30 Hz in loop() (rate-limited internally).
 //
-// Encoder wiring:
-//   HOME:    L-delta=scroll tile  L-short=open tile  L-long=full scope
-//   SECTION: L-delta=scroll row   L-short=back        R-delta=adjust value
-//            R-long=open entry overlay
-//   BROWSER: L-delta=scroll list  L-short=load+return  L-long=cancel+return
-//   SCOPE:   any button=back to home
+// Why two init functions?
+//   SPI1 init (beginDisplay) must happen before AudioMemory() to avoid a race
+//   where the audio DMA scheduler and SPI DMA both try to configure the same
+//   bus at startup. begin(synth) needs a live SynthEngine reference so it comes
+//   after synth initialisation.
 //
-// Changes from previous version:
-//   - Mode::BROWSER added
-//   - _openSection() detects PRESETS tile (sectionIsBrowser()) and opens browser
-//   - updateDisplay(), pollInputs(), _handleTouch() all handle Mode::BROWSER
-//   - _browser.open() is called with a callback that loads the preset and
-//     calls syncFromEngine(), then returns to HOME
-//   - _currentPresetIdx tracks the globally loaded preset for browser pre-select
+// SPI clock:
+//   Running ILI9341_t3n at 30 MHz (not the 50 MHz default). The 50 MHz clock
+//   causes intermittent hard-faults on boards with longer SPI traces due to
+//   signal integrity issues. 30 MHz is safe and still gives >30 fps refresh.
 // =============================================================================
 
 #pragma once
@@ -40,69 +36,99 @@
 #include "AudioScopeTap.h"
 #include "HomeScreen.h"
 #include "SectionScreen.h"
-#include "JT4000_Sections.h"   // includes sectionIsBrowser() helper
+#include "JT4000_Sections.h"
 #include "PresetBrowser.h"
+#include "Presets.h"          // Presets::presets_loadByGlobalIndex — used in browser callback
 #include <math.h>
 
 extern AudioScopeTap scopeTap;
 
 class UIManager_TFT {
 public:
-    // SPI1 pins — unchanged from UIManager_MicroDexed
-    static constexpr uint8_t TFT_CS   = 41;
-    static constexpr uint8_t TFT_DC   = 37;
-    static constexpr uint8_t TFT_RST  = 24;
-    static constexpr uint8_t TFT_MOSI = 26;
-    static constexpr uint8_t TFT_SCK  = 27;
-    static constexpr uint8_t TFT_MISO = 39;
+    // SPI1 pins (Teensy 4.1)
+    static constexpr uint8_t  TFT_CS   = 41;
+    static constexpr uint8_t  TFT_DC   = 37;
+    static constexpr uint8_t  TFT_RST  = 24;
+    static constexpr uint8_t  TFT_MOSI = 26;
+    static constexpr uint8_t  TFT_SCK  = 27;
+    static constexpr uint8_t  TFT_MISO = 39;
 
-    static constexpr uint32_t FRAME_MS = 33;  // ~30 fps cap
+    // 30 MHz is safe for typical wiring lengths.
+    // The ILI9341_t3n default is 50 MHz which can cause hard-faults on
+    // boards with longer traces or imperfect termination.
+    static constexpr uint32_t SPI_CLOCK_HZ = 30000000;
 
-    // BROWSER: full-screen PresetBrowser modal (new)
+    // Frame rate cap: 30 fps = 33 ms per frame.
+    // Reduce to 66 (15 fps) if SPI load causes audio glitches.
+    static constexpr uint32_t FRAME_MS = 33;
+
     enum class Mode : uint8_t { HOME = 0, SECTION, SCOPE_FULL, BROWSER };
 
     UIManager_TFT()
         : _display(TFT_CS, TFT_DC, TFT_RST, TFT_MOSI, TFT_SCK, TFT_MISO)
-        , _touchOk(false), _mode(Mode::HOME)
-        , _activeSect(-1), _lastFrame(0), _synthRef(nullptr)
-        , _currentPresetIdx(0)   // tracks which preset is loaded (for browser pre-select)
+        , _touchOk(false)
+        , _mode(Mode::HOME)
+        , _activeSect(-1)
+        , _lastFrame(0)
+        , _synthRef(nullptr)
+        , _currentPresetIdx(0)
+        , _scopeFullFirstFrame(true)
     {}
 
     // =========================================================================
-    // begin() — call once in setup()
+    // beginDisplay() — hardware-only init. Call BEFORE AudioMemory().
+    //   - Initialises SPI1 at 30 MHz
+    //   - Sets rotation and clears screen
+    //   - Shows boot splash
+    //   - Initialises touch controller
+    // =========================================================================
+    void beginDisplay() {
+        // 30 MHz: safe, reliable. 50 MHz default causes marginal-hardware faults.
+        _display.begin(SPI_CLOCK_HZ);
+        _display.setRotation(3);          // landscape 320×240
+        _display.fillScreen(0x0000);
+
+        // Initialise touch now (I2C) — safe before AudioMemory
+        _touchOk = _touch.begin();
+        Serial.printf("[UI] Touch: %s\n", _touchOk ? "OK" : "not found");
+
+        // Boot splash — confirms display is working before audio starts
+        _display.setTextSize(3);
+        _display.setTextColor(0xFD20);    // orange
+        _display.setCursor(60, 90);
+        _display.print("JT.4000");
+
+        _display.setTextSize(1);
+        _display.setTextColor(0x7BEF);    // mid-grey
+        _display.setCursor(74, 124);
+        _display.print("MicroDexed Edition");
+
+        delay(800);   // splash visible long enough to read
+        _display.fillScreen(0x0000);
+    }
+
+    // =========================================================================
+    // begin() — wire screens to engine. Call AFTER AudioMemory() and synth init.
     // =========================================================================
     void begin(SynthEngine& synth) {
         _synthRef = &synth;
         _instance = this;
 
-        _display.begin();
-        _display.setRotation(3);
-        _display.fillScreen(0x2104);
-
-        _touchOk = _touch.begin();
-        Serial.printf("[UI] Touch: %s\n", _touchOk ? "OK" : "not found");
-
-        // Boot splash
-        _display.setTextSize(3); _display.setTextColor(0xFD20);
-        _display.setCursor(60, 90);  _display.print("JT.4000");
-        _display.setTextSize(1);    _display.setTextColor(0xFD20);
-        _display.setCursor(90, 124); _display.print("MicroDexed Edition");
-        delay(900);
-        _display.fillScreen(0x0000);
-
-        // Wire up screens
+        // Wire HomeScreen: display, scope tap, and tile-tap callback
         _home.begin(&_display, &scopeTap,
-            [](int idx){ if (_instance) _instance->_openSection(idx); });
+            [](int idx) { if (_instance) _instance->_openSection(idx); });
 
+        // Wire SectionScreen: display and back-button callback
         _section.begin(&_display);
         _section.setBackCallback(
-            [](){ if (_instance) _instance->_goHome(); });
+            []() { if (_instance) _instance->_goHome(); });
 
         _home.markFullRedraw();
     }
 
     // =========================================================================
-    // updateDisplay() — call at ~30 Hz from loop()
+    // updateDisplay() — call at ~30 Hz from loop().
+    //   Rate-limited internally to FRAME_MS so calling it more often is harmless.
     // =========================================================================
     void updateDisplay(SynthEngine& synth) {
         _synthRef = &synth;
@@ -111,17 +137,19 @@ public:
         _lastFrame = now;
 
         switch (_mode) {
+
             case Mode::HOME:
                 _home.draw(synth);
                 break;
 
             case Mode::SECTION:
+                // syncFromEngine reads CC values from engine into rows (cheap).
+                // draw() only repaints rows whose value changed (dirty-flag gated).
                 _section.syncFromEngine();
                 _section.draw();
                 break;
 
             case Mode::BROWSER:
-                // PresetBrowser manages its own dirty/partial redraw internally
                 _browser.draw(_display);
                 break;
 
@@ -132,16 +160,18 @@ public:
     }
 
     // =========================================================================
-    // pollInputs() — call at >= 100 Hz from loop()
+    // pollInputs() — call at >= 100 Hz from loop().
     // =========================================================================
     void pollInputs(HardwareInterface_MicroDexed& hw, SynthEngine& synth) {
         _synthRef = &synth;
 
+        // Touch input (polls the FT6206 via I2C)
         if (_touchOk) {
             _touch.update();
             _handleTouch(synth);
         }
 
+        // Encoder deltas and button presses
         using HW = HardwareInterface_MicroDexed;
         const int  dL = hw.getEncoderDelta(HW::ENC_LEFT);
         const int  dR = hw.getEncoderDelta(HW::ENC_RIGHT);
@@ -151,27 +181,23 @@ public:
         switch (_mode) {
 
             case Mode::HOME:
-                if (dL)                   _home.onEncoderDelta(dL);
+                if (dL)                    _home.onEncoderDelta(dL);
                 if (bL == HW::PRESS_SHORT) _home.onEncoderPress();
                 if (bL == HW::PRESS_LONG)  _setMode(Mode::SCOPE_FULL);
                 break;
 
             case Mode::SECTION:
-                if (_section.isEntryOpen()) break;
-                if (dL)                   _section.onEncoderLeft(dL);
-                if (dR)                   _section.onEncoderRight(dR);
+                if (_section.isEntryOpen()) break;  // entry overlay eats all input
+                if (dL)                    _section.onEncoderLeft(dL);
+                if (dR)                    _section.onEncoderRight(dR);
                 if (bL == HW::PRESS_SHORT) _section.onBackPress();
                 if (bR == HW::PRESS_LONG)  _section.onEditPress();
                 break;
 
             case Mode::BROWSER:
-                // Left encoder: scroll the preset list
-                if (dL) _browser.onEncoder(dL);
-
-                // Left short press: confirm and load selected preset
+                if (dL)                    _browser.onEncoder(dL);
                 if (bL == HW::PRESS_SHORT) _browser.onEncoderPress();
-
-                // Left long press or right short press: cancel, back to HOME
+                // Left long or right short: cancel browser, back to HOME
                 if (bL == HW::PRESS_LONG || bR == HW::PRESS_SHORT) {
                     _browser.close();
                     _goHome();
@@ -179,45 +205,42 @@ public:
                 break;
 
             case Mode::SCOPE_FULL:
+                // Any button returns to HOME
                 if (bL != HW::PRESS_NONE || bR != HW::PRESS_NONE) _goHome();
                 break;
         }
     }
 
     // =========================================================================
-    // syncFromEngine() — call after preset load to force repaint
+    // syncFromEngine() — force repaint after preset load.
     // =========================================================================
     void syncFromEngine(SynthEngine& synth) {
         if (_mode == Mode::SECTION) _section.syncFromEngine();
         _home.markFullRedraw();
     }
 
-    // =========================================================================
-    // setCurrentPresetIdx() — call after loading any preset so the browser
-    // knows which entry to pre-select when opened next time.
-    // =========================================================================
     void setCurrentPresetIdx(int idx) { _currentPresetIdx = idx; }
     int  getCurrentPresetIdx()  const { return _currentPresetIdx; }
 
-    // Compatibility stubs — match UIManager_MicroDexed public API
-    void setPage(int)              {}
-    int  getCurrentPage()  const   { return 0; }
-    void selectParameter(int)      {}
-    int  getSelectedParameter()    { return 0; }
-    void setParameterLabel(int, const char*) {}
+    // Compatibility stubs (match UIManager_MicroDexed public API)
+    void setPage(int)                           {}
+    int  getCurrentPage()             const     { return 0; }
+    void selectParameter(int)                   {}
+    int  getSelectedParameter()                 { return 0; }
+    void setParameterLabel(int, const char*)    {}
 
 private:
-    static UIManager_TFT* _instance;
+    static UIManager_TFT* _instance;  // singleton for static callbacks
 
     // -------------------------------------------------------------------------
-    // _setMode() — clear screen and switch mode
+    // _setMode() — screen clear and mode switch.
     // -------------------------------------------------------------------------
     void _setMode(Mode m) {
         if (m == _mode) return;
         _mode = m;
         _display.fillScreen(0x0000);
         if (m == Mode::HOME)       _home.markFullRedraw();
-        if (m == Mode::SCOPE_FULL) _scopeFullFirstFrame = true;  // redraw chrome on first frame
+        if (m == Mode::SCOPE_FULL) _scopeFullFirstFrame = true;
     }
 
     void _goHome() {
@@ -226,47 +249,37 @@ private:
     }
 
     // -------------------------------------------------------------------------
-    // _openSection() — called when a home-screen tile is tapped.
-    //   If the section is the PRESETS tile (sectionIsBrowser() == true),
-    //   open the PresetBrowser instead of SectionScreen.
+    // _openSection() — tile tap handler.
+    //   PRESETS tile (sectionIsBrowser() == true): opens PresetBrowser.
+    //   All others: opens SectionScreen.
     // -------------------------------------------------------------------------
     void _openSection(int idx) {
         if (idx < 0 || idx >= SECTION_COUNT || !_synthRef) return;
         _activeSect = idx;
-
         const SectionDef& sect = kSections[idx];
 
-        if (sectionIsBrowser(sect)) {
-            // --- PRESETS tile: open PresetBrowser ---
-            _display.fillScreen(0x0000);
+        _display.fillScreen(0x0000);
 
-            // Pass a static callback so the browser can load the patch and
-            // return us to HOME.  The callback is a free function captured via
-            // the static _instance pointer (same pattern used for all callbacks).
+        if (sectionIsBrowser(sect)) {
+            // PRESETS tile — open the preset browser modal
             _browser.open(_synthRef, _currentPresetIdx,
                 [](int globalIdx) {
                     if (!_instance) return;
-                    // Load the selected preset into the engine
                     Presets::presets_loadByGlobalIndex(*_instance->_synthRef, globalIdx);
-                    // Remember which preset is now active
                     _instance->_currentPresetIdx = globalIdx;
-                    // Sync any section screens
                     _instance->syncFromEngine(*_instance->_synthRef);
-                    // Return to home (browser is already closed by PresetBrowser)
                     _instance->_goHome();
                 });
             _setMode(Mode::BROWSER);
-
         } else {
-            // --- Normal synth section: open SectionScreen ---
-            _display.fillScreen(0x0000);
+            // Normal synth section — open parameter screen
             _section.open(sect, *_synthRef);
             _setMode(Mode::SECTION);
         }
     }
 
     // -------------------------------------------------------------------------
-    // _handleTouch() — route touch events to the active mode's handler
+    // _handleTouch() — route gesture to active mode handler.
     // -------------------------------------------------------------------------
     void _handleTouch(SynthEngine& synth) {
         const TouchInput::Gesture g = _touch.getGesture();
@@ -279,18 +292,16 @@ private:
                     _home.onTouch(p.x, p.y);
                     if (_home.isScopeTapped()) _setMode(Mode::SCOPE_FULL);
                 }
-                if (g == TouchInput::GESTURE_HOLD)    _setMode(Mode::SCOPE_FULL);
-                if (!_touch.isTouched())               _home.onTouchRelease(p.x, p.y);
+                if (g == TouchInput::GESTURE_HOLD)   _setMode(Mode::SCOPE_FULL);
+                if (!_touch.isTouched())              _home.onTouchRelease(p.x, p.y);
                 break;
 
             case Mode::SECTION:
-                if (g == TouchInput::GESTURE_TAP)       _section.onTouch(p.x, p.y);
+                if (g == TouchInput::GESTURE_TAP)        _section.onTouch(p.x, p.y);
                 if (g == TouchInput::GESTURE_SWIPE_LEFT) _section.onBackPress();
                 break;
 
             case Mode::BROWSER:
-                // PresetBrowser.onTouch() returns true if it consumed the event.
-                // If the browser closes itself (CANCEL or load), we go home.
                 if (g == TouchInput::GESTURE_TAP) {
                     _browser.onTouch(p.x, p.y);
                     if (!_browser.isOpen()) _goHome();
@@ -304,52 +315,56 @@ private:
     }
 
     // -------------------------------------------------------------------------
-    // _drawFullScope() — full-screen oscilloscope view
+    // _drawFullScope() — full-screen oscilloscope.
     //
-    // PERF FIX: Do NOT call fillScreen() here.  The header and footer are
-    // static — drawn once on mode entry via _setMode().  Only the waveform
-    // area (y=22..219) needs clearing each frame.  fillScreen at 30 fps
-    // writes 153,600 bytes of SPI per frame for no visual benefit.
-    //
-    // _scopeFullFirstFrame tracks whether the static chrome has been drawn
-    // so we skip it on subsequent frames.
+    // PERF: Static chrome (header/footer text) drawn once on mode entry only.
+    //       Only the waveform band (y=20..219) is cleared each frame.
+    //       This saves ~100,000 SPI bytes per frame vs fillScreen().
     // -------------------------------------------------------------------------
-    void _drawFullScope(SynthEngine& synth) {
-        // Draw static chrome only on the first frame after entering SCOPE_FULL
+    void _drawFullScope(SynthEngine& /*synth*/) {
+
+        // Draw static chrome only on first frame after entering SCOPE_FULL
         if (_scopeFullFirstFrame) {
             _scopeFullFirstFrame = false;
+
             // Header
             _display.fillRect(0, 0, 320, 20, 0x1082);
-            _display.setTextSize(1); _display.setTextColor(0x07FF);
-            _display.setCursor(4, 6); _display.print("OSCILLOSCOPE");
-            // Footer (static hint text)
+            _display.setTextSize(1);
+            _display.setTextColor(0x07FF);
+            _display.setCursor(4, 6);
+            _display.print("OSCILLOSCOPE");
+
+            // Footer
             _display.fillRect(0, 220, 320, 20, 0x1082);
-            _display.setTextSize(1); _display.setTextColor(0x4208);
-            _display.setCursor(4, 226); _display.print("TAP OR PRESS ANY BUTTON TO RETURN");
+            _display.setTextSize(1);
+            _display.setTextColor(0x4208);
+            _display.setCursor(4, 226);
+            _display.print("TAP OR PRESS ANY BUTTON TO RETURN");
         }
 
-        // CPU% in header updates every frame — clear just that region
+        // CPU% in header — update every frame (small region only)
         {
             char cpuBuf[12];
             snprintf(cpuBuf, sizeof(cpuBuf), "CPU:%d%%", (int)AudioProcessorUsageMax());
             const int16_t cpuX = 320 - (int16_t)(strlen(cpuBuf) * 6) - 4;
-            _display.fillRect(cpuX - 2, 2, 320 - cpuX + 2, 16, 0x1082);  // clear CPU% region only
+            _display.fillRect(cpuX - 2, 2, 320 - cpuX + 2, 16, 0x1082);
             _display.setTextColor(0x7BEF);
             _display.setCursor(cpuX, 6);
             _display.print(cpuBuf);
         }
 
-        // Clear only the waveform area between header and footer (NOT the whole screen)
+        // Clear ONLY the waveform area — not the whole screen
         _display.fillRect(0, 20, 320, 200, 0x0000);
 
-        // Waveform area (adjusted for new header/footer offsets)
+        // Waveform area
         static int16_t buf[512];
-        const uint16_t n   = scopeTap.snapshot(buf, 512);
-        const int16_t  wy  = 22, wh = 198, ww = 290;
+        const uint16_t n  = scopeTap.snapshot(buf, 512);
+        const int16_t  wy = 22, wh = 198, ww = 288;
+
         _display.drawRect(0, wy, ww, wh, 0x1082);
 
         if (n >= 64) {
-            // Trigger: find first rising zero-crossing
+            // Find rising zero-crossing for stable trigger
             int trig = n / 4;
             for (int i = n / 4; i < (int)n - 64; ++i) {
                 if (buf[i] <= 0 && buf[i + 1] > 0) { trig = i; break; }
@@ -363,34 +378,37 @@ private:
                 const int base = trig + col * spp;
                 if (base >= (int)n) break;
 
-                // Average samples within this pixel column
+                // Box-filter: average spp samples per display column
                 int32_t acc = 0; int cnt = 0;
                 for (int s = 0; s < spp && (base + s) < (int)n; ++s) {
                     acc += buf[base + s]; cnt++;
                 }
                 const int16_t samp = cnt ? (int16_t)(acc / cnt) : 0;
+
+                // Map ±32767 to display y, 80% of height so clipping is visible
                 int cy = midY - (int)((int32_t)samp * (wh - 4) * 4 / (32767 * 5));
                 cy = constrain(cy, wy + 1, wy + wh - 1);
+
                 if (col > 0) _display.drawLine(px, py, col + 1, cy, 0x07E0);
                 px = col + 1; py = cy;
             }
-            _display.drawFastHLine(1, midY, ww - 2, 0x2104);  // centre line
+            _display.drawFastHLine(1, midY, ww - 2, 0x2104);   // zero reference line
         }
     }
 
     // ---- Members ------------------------------------------------------------
-    ILI9341_t3n    _display;
-    TouchInput     _touch;
-    bool           _touchOk;
-    Mode           _mode;
-    int            _activeSect;
-    uint32_t       _lastFrame;
-    SynthEngine*   _synthRef;
-    HomeScreen     _home;
-    SectionScreen  _section;
-    PresetBrowser  _browser;       // preset browser modal (was declared but unused)
-    int            _currentPresetIdx;  // global index of the currently loaded preset
-    bool           _scopeFullFirstFrame = true;  // true = draw static chrome on next scope frame
+    ILI9341_t3n   _display;
+    TouchInput    _touch;
+    bool          _touchOk;
+    Mode          _mode;
+    int           _activeSect;
+    uint32_t      _lastFrame;
+    SynthEngine*  _synthRef;
+    HomeScreen    _home;
+    SectionScreen _section;
+    PresetBrowser _browser;
+    int           _currentPresetIdx;
+    bool          _scopeFullFirstFrame;
 };
 
 UIManager_TFT* UIManager_TFT::_instance = nullptr;

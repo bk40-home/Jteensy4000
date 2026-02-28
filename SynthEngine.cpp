@@ -64,8 +64,8 @@ SynthEngine::SynthEngine()
     }
     
     // Final mixer (combines A and B) - gain 0.5 prevents clipping
-    _voiceMixerFinal.gain(0, 0.5f);  // Sub-mixer A
-    _voiceMixerFinal.gain(1, 0.5f);  // Sub-mixer B
+    _voiceMixerFinal.gain(0, 0.1f);  // Sub-mixer A
+    _voiceMixerFinal.gain(1, 0.1f);  // Sub-mixer B
     _voiceMixerFinal.gain(2, 0.0f);  // Unused
     _voiceMixerFinal.gain(3, 0.0f);  // Unused
 

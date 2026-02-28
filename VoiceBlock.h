@@ -238,7 +238,7 @@ private:
     float _noiseMix = 0.0f;
 
     // Limit mixers for headroom
-    float _on = 0.8f;
+    float _on = 0.9f;
     float _clampedLevel(float level);
 
     AudioConnection* _patchCables[15];

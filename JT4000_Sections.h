@@ -3,16 +3,19 @@
 // Section table — links JE-8086 front-panel groups to UIPage page indices.
 //
 // A "section" is a named group of related UIPages shown as a tile on the home
-// screen.  Tapping a tile opens a SectionScreen listing all pages in that group.
+// screen.  Tapping a tile opens a SectionScreen listing all pages in that group,
+// EXCEPT for special sections that use the sentinel page index SECTION_PAGE_BROWSER
+// (0xFF) — these open the PresetBrowser modal instead of a SectionScreen.
 //
 // Mapping to JE-8086 black-bordered panel groups:
-//   OSC 1  → OSC1 Core / Mix+Saw / DC+Ring / Feedback
-//   OSC 2  → OSC2 Core / Mix+Saw / DC+Ring / Feedback + Sources mixer
-//   FILTER → Filter main / Mod / 2-pole / Xpander
-//   ENV    → Amp ADSR / Filter ADSR
-//   LFO    → LFO1 / LFO2 / Sync modes
-//   FX     → JPFX Tone+Mod / Mod params / Delay / Reverb / Mix
-//   GLOBAL → Performance / Arb waveforms / BPM clock
+//   OSC 1   → OSC1 Core / Mix+Saw / DC+Ring / Feedback
+//   OSC 2   → OSC2 Core / Mix+Saw / DC+Ring / Feedback + Sources mixer
+//   FILTER  → Filter main / Mod / 2-pole / Xpander
+//   ENV     → Amp ADSR / Filter ADSR
+//   LFO     → LFO1 / LFO2 / Sync modes
+//   FX      → JPFX Tone+Mod / Mod params / Delay / Reverb / Mix
+//   GLOBAL  → Performance / Arb waveforms / BPM clock
+//   PRESETS → opens PresetBrowser (no UIPage — sentinel 0xFF)
 //
 // No audio or engine dependencies — include freely.
 // =============================================================================
@@ -21,10 +24,15 @@
 #include <Arduino.h>
 #include "JT4000Colours.h"
 
+// Sentinel: a pages[] entry of SECTION_PAGE_BROWSER means
+// "tapping this section opens the PresetBrowser, not a SectionScreen".
+static constexpr uint8_t SECTION_PAGE_BROWSER = 0xFF;
+
 // Max UIPages per section (increase if needed)
 static constexpr int SECTION_MAX_PAGES = 6;
-// Total sections shown on home screen
-static constexpr int SECTION_COUNT     = 7;
+
+// Total sections shown on home screen (7 synth sections + 1 Presets tile)
+static constexpr int SECTION_COUNT = 8;
 
 // -----------------------------------------------------------------------------
 // SectionDef — one section entry
@@ -32,33 +40,42 @@ static constexpr int SECTION_COUNT     = 7;
 struct SectionDef {
     const char* label;                        // short name shown on tile (≤8 chars)
     uint16_t    colour;                       // RGB565 accent colour
-    uint8_t     pages[SECTION_MAX_PAGES];     // UIPage indices (255 = unused slot)
-    uint8_t     pageCount;                    // number of valid pages
+    uint8_t     pages[SECTION_MAX_PAGES];     // UIPage indices, 0xFF = special action
+    uint8_t     pageCount;                    // number of valid pages (0 for browser tile)
 };
 
+// Helper: returns true if this section should open the PresetBrowser
+inline bool sectionIsBrowser(const SectionDef& s) {
+    return s.pageCount == 0 || s.pages[0] == SECTION_PAGE_BROWSER;
+}
+
 // -----------------------------------------------------------------------------
-// Section table — 7 sections covering all 26 UIPages (0..25)
+// Section table — 8 sections covering all 26 UIPages (0..25) + Presets tile
 // -----------------------------------------------------------------------------
 static const SectionDef kSections[SECTION_COUNT] = {
 
     // 0 — OSC 1  (pages 0-3)
-    { "OSC 1",  YELLOW,    { 0, 1, 2, 3,   255, 255 }, 4 },
+    { "OSC 1",   YELLOW, { 0, 1, 2, 3, 255, 255 }, 4 },
 
     // 1 — OSC 2  (pages 4-8 inc. Sources mixer on page 8)
-    { "OSC 2",  YELLOW,    { 4, 5, 6, 7, 8, 255 }, 5 },
+    { "OSC 2",   YELLOW, { 4, 5, 6, 7, 8, 255 },   5 },
 
     // 2 — FILTER (pages 9-12)
-    { "FILTER", YELLOW, { 9, 10, 11, 12, 255, 255 }, 4 },
+    { "FILTER",  YELLOW, { 9, 10, 11, 12, 255, 255 }, 4 },
 
     // 3 — ENV    (pages 13-14)
-    { "ENV",    YELLOW,    { 13, 14, 255, 255, 255, 255 }, 2 },
+    { "ENV",     YELLOW, { 13, 14, 255, 255, 255, 255 }, 2 },
 
     // 4 — LFO   (pages 15-17)
-    { "LFO",    YELLOW,    { 15, 16, 17, 255, 255, 255 }, 3 },
+    { "LFO",     YELLOW, { 15, 16, 17, 255, 255, 255 }, 3 },
 
     // 5 — FX    (pages 18-22)
-    { "FX",     YELLOW,     { 18, 19, 20, 21, 22, 255 }, 5 },
+    { "FX",      YELLOW, { 18, 19, 20, 21, 22, 255 }, 5 },
 
     // 6 — GLOBAL (pages 23-25)
-    { "GLOBAL", YELLOW, { 23, 24, 25, 255, 255, 255 }, 3 },
+    { "GLOBAL",  YELLOW, { 23, 24, 25, 255, 255, 255 }, 3 },
+
+    // 7 — PRESETS: sentinel 0xFF → UIManager opens PresetBrowser instead of SectionScreen
+    //    pageCount = 0 signals "no pages, this is a browser tile"
+    { "PRESETS", 0xF800, { SECTION_PAGE_BROWSER, 255, 255, 255, 255, 255 }, 0 },
 };

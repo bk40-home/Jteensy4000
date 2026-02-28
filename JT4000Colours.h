@@ -35,7 +35,7 @@
     #define COLOUR_ENV           0xF81F   // magenta — envelope params
     #define COLOUR_LFO           0xFD20   // orange  — LFO params
     #define COLOUR_FX            0x07FF   // cyan    — FX params
-    #define COLOUR_GLOBAL        0x0000   // light grey — global params
+    #define COLOUR_GLOBAL        0x7BEF   // mid-grey — global params
     #define COLOUR_HEADER_BG     0x4208   // dark grey  — header/footer bg
     #define COLOUR_BORDER        0x2104   // darker grey — separators
 

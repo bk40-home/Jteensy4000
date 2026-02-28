@@ -197,7 +197,9 @@ void OscillatorBlock::setShapeDcAmp(float amp){
 
 void OscillatorBlock::noteOn(float freq, float velocity) {
     _targetFreq = freq;
-    float amp = velocity / 127.0f;
+    // velocity is already normalised 0.0-1.0 by handleNoteOn() in the main sketch.
+    // Do NOT divide by 127 here - that was causing -42 dB output (0.8% amplitude).
+    float amp = velocity;
 
     if (_glideEnabled && _glideTimeMs > 0.0f) {
         _glideActive = true;
