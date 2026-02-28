@@ -85,8 +85,8 @@ void VoiceBlock::setBaseFrequency(float freq) {
 void VoiceBlock::setAmplitude(float amp) {
     _osc1.setAmplitude(amp);
     _osc2.setAmplitude(amp);
-    _subOsc.setAmplitude(amp);
-    _noise.amplitude(amp);
+    _subOsc.setAmplitude(_subMix);
+    _noise.amplitude(_noiseMix);
 }
 
 float VoiceBlock::_clampedLevel(float level){

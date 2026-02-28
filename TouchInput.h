@@ -80,6 +80,14 @@ public:
     Gesture getGesture();
 
     /**
+     * The screen position where the touch that produced the last gesture began.
+     * Use this (rather than getTouchPoint) for swipe hit-testing: the finger
+     * started on the target widget, then moved up/down to produce a swipe.
+     * getTouchPoint() returns the lifted position, which may be off the widget.
+     */
+    Point getGestureStart() const { return _gestureStart; }
+
+    /**
      * Returns true if the current touch point is inside the given rect.
      * (x, y) = top-left corner, (w, h) = dimensions.
      */

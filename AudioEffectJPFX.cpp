@@ -586,10 +586,10 @@ void AudioEffectJPFX::update(void)
     
     // Update tone filter coefficients if needed
     if (toneDirty) {
-        computeShelfCoeffs(bassFilterL, 100.0f, targetBassGain, false);
-        computeShelfCoeffs(bassFilterR, 100.0f, targetBassGain, false);
-        computeShelfCoeffs(trebleFilterL, 4000.0f, targetTrebleGain, true);
-        computeShelfCoeffs(trebleFilterR, 4000.0f, targetTrebleGain, true);
+        computeShelfCoeffs(bassFilterL, 250.0f, targetBassGain, false);
+        computeShelfCoeffs(bassFilterR, 250.0f, targetBassGain, false);
+        computeShelfCoeffs(trebleFilterL, 8000.0f, targetTrebleGain, true);
+        computeShelfCoeffs(trebleFilterR, 8000.0f, targetTrebleGain, true);
         toneDirty = false;
     }
     
