@@ -67,7 +67,7 @@ struct TFTTheme {
     // ---- Widget chrome ----
     uint16_t radioBorder   = 0xC618;            // radio button outline (pure grey — same in RGB/BGR)
     uint16_t radioFill     = COLOUR_SELECTED;   // radio button filled indicator (amber)
-    uint16_t buttonNormal  = 0x29EB;            // un-pressed button  #2D3C5F dark blue-grey
+    uint16_t buttonNormal  = 0x59E5;            // #283C5F dark blue-grey (BGR565)
     uint16_t buttonPress   = COLOUR_ACCENT;     // pressed button flash (red)
     uint16_t buttonText    = COLOUR_TEXT;       // button label text
     uint16_t accent        = COLOUR_ACCENT;     // alerts, cancel button (red)
@@ -76,14 +76,14 @@ struct TFTTheme {
     uint16_t barTrack      = COLOUR_BORDER;     // empty track behind value bar
 
     // ---- Keypad / numeric entry ----
-    uint16_t keyBg         = 0x29AA;            // numpad key background  #283755 dark navy
+    uint16_t keyBg         = 0x51A5;            // #283755 key bg — BGR565 pre-swapped
     uint16_t keyText       = COLOUR_TEXT;       // numpad key label text
-    uint16_t keyBorder     = COLOUR_HEADER_BG;  // numpad key divider
-    uint16_t keyConfirm    = 0x1405;            // confirm key  #148228 green
+    uint16_t keyBorder     = 0x7A87;            // #3A5078 key divider — BGR565
+    uint16_t keyConfirm    = 0x2C02;            // #148228 confirm green — BGR565
     uint16_t keyCancel     = COLOUR_ACCENT;     // cancel key (red)
-    uint16_t keyBackspace  = 0x424B;            // backspace key  #464B5A mid grey
-    uint16_t entryBg       = 0x0863;            // value entry display box  #0A0F1E very dark navy
-    uint16_t entryText     = COLOUR_TEXT;       // value entry text
+    uint16_t keyBackspace  = 0x5A48;            // #464B5A backspace grey — BGR565
+    uint16_t entryBg       = 0x1861;            // #0A0F1E entry field bg — BGR565
+    uint16_t entryText     = 0xFFFF;            // #FFFFFF entered digits white
 };
 
 // Global theme instance — defined once in TFTWidgets.cpp.
@@ -367,9 +367,15 @@ private:
     static constexpr int KEY_Height    = 36;
     static constexpr int KEY_GAP  = 4;
     static constexpr int BR_Y     = KP_Y + 3 * (KEY_Height + KEY_GAP);
+    // Bottom row without sign key (minVal >= 0): [0:90] [<-:90] [OK:106]
     static constexpr int BR0_Width    = 90;
     static constexpr int BRBK_Width   = 90;
     static constexpr int BRCO_Width   = 106;
+    // Bottom row with sign key (minVal < 0): [0:60] [±:60] [<-:72] [OK:96]
+    static constexpr int BRS_0_Width  = 60;   // "0" when sign key present
+    static constexpr int BRS_S_Width  = 60;   // "±" sign toggle key
+    static constexpr int BRS_BK_Width = 72;   // "<-" backspace (sign row)
+    static constexpr int BRS_CO_Width = 96;   // "OK" confirm (sign row)
     static constexpr int CANCEL_X = 240;
     static constexpr int CANCEL_Y = 4;
     static constexpr int CANCEL_Width = 75;
@@ -394,6 +400,7 @@ private:
     // ---- Numeric actions ----
     void _appendDigit(int d);
     void _backspace();
+    void _toggleSign();   // flip negative flag; only active when minVal < 0
     void _confirm();
 
     // ---- Enum helpers ----
@@ -409,6 +416,7 @@ private:
     char _digitBuf[ENTRY_MAX_DIGITS];
     int  _digitCount;
     bool _editing;      // false = showing hint; true = user has typed
+    bool _negative;     // true when the entered value should be negated
 
     int         _selectedEnum;
     int         _numEnumOptions;

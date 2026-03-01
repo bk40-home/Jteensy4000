@@ -235,6 +235,12 @@ void SynthEngine::noteOn(byte note, float velocity) {
     float freq = 440.0f * powf(2.0f, (note - 69) / 12.0f);
     _lastNoteFreq = freq;
 
+    // Limit per-voice amplitude to 0.95 — leaves headroom when multiple
+    // voices sound simultaneously.  With 8 voices all at 1.0 the summed
+    // signal would clip the final mixer; 0.95 keeps worst-case < full scale.
+    static constexpr float MAX_VOICE_VELOCITY = 0.95f;
+    if (velocity > MAX_VOICE_VELOCITY) velocity = MAX_VOICE_VELOCITY;
+
     if (_noteToVoice[note] != VOICE_NONE) {
         int v = _noteToVoice[note];
         _voices[v].noteOn(freq, velocity);

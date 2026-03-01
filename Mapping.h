@@ -39,18 +39,71 @@ namespace JT4000Map {
     }
 
  
+    // ---------------------------------------------------------------------------
+    // Preset byte→CC mapping slot
+    //
+    // byte1 : 1-indexed byte position in the 64-byte JP-8000 SysEx patch block.
+    // cc    : JT-4000 CC number to dispatch (see CCDefs.h).
+    // xf    : transform applied to the raw byte before sending as CC.
+    //
+    // Derived from JT4000_Parsed_Microsphere_Bank_CHUNKED_ENUMS.csv.
+    // Bytes not listed here are either unused or carry non-CC data (patch name,
+    // category).  All bytes are 0-99 in the Microsphere bank; Scale_0_99_to_127
+    // is used for any parameter where the raw range is 0..99 and needs mapping
+    // to full 0..127 CC range.  Enum bytes use Enum_Direct (value sent as-is).
+    // ---------------------------------------------------------------------------
     struct Slot { uint8_t byte1; uint8_t cc; Xform xf; };
 
-    // Example subset; keep your existing table content as needed.
     inline constexpr Slot kSlots[] = {
-        {  1, CC::OSC1_WAVE, Xform::Enum_Direct },
-        {  2, CC::OSC2_WAVE, Xform::Enum_Direct },
-        {  5, CC::OSC1_PITCH_OFFSET, Xform::Raw_0_127 },
-        {  6, CC::OSC1_FINE_TUNE,    Xform::Raw_0_127 },
-        {  7, CC::OSC2_PITCH_OFFSET, Xform::Raw_0_127 },
-        {  8, CC::OSC2_FINE_TUNE,    Xform::Raw_0_127 },
-        {  9, CC::OSC1_MIX,          Xform::Raw_0_127 },
-        // ... keep the rest of your slots as before ...
+        // --- Oscillators -------------------------------------------------------
+        {  1, CC::OSC1_WAVE,          Xform::Enum_Direct        }, // OSC1 waveform index
+        {  2, CC::OSC2_WAVE,          Xform::Scale_0_99_to_127  }, // OSC2 wave (raw 0-99 → CC 0-127)
+        {  3, CC::OSC1_MIX,           Xform::Scale_0_99_to_127  }, // OSC1 additional (PWM/Detune/FM)
+        {  4, CC::OSC2_MIX,           Xform::Scale_0_99_to_127  }, // OSC2 additional
+        {  5, CC::OSC1_PITCH_OFFSET,  Xform::Scale_0_99_to_127  }, // OSC1 coarse (semitones)
+        {  6, CC::OSC1_FINE_TUNE,     Xform::Scale_0_99_to_127  }, // OSC1 fine tune (cents)
+        {  7, CC::OSC2_PITCH_OFFSET,  Xform::Scale_0_99_to_127  }, // OSC2 coarse
+        {  8, CC::OSC2_FINE_TUNE,     Xform::Scale_0_99_to_127  }, // OSC2 fine tune
+        {  9, CC::OSC_MIX_BALANCE,    Xform::Scale_0_99_to_127  }, // OSC1/2 balance
+
+        // --- VCF envelope ------------------------------------------------------
+        { 15, CC::FILTER_ENV_ATTACK,  Xform::Scale_0_99_to_127  }, // VCF attack
+        { 16, CC::FILTER_ENV_DECAY,   Xform::Scale_0_99_to_127  }, // VCF decay
+        { 17, CC::FILTER_ENV_SUSTAIN, Xform::Scale_0_99_to_127  }, // VCF sustain
+        { 18, CC::FILTER_ENV_RELEASE, Xform::Scale_0_99_to_127  }, // VCF release
+
+        // --- VCA envelope ------------------------------------------------------
+        { 19, CC::AMP_ATTACK,         Xform::Scale_0_99_to_127  }, // VCA attack
+        { 20, CC::AMP_DECAY,          Xform::Scale_0_99_to_127  }, // VCA decay
+        { 21, CC::AMP_SUSTAIN,        Xform::Scale_0_99_to_127  }, // VCA sustain
+        { 22, CC::AMP_RELEASE,        Xform::Scale_0_99_to_127  }, // VCA release
+
+        // --- VCF amount --------------------------------------------------------
+        { 23, CC::FILTER_ENV_AMOUNT,  Xform::Scale_0_99_to_127  }, // VCF env amount
+
+        // --- Ring modulator ----------------------------------------------------
+        // Byte 44: ring switch — treat as boolean (0=off, non-zero=on)
+        // Byte 45: ring mix amount
+        { 44, CC::RING1_MIX,          Xform::Bool_0_127         }, // ring switch on/off
+        { 45, CC::RING2_MIX,          Xform::Scale_0_99_to_127  }, // ring amount
+
+        // --- Portamento --------------------------------------------------------
+        // Byte 46: mode enum 0=Portamento 1=Glissando → bool enable (>0 = glide on)
+        // Byte 47: amount (0=off, 1-99=glide time)
+        { 46, CC::GLIDE_ENABLE,       Xform::Bool_0_127         }, // porta/gliss enable
+        { 47, CC::GLIDE_TIME,         Xform::Scale_0_99_to_127  }, // porta amount
+
+        // --- LFO 1 -------------------------------------------------------------
+        { 48, CC::LFO1_WAVEFORM,      Xform::Enum_Direct        }, // LFO1 waveform
+        { 50, CC::LFO1_FREQ,          Xform::Scale_0_99_to_127  }, // LFO1 speed
+        { 51, CC::LFO1_DEPTH,         Xform::Scale_0_99_to_127  }, // LFO1 amount
+        { 54, CC::LFO1_DESTINATION,   Xform::Enum_Direct        }, // LFO1 destination
+
+        // --- LFO 2 -------------------------------------------------------------
+        { 49, CC::LFO2_WAVEFORM,      Xform::Enum_Direct        }, // LFO2 waveform
+        { 52, CC::LFO2_FREQ,          Xform::Scale_0_99_to_127  }, // LFO2 speed
+        { 53, CC::LFO2_DEPTH,         Xform::Scale_0_99_to_127  }, // LFO2 amount
+        // Note: LFO2 destination byte not present in CSV — omitted.
     };
 
     // ----- Shared curves -----

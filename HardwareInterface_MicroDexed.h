@@ -89,12 +89,12 @@ private:
     //   GPIO6/7 ICR register overflow bug corrupts memory on Teensy 4.1 for
     //   pins >= 31. Polled decode works correctly on all pins.
     // -------------------------------------------------------------------------
-    static constexpr uint8_t ENC_L_A_PIN  = 32;
-    static constexpr uint8_t ENC_L_B_PIN  = 31;
+    static constexpr uint8_t ENC_L_A_PIN  = 31;
+    static constexpr uint8_t ENC_L_B_PIN  = 32;
     static constexpr uint8_t ENC_L_SW_PIN = 30;
 
-    static constexpr uint8_t ENC_R_A_PIN  = 28;
-    static constexpr uint8_t ENC_R_B_PIN  = 29;
+    static constexpr uint8_t ENC_R_A_PIN  = 29;
+    static constexpr uint8_t ENC_R_B_PIN  = 28;
     static constexpr uint8_t ENC_R_SW_PIN = 25;
 
     // -------------------------------------------------------------------------

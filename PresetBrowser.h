@@ -63,24 +63,25 @@ namespace PBLayout {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Colour palette (RGB565)
+// Colour palette — BGR565 pre-swapped for ILI9341 BGR panel
+// Formula: send = ((B>>3)<<11)|((G>>2)<<5)|(R>>3)
 // ─────────────────────────────────────────────────────────────────────────────
 namespace PBColour {
-    // All values standard RGB565 — panel's BGR handling is done in hardware.
-    static constexpr uint16_t BG        = COLOUR_BACKGROUND;      // screen background
-    static constexpr uint16_t HDR_BG    = 0x10E6;  // #141C32 dark navy header
+    // All values are BGR565 — R and B are pre-swapped to compensate for MADCTL_BGR.
+    static constexpr uint16_t BG        = COLOUR_BACKGROUND;      // #101428 bg
+    static constexpr uint16_t HDR_BG    = 0x30E2;  // #141C32 dark navy header
     static constexpr uint16_t HDR_TEXT  = COLOUR_TEXT;
-    static constexpr uint16_t ROW_BG    = COLOUR_HEADER_BG;       // dark panel row
-    static constexpr uint16_t ROW_ALT   = 0x10A4;  // #121624 slightly lighter alternate row
-    static constexpr uint16_t SEL_BG    = 0x04B9;  // #0096C8 teal-cyan selection bar
-    static constexpr uint16_t SEL_TEXT  = COLOUR_TEXT;            // white text on teal
-    static constexpr uint16_t ROW_TEXT  = 0xBE1A;  // #BEC3D2 light grey preset name
+    static constexpr uint16_t ROW_BG    = COLOUR_HEADER_BG;       // dark panel rows
+    static constexpr uint16_t ROW_ALT   = 0x30E2;  // #161C30 alt row slightly lighter
+    static constexpr uint16_t SEL_BG    = 0xCCA0;  // #0096C8 teal-cyan selection
+    static constexpr uint16_t SEL_TEXT  = 0xFFFF;  // white text on teal
+    static constexpr uint16_t ROW_TEXT  = 0xD617;  // #BEC3D2 light grey preset name
     static constexpr uint16_t IDX_TEXT  = COLOUR_TEXT_DIM;        // index number
-    static constexpr uint16_t FTR_BG    = 0x10E6;  // #141C32 dark navy footer (= HDR_BG)
-    static constexpr uint16_t BTN_BG    = 0x320C;  // #324164 dark blue-grey button
+    static constexpr uint16_t FTR_BG    = 0x30E2;  // #141C32 dark navy footer
+    static constexpr uint16_t BTN_BG    = 0x6206;  // #324164 dark blue-grey button
     static constexpr uint16_t BTN_TEXT  = COLOUR_TEXT;
     static constexpr uint16_t CANCEL_BG = COLOUR_ACCENT;          // red cancel
-    static constexpr uint16_t BORDER    = 0x29AA;  // #2D3750 steel separator
+    static constexpr uint16_t BORDER    = 0x51A5;  // #2D3750 steel separator
 }
 
 // =============================================================================

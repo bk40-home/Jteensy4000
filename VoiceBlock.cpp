@@ -44,11 +44,8 @@ VoiceBlock::VoiceBlock() : _osc1(true), _osc2(false)    // ← OSC1: supersaw en
 }
 
 void VoiceBlock::noteOn(float freq, float velocity) {
-    
-    Serial.printf("noteOn voice: freq %.1f velocity %.1f\n", freq, velocity);
     _isActive = true;
-    // Note: amplitude is set inside osc1/osc2.noteOn() from velocity.
-    // Do NOT call setAmplitude() here - it would be immediately overridden.
+    // Amplitude set inside osc noteOn() from velocity — do NOT call setAmplitude() here.
     _osc1.noteOn(freq, velocity);
     _osc2.noteOn(freq, velocity);
     _subOsc.setFrequency(freq);

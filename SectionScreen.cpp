@@ -4,6 +4,7 @@
 // =============================================================================
 
 #include "SectionScreen.h"
+#include "WaveForms.h"  // waveformListAll, waveLongNames, waveformFromCC, ccFromWaveform
 
 // Static context pointer — one SectionScreen active at a time
 SectionScreen* SectionScreen::_ctx = nullptr;
@@ -391,37 +392,66 @@ void SectionScreen::_openEntry(uint8_t cc) {
 // Private: enum entry
 // =============================================================================
 void SectionScreen::_openEnumEntry(uint8_t cc, const char* title) {
-    // Option tables — static so they outlive the lambda
-    static const char* kWave[]    = { "SINE","TRI","SQR","SAW","RSAW","SSAW","ARB" };
-    static const char* kLFOwave[] = { "SINE","TRI","SQR","SAW" };
-    static const char* kLFOdest[] = { "PITCH","FILTER","SHAPE","AMP" };
-    static const char* kSync[]    = { "Free","4bar","2bar","1bar",
+    // ----- Static option tables (must outlive the lambda callback) -----
+
+    // OSC waveforms — built from waveShortNames[] in WaveForms.h.
+    // numWaveformsAll (14) covers: SIN SAW SQR TRI ARB PLS rSAW S&H vTRI BLS rBLS BLSQ BLP SSAW
+    // Using waveLongNames gives nicer readability in the list picker.
+    // The list must be static const char* pointers; waveLongNames[] already is.
+    static const char* const* kWave   = waveLongNames;   // all 14 waveforms
+    static const int kWaveCount       = (int)numWaveformsAll;
+
+    // LFO waveforms — only the first 4 (Sine/Saw/Square/Triangle) are implemented
+    static const char* kLFOwave[] = { "Sine","Sawtooth","Square","Triangle" };
+
+    static const char* kLFOdest[] = { "Pitch","Filter","Shape","Amp" };
+
+    static const char* kSync[]    = { "Free","4 bar","2 bar","1 bar",
                                       "1/2","1/4","1/8","1/16",
                                       "1/4T","1/8T","1/16T","1/32T" };
     static const char* kClkSrc[]  = { "Internal","External" };
     static const char* kOnOff[]   = { "Off","On" };
     static const char* kBypass[]  = { "Active","Bypass" };
 
-    const char* const* opts  = kOnOff;
+    const char* const* opts = kOnOff;
     int                count = 2;
+
+    // For OSC waves: use waveformFromCC to find the current index
+    bool isOscWave = false;
 
     switch (cc) {
         case CC::OSC1_WAVE:
-        case CC::OSC2_WAVE:            opts = kWave;    count = 7;  break;
+        case CC::OSC2_WAVE:
+            opts      = kWave;
+            count     = kWaveCount;
+            isOscWave = true;
+            break;
         case CC::LFO1_WAVEFORM:
-        case CC::LFO2_WAVEFORM:        opts = kLFOwave; count = 4;  break;
+        case CC::LFO2_WAVEFORM:    opts = kLFOwave; count = 4;  break;
         case CC::LFO1_DESTINATION:
-        case CC::LFO2_DESTINATION:     opts = kLFOdest; count = 4;  break;
+        case CC::LFO2_DESTINATION: opts = kLFOdest; count = 4;  break;
         case CC::LFO1_TIMING_MODE:
         case CC::LFO2_TIMING_MODE:
-        case CC::DELAY_TIMING_MODE:    opts = kSync;    count = 12; break;
-        case CC::BPM_CLOCK_SOURCE:     opts = kClkSrc;  count = 2;  break;
-        case CC::FX_REVERB_BYPASS:     opts = kBypass;  count = 2;  break;
-        default:                       opts = kOnOff;   count = 2;  break;
+        case CC::DELAY_TIMING_MODE: opts = kSync;   count = 12; break;
+        case CC::BPM_CLOCK_SOURCE: opts = kClkSrc;  count = 2;  break;
+        case CC::FX_REVERB_BYPASS: opts = kBypass;  count = 2;  break;
+        default:                   opts = kOnOff;   count = 2;  break;
     }
 
-    // Map current CC value into list index
-    const int curIdx = (int)_synth->getCC(cc) * count / 128;
+    // Find the correct current index.
+    // For OSC waves we must search waveformListAll[] to find which entry the
+    // current CC decodes to — a simple linear scale would mismatch because the
+    // waveform indices are not evenly distributed across 0..127.
+    int curIdx;
+    if (isOscWave) {
+        WaveformType wt = waveformFromCC(_synth->getCC(cc));
+        curIdx = 0;
+        for (int i = 0; i < (int)numWaveformsAll; ++i) {
+            if (waveformListAll[i] == wt) { curIdx = i; break; }
+        }
+    } else {
+        curIdx = (int)_synth->getCC(cc) * count / 128;
+    }
 
     _pendingCC    = cc;
     _pendingCount = count;
@@ -430,9 +460,19 @@ void SectionScreen::_openEnumEntry(uint8_t cc, const char* title) {
         [](int idx) {
             if (!_ctx || !_ctx->_synth) return;
             SectionScreen* s = _ctx;
-            // Map selected index back to CC midpoint value
-            const uint8_t ccVal = (uint8_t)
-                ((idx * 128 + (128 / s->_pendingCount) / 2) / s->_pendingCount);
+            uint8_t ccVal;
+            // OSC wave: use ccFromWaveform() for exact, round-trip-safe mapping
+            if (s->_pendingCC == CC::OSC1_WAVE || s->_pendingCC == CC::OSC2_WAVE) {
+                if (idx >= 0 && idx < (int)numWaveformsAll) {
+                    ccVal = ccFromWaveform(waveformListAll[idx]);
+                } else {
+                    ccVal = 0;
+                }
+            } else {
+                // General enum: map index to CC midpoint
+                ccVal = (uint8_t)
+                    ((idx * 128 + (128 / s->_pendingCount) / 2) / s->_pendingCount);
+            }
             s->_synth->setCC(s->_pendingCC, ccVal);
             s->syncFromEngine();
         }

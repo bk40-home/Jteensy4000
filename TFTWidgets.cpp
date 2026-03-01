@@ -470,7 +470,7 @@ void TFTSectionTile::doDraw() {
 TFTNumericEntry::TFTNumericEntry()
     : _display(nullptr), _mode(MODE_CLOSED)
     , _minVal(0), _maxVal(127), _currentVal(0)
-    , _digitCount(0), _editing(false)
+    , _digitCount(0), _editing(false), _negative(false)
     , _selectedEnum(0), _numEnumOptions(0)
     , _callback(nullptr)
     , _scrollOffset(0)
@@ -505,6 +505,8 @@ void TFTNumericEntry::openNumeric(const char* title, const char* unit,
     _digitBuf[0] = '\0';
     _digitCount  = 0;
     _editing     = false;
+    // Pre-set negative flag from current value so ± key reflects reality on first open
+    _negative    = (currentVal < 0);
 
     _fullRedraw  = true;
     _valueDirty  = false;
@@ -625,7 +627,9 @@ void TFTNumericEntry::_drawValueBox() {
         snprintf(dispBuf, sizeof(dispBuf), "%d %s", _currentVal, _unitBuf);
         _display->setTextColor(gTheme.textDim, gTheme.entryBg);
     } else {
-        snprintf(dispBuf, sizeof(dispBuf), "%s %s", _digitBuf, _unitBuf);
+        // Editing: show sign prefix + digits + unit
+        snprintf(dispBuf, sizeof(dispBuf), "%s%s %s",
+                 (_negative ? "-" : ""), _digitBuf, _unitBuf);
         _display->setTextColor(gTheme.entryText, gTheme.entryBg);
     }
 
@@ -649,10 +653,21 @@ void TFTNumericEntry::_drawKeypad() {
         }
     }
 
-    // Bottom row: [0] [←] [OK]
-    _drawKey(KP_X,                               BR_Y, BR0_Width,  KEY_Height, "0",  gTheme.keyBg,      false);
-    _drawKey(KP_X + BR0_Width + KEY_GAP,             BR_Y, BRBK_Width, KEY_Height, "<-", gTheme.keyBackspace, false);
-    _drawKey(KP_X + BR0_Width + BRBK_Width + 2*KEY_GAP, BR_Y, BRCO_Width, KEY_Height, "OK", gTheme.keyConfirm,  false);
+    // Bottom row: layout depends on whether negative values are possible.
+    // When minVal < 0 we show [0] [±] [←] [OK] to allow sign entry.
+    // When minVal >= 0 we show the original wider [0] [←] [OK].
+    if (_minVal < 0) {
+        // Highlight ± key in amber when currently negative
+        const uint16_t signBg = _negative ? COLOUR_SELECTED : gTheme.keyBg;
+        _drawKey(KP_X,                                              BR_Y, BRS_0_Width,  KEY_Height, "0",  gTheme.keyBg,    false);
+        _drawKey(KP_X + BRS_0_Width + KEY_GAP,                     BR_Y, BRS_S_Width,  KEY_Height, "+/-",signBg,          false);
+        _drawKey(KP_X + BRS_0_Width + BRS_S_Width + 2*KEY_GAP,     BR_Y, BRS_BK_Width, KEY_Height, "<-", gTheme.keyBackspace, false);
+        _drawKey(KP_X + BRS_0_Width + BRS_S_Width + BRS_BK_Width + 3*KEY_GAP, BR_Y, BRS_CO_Width, KEY_Height, "OK", gTheme.keyConfirm, false);
+    } else {
+        _drawKey(KP_X,                                          BR_Y, BR0_Width,  KEY_Height, "0",  gTheme.keyBg,       false);
+        _drawKey(KP_X + BR0_Width + KEY_GAP,                    BR_Y, BRBK_Width, KEY_Height, "<-", gTheme.keyBackspace, false);
+        _drawKey(KP_X + BR0_Width + BRBK_Width + 2*KEY_GAP,    BR_Y, BRCO_Width, KEY_Height, "OK", gTheme.keyConfirm,  false);
+    }
 }
 
 void TFTNumericEntry::_drawKey(int16_t kx, int16_t ky, int16_t kw, int16_t kh,
@@ -697,25 +712,60 @@ void TFTNumericEntry::_handleNumericTouch(int16_t x, int16_t y) {
         }
     }
 
-    // Bottom row: 0
-    if (x >= KP_X && x < KP_X + BR0_Width &&
-        y >= BR_Y && y < BR_Y + KEY_Height) {
-        _appendDigit(0);
-        return;
+    // Bottom row — layout depends on whether negative entry is allowed.
+    // Two distinct layouts share the same Y band (BR_Y).
+    if (_minVal < 0) {
+        // --- Sign-key layout: [0] [±/-] [<-] [OK] ---
+        // Pre-compute X boundaries for each button.
+        const int16_t x0Start  = KP_X;
+        const int16_t xSignStart = x0Start  + BRS_0_Width  + KEY_GAP;
+        const int16_t xBkStart   = xSignStart + BRS_S_Width  + KEY_GAP;
+        const int16_t xOkStart   = xBkStart   + BRS_BK_Width + KEY_GAP;
+
+        if (y >= BR_Y && y < BR_Y + KEY_Height) {
+            if (x >= x0Start && x < x0Start + BRS_0_Width) {
+                _appendDigit(0);
+                return;
+            }
+            if (x >= xSignStart && x < xSignStart + BRS_S_Width) {
+                _toggleSign();
+                _valueDirty = true;
+                return;
+            }
+            if (x >= xBkStart && x < xBkStart + BRS_BK_Width) {
+                _backspace();
+                return;
+            }
+            if (x >= xOkStart) {
+                _confirm();
+                return;
+            }
+        }
+    } else {
+        // --- Standard layout: [0] [<-] [OK] ---
+        if (y >= BR_Y && y < BR_Y + KEY_Height) {
+            if (x >= KP_X && x < KP_X + BR0_Width) {
+                _appendDigit(0);
+                return;
+            }
+            if (x >= KP_X + BR0_Width + KEY_GAP &&
+                x < KP_X + BR0_Width + KEY_GAP + BRBK_Width) {
+                _backspace();
+                return;
+            }
+            if (x >= KP_X + BR0_Width + BRBK_Width + 2*KEY_GAP) {
+                _confirm();
+                return;
+            }
+        }
     }
-    // Backspace
-    if (x >= KP_X + BR0_Width + KEY_GAP &&
-        x < KP_X + BR0_Width + KEY_GAP + BRBK_Width &&
-        y >= BR_Y && y < BR_Y + KEY_Height) {
-        _backspace();
-        return;
-    }
-    // Confirm (OK)
-    if (x >= KP_X + BR0_Width + BRBK_Width + 2*KEY_GAP &&
-        y >= BR_Y && y < BR_Y + KEY_Height) {
-        _confirm();
-        return;
-    }
+}
+
+void TFTNumericEntry::_toggleSign() {
+    // Only allow sign toggle when negative values are in range.
+    if (_minVal >= 0) return;
+    _negative    = !_negative;
+    _valueDirty  = true;
 }
 
 void TFTNumericEntry::_appendDigit(int d) {
@@ -753,10 +803,13 @@ void TFTNumericEntry::_backspace() {
 void TFTNumericEntry::_confirm() {
     int val;
     if (_editing && _digitCount > 0) {
+        // Parse magnitude from digit buffer, then apply sign.
         val = atoi(_digitBuf);
+        if (_negative) val = -val;
+        // Clamp to valid range (handles both positive and negative bounds).
         val = constrain(val, _minVal, _maxVal);
     } else {
-        val = _currentVal;  // no entry → keep current value
+        val = _currentVal;  // no digits typed → keep current value unchanged
     }
     close();
     if (_callback) _callback(val);
