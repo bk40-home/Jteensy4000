@@ -16,6 +16,14 @@
 //   FX      → JPFX Tone+Mod / Mod params / Delay / Reverb / Mix
 //   GLOBAL  → Performance / Arb waveforms / BPM clock
 //   PRESETS → opens PresetBrowser (no UIPage — sentinel 0xFF)
+
+//  NEW (pages 26-31):
+//   LFO1Dep  : 26 L1 Pitch / L1 Filter / L1 PWM / L1 Amp
+//   LFO1Dly  : 27 L1 Delay / L1 Freq / L1 Wave / -
+//   LFO2Dep  : 28 L2 Pitch / L2 Filter / L2 PWM / L2 Amp
+//   LFO2Dly  : 29 L2 Delay / L2 Freq / L2 Wave / -
+//   PitchEnv : 30 PE ADSR
+//   PitchV   : 31 PE Depth / Vel Amp / Vel Filter / Vel Env
 //
 // No audio or engine dependencies — include freely.
 // =============================================================================
@@ -64,13 +72,13 @@ static const SectionDef kSections[SECTION_COUNT] = {
     { "FILTER",  YELLOW, { 9, 10, 11, 12, 255, 255 }, 4 },
 
     // 3 — ENV    (pages 13-14)
-    { "ENV",     YELLOW, { 13, 14, 255, 255, 255, 255 }, 2 },
+    { "ENV",     YELLOW, { 13, 14, 30, 31, 255, 255 }, 4 },
 
     // 4 — LFO   (pages 15-17)
-    { "LFO",     YELLOW, { 15, 16, 17, 255, 255, 255 }, 3 },
+    { "LFO",     YELLOW, { 26, 27, 28, 29, 255, 255 }, 4 },
 
     // 5 — FX    (pages 18-22)
-    { "FX",      YELLOW, { 18, 19, 20, 21, 22, 255 }, 5 },
+    { "FX",      YELLOW, { 18, 19, 20, 21, 22, 255 }, 5 },    
 
     // 6 — GLOBAL (pages 23-25)
     { "GLOBAL",  YELLOW, { 23, 24, 25, 255, 255, 255 }, 3 },

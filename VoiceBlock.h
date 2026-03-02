@@ -123,6 +123,30 @@ public:
     void setFilterADSR(float a, float d, float s, float r);
 
     // =========================================================================
+    // NEW: PITCH ENVELOPE
+    // Separate ADSR that modulates oscillator pitch in semitones.
+    // Depth=0 causes noteOn to skip triggering (no CPU spent).
+    // =========================================================================
+    void setPitchEnvAttack(float ms);
+    void setPitchEnvDecay(float ms);
+    void setPitchEnvSustain(float level);
+    void setPitchEnvRelease(float ms);
+    void setPitchEnvDepth(float semitones);   // ±24 semitones
+    float getPitchEnvDepth() const { return _pitchEnvDepth; }
+
+    // Pitch envelope audio output — wired by SynthEngine to frequencyModMixer
+    AudioStream& pitchEnvOutput();
+
+    // =========================================================================
+    // NEW: VELOCITY SENSITIVITY
+    // Three 0..1 scalars applied on noteOn.
+    //   0 = no velocity effect  |  1 = full velocity control
+    // =========================================================================
+    void setVelocityAmpSens(float s)    { _velAmpSens    = s; }
+    void setVelocityFilterSens(float s) { _velFilterSens = s; }
+    void setVelocityEnvSens(float s)    { _velEnvSens    = s; }
+
+    // =========================================================================
     // GETTERS (UI/STATE QUERY)
     // =========================================================================
     int getOsc1Waveform() const;
@@ -189,6 +213,10 @@ public:
     // --- Modulation
     void setModInputs(audio_block_t** modSources);
 
+    // SynthEngine needs to access _pitchEnvPatch1/2 and pitchEnvOutput()
+    // to wire the pitch envelope into the audio graph at construction time.
+    friend class SynthEngine;
+
 private:
     // Audio components
     OscillatorBlock _osc1{true};   // OSC1 has supersaw capability
@@ -241,5 +269,29 @@ private:
     float _on = 0.9f;
     float _clampedLevel(float level);
 
-    AudioConnection* _patchCables[15];
+    AudioConnection* _patchCables[18];  // +1 for pitch envelope DC source
+
+    // -----------------------------------------------------------------------
+    // NEW: Pitch envelope
+    // AudioEffectEnvelope is a through-type: it needs an input signal (DC=1.0)
+    // which it multiplies by the ADSR shape.  _pitchEnvDc provides that 1.0 feed.
+    // The output (0..1) flows to frequencyModMixer input 3 via SynthEngine wiring.
+    // -----------------------------------------------------------------------
+    AudioSynthWaveformDc _pitchEnvDc;   // constant 1.0 feed into pitch envelope
+    EnvelopeBlock _pitchEnvelope;
+
+
+
+    // Pitch env depth in semitones (signed, ±24)
+    float _pitchEnvDepth = 0.0f;
+
+    // -----------------------------------------------------------------------
+    // NEW: Velocity sensitivity scalars
+    // -----------------------------------------------------------------------
+    float _velAmpSens    = 0.0f;
+    float _velFilterSens = 0.0f;
+    float _velEnvSens    = 0.0f;
+
+    // Base filter env amount (before velocity scaling)
+    float _baseFilterEnvAmount = 0.0f;
 };

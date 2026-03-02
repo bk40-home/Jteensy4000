@@ -135,6 +135,54 @@ inline bool isVoiceActive(uint8_t v) const {
     const char* getLFO2DestinationName() const;
 
     // =========================================================================
+    // NEW: LFO per-destination depths (JP-8000 style)
+    // Each destination has an independent depth (0..1). Final mixer gain =
+    // masterAmount * perDestDepth, allowing simultaneous multi-target mod.
+    // =========================================================================
+    void  setLFO1PitchDepth(float d);   void  setLFO1FilterDepth(float d);
+    void  setLFO1PWMDepth(float d);     void  setLFO1AmpDepth(float d);
+    void  setLFO1Delay(float ms);       // Fade-in delay after noteOn
+    float getLFO1PitchDepth()  const { return _lfo1PitchDepth; }
+    float getLFO1FilterDepth() const { return _lfo1FilterDepth; }
+    float getLFO1PWMDepth()    const { return _lfo1PWMDepth; }
+    float getLFO1AmpDepth()    const { return _lfo1AmpDepth; }
+    float getLFO1Delay()       const { return _lfo1DelayMs; }
+
+    void  setLFO2PitchDepth(float d);   void  setLFO2FilterDepth(float d);
+    void  setLFO2PWMDepth(float d);     void  setLFO2AmpDepth(float d);
+    void  setLFO2Delay(float ms);
+    float getLFO2PitchDepth()  const { return _lfo2PitchDepth; }
+    float getLFO2FilterDepth() const { return _lfo2FilterDepth; }
+    float getLFO2PWMDepth()    const { return _lfo2PWMDepth; }
+    float getLFO2AmpDepth()    const { return _lfo2AmpDepth; }
+    float getLFO2Delay()       const { return _lfo2DelayMs; }
+
+    // =========================================================================
+    // NEW: Pitch envelope — separate ADSR that modulates oscillator pitch.
+    // Depth is in semitones (±24). Depth=0 skips triggering (CPU guard).
+    // =========================================================================
+    void setPitchEnvAttack(float ms);   void setPitchEnvDecay(float ms);
+    void setPitchEnvSustain(float l);   void setPitchEnvRelease(float ms);
+    void setPitchEnvDepth(float semitones);
+    float getPitchEnvAttack()  const { return _pitchEnvAttack; }
+    float getPitchEnvDecay()   const { return _pitchEnvDecay; }
+    float getPitchEnvSustain() const { return _pitchEnvSustain; }
+    float getPitchEnvRelease() const { return _pitchEnvRelease; }
+    float getPitchEnvDepth()   const { return _pitchEnvDepth; }
+
+    // =========================================================================
+    // NEW: Velocity sensitivity — three targets matching JP-8000
+    // 0 = flat (velocity ignored), 1 = full velocity control.
+    // Applied on each noteOn; does not modify stored base parameter values.
+    // =========================================================================
+    void  setVelocityAmpSens(float s);    // → VCA level scale
+    void  setVelocityFilterSens(float s); // → filter cutoff offset (octaves)
+    void  setVelocityEnvSens(float s);    // → filter env depth scale
+    float getVelocityAmpSens()    const { return _velAmpSens; }
+    float getVelocityFilterSens() const { return _velFilterSens; }
+    float getVelocityEnvSens()    const { return _velEnvSens; }
+
+    // =========================================================================
     // Filter
     // =========================================================================
     void setFilterEnvAmount(float amt);
@@ -457,4 +505,35 @@ private:
     // UI notifier callback
     // =========================================================================
     NotifyFn _notify = nullptr;
+
+    // =========================================================================
+    // NEW: LFO per-destination depth scalars (0..1 each)
+    // =========================================================================
+    float _lfo1PitchDepth  = 0.0f, _lfo1FilterDepth = 0.0f;
+    float _lfo1PWMDepth    = 0.0f, _lfo1AmpDepth    = 0.0f;
+    float _lfo2PitchDepth  = 0.0f, _lfo2FilterDepth = 0.0f;
+    float _lfo2PWMDepth    = 0.0f, _lfo2AmpDepth    = 0.0f;
+
+    // NEW: LFO delay (fade-in) state — managed in update()
+    float    _lfo1DelayMs    = 0.0f, _lfo2DelayMs    = 0.0f;
+    float    _lfo1CurrentAmp = 0.0f, _lfo2CurrentAmp = 0.0f;
+    uint32_t _lfo1NoteOnMs   = 0,    _lfo2NoteOnMs   = 0;
+    bool     _lfo1Ramping    = false, _lfo2Ramping    = false;
+
+    // NEW: Pitch envelope cached ADSR and depth
+    float _pitchEnvAttack  = 1.0f;
+    float _pitchEnvDecay   = 80.0f;
+    float _pitchEnvSustain = 0.0f;
+    float _pitchEnvRelease = 50.0f;
+    float _pitchEnvDepth   = 0.0f;  // semitones, signed
+
+    // NEW: Velocity sensitivity scalars (0..1)
+    float _velAmpSens    = 0.0f;
+    float _velFilterSens = 0.0f;
+    float _velEnvSens    = 0.0f;
+
+    // NEW: Private helpers
+    void _applyLFO1Gains();     // Recompute all LFO1 destination mixer gains
+    void _applyLFO2Gains();     // Recompute all LFO2 destination mixer gains
+    void _updateLFODelay();     // Called from update(): handle delay ramps
 };

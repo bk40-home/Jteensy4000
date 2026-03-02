@@ -21,6 +21,10 @@ VoiceBlock::VoiceBlock() : _osc1(true), _osc2(false)    // ← OSC1: supersaw en
     
     _patchCables[13] = new AudioConnection(_filter.envmod(), 0 , _filterEnvelope.input(), 0); 
     _patchCables[14] = new AudioConnection(_filterEnvelope.output(), 0, _filter.modMixer(), 1);
+    _pitchEnvDc.amplitude(1.0f);
+    _patchCables[15] = new AudioConnection(_pitchEnvDc, 0, _pitchEnvelope.input(), 0);
+    _patchCables[16] = new AudioConnection(_pitchEnvelope.output(), 0, _osc1.frequencyModMixer(), 3);
+    _patchCables[17] = new AudioConnection(_pitchEnvelope.output(), 0, _osc2.frequencyModMixer(), 3);
 
     _oscMixer.gain(0, _on);
     _oscMixer.gain(1, _on);
@@ -44,13 +48,46 @@ VoiceBlock::VoiceBlock() : _osc1(true), _osc2(false)    // ← OSC1: supersaw en
 }
 
 void VoiceBlock::noteOn(float freq, float velocity) {
-    _isActive = true;
-    // Amplitude set inside osc noteOn() from velocity — do NOT call setAmplitude() here.
-    _osc1.noteOn(freq, velocity);
-    _osc2.noteOn(freq, velocity);
+    _isActive    = true;
+    _currentFreq = freq;
+
+    // velocity arrives here already normalised 0.0-1.0.
+    // The sketch divides raw MIDI velocity by 127.0f before calling SynthEngine::noteOn(),
+    // so dividing again here would give ~0.008 max — essentially muting everything.
+    const float velNorm = velocity;
+
+    // ---- Velocity → amp level ----
+    // _velAmpSens=0: full amplitude regardless of velocity.
+    // _velAmpSens=1: amplitude tracks velocity linearly.
+    // Blend between these two for intermediate values.
+    const float velAmpScale = (1.0f - _velAmpSens) + (_velAmpSens * velNorm);
+
+    // ---- Velocity → filter cutoff offset ----
+    // Positive sensitivity opens the filter harder hits (±3 octaves max).
+    static constexpr float kVelFilterOctRange = 3.0f;
+    const float cutoffOctOffset = _velFilterSens * (velNorm - 0.5f) * kVelFilterOctRange;
+    _filter.setCutoff(_baseCutoff * powf(2.0f, cutoffOctOffset));
+
+    // ---- Velocity → filter env depth ----
+    // Scale stored base amount; does NOT permanently change _baseFilterEnvAmount.
+    const float envDepthScale = (1.0f - _velEnvSens) + (_velEnvSens * velNorm);
+    _filter.setEnvModAmount(_baseFilterEnvAmount * envDepthScale);
+
+    // ---- Trigger oscillators with velocity-scaled amplitude ----
+    _osc1.noteOn(freq, velocity * velAmpScale);
+    _osc2.noteOn(freq, velocity * velAmpScale);
     _subOsc.setFrequency(freq);
+
+    // ---- Trigger envelopes ----
     _filterEnvelope.noteOn();
     _ampEnvelope.noteOn();
+
+    // Pitch envelope — only trigger if depth is non-zero (CPU guard)
+    if (_pitchEnvDepth != 0.0f) {
+        _pitchEnvelope.noteOn();
+    }
+
+    // ---- Key tracking: compute filter cutoff modulation ----
     float deltaOct   = log2f(freq / 440.0f);
     float octaveCtrl = _filter.getOctaveControl();
     float norm       = (octaveCtrl > 0.0f) ? (deltaOct / octaveCtrl) : 0.0f;
@@ -58,16 +95,15 @@ void VoiceBlock::noteOn(float freq, float velocity) {
     if (norm >  1.0f) norm =  1.0f;
     if (norm < -1.0f) norm = -1.0f;
     _filter.setKeyTrackAmount(norm);
-
-    // Cache the current frequency so changes to the key‑tracking
-    // amount during a held note can update correctly.
-    _currentFreq = freq;
 }
 
 void VoiceBlock::noteOff() {
     _isActive = false;
     _filterEnvelope.noteOff();
     _ampEnvelope.noteOff();
+    if (_pitchEnvDepth != 0.0f) {
+        _pitchEnvelope.noteOff();
+    }
 }
 
 void VoiceBlock::setOsc1Waveform(int wave) { _osc1.setWaveformType(wave); }
@@ -124,12 +160,20 @@ void VoiceBlock::setRing2Mix(float level) {
 
 void VoiceBlock::setSubMix(float level) {
     _subMix = level;
+    // Sub-oscillator has TWO amplitude controls that must both be set:
+    //   _subOsc internal amplitude — the DSP source output level
+    //   _voiceMixer.gain(2)        — the channel gate in the voice mixer
+    // Constructor initialises both to 0.  Only setting the mixer gain leaves
+    // the source silent regardless of mixer level.
+    _subOsc.setAmplitude(_subMix);
     _voiceMixer.gain(2, _clampedLevel(_subMix));
-
 }
 
 void VoiceBlock::setNoiseMix(float level) {
     _noiseMix = level;
+    // Same dual-control pattern as setSubMix.
+    // AudioSynthNoisePink starts at amplitude(0.0f) — must be driven here.
+    _noise.amplitude(_noiseMix);
     _voiceMixer.gain(3, _clampedLevel(_noiseMix));
 }
 
@@ -186,7 +230,8 @@ void VoiceBlock::setFilterOctaveControl(float value) {
 // }
 
 void VoiceBlock::setFilterEnvAmount(float amt) {
-    _filterEnvAmount = amt;
+    _filterEnvAmount      = amt;
+    _baseFilterEnvAmount  = amt;  // Store base; velocity scaling in noteOn() uses this
     _filter.setEnvModAmount(amt);
 }
 
@@ -301,6 +346,28 @@ AudioMixer4& VoiceBlock::shapeModMixerOsc2(){
 }
 AudioMixer4& VoiceBlock::filterModMixer(){
     return _filter.modMixer();
+}
+
+// ============================================================================
+// PITCH ENVELOPE
+// ============================================================================
+
+void VoiceBlock::setPitchEnvAttack(float ms)     { _pitchEnvelope.setAttackTime(ms); }
+void VoiceBlock::setPitchEnvDecay(float ms)      { _pitchEnvelope.setDecayTime(ms); }
+void VoiceBlock::setPitchEnvSustain(float level) { _pitchEnvelope.setSustainLevel(level); }
+void VoiceBlock::setPitchEnvRelease(float ms)    { _pitchEnvelope.setReleaseTime(ms); }
+
+void VoiceBlock::setPitchEnvDepth(float semitones) {
+    // Clamp to safe range — 24 semitones = 2 octaves each way
+    if (semitones >  24.0f) semitones =  24.0f;
+    if (semitones < -24.0f) semitones = -24.0f;
+    _pitchEnvDepth = semitones;
+    // Note: SynthEngine must update the downstream frequencyModMixer gain
+    // whenever depth changes, since the gain encodes the semitone range.
+}
+
+AudioStream& VoiceBlock::pitchEnvOutput() {
+    return _pitchEnvelope.output();
 }
 
 // Getters

@@ -302,4 +302,43 @@ namespace CC {
         }
     }
 
+    // ─────────────────────────────────────────────────────────────────────────
+    // NEW: LFO1 per-destination depth amounts (JP-8000 style)
+    // Each destination can be non-zero simultaneously for multi-target mod.
+    // Final mixer gain = masterDepth * perDestDepth.
+    // ─────────────────────────────────────────────────────────────────────────
+    static constexpr uint8_t LFO1_PITCH_DEPTH  = 33;  // LFO1 → pitch depth 0-127
+    static constexpr uint8_t LFO1_FILTER_DEPTH = 34;  // LFO1 → filter cutoff depth
+    static constexpr uint8_t LFO1_PWM_DEPTH    = 35;  // LFO1 → shape/PWM depth
+    static constexpr uint8_t LFO1_AMP_DEPTH    = 36;  // LFO1 → amplitude depth
+    static constexpr uint8_t LFO1_DELAY        = 37;  // LFO1 fade-in after noteOn (ms)
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // NEW: LFO2 per-destination depth amounts
+    // ─────────────────────────────────────────────────────────────────────────
+    static constexpr uint8_t LFO2_PITCH_DEPTH  = 38;
+    static constexpr uint8_t LFO2_FILTER_DEPTH = 39;
+    static constexpr uint8_t LFO2_PWM_DEPTH    = 40;
+    static constexpr uint8_t LFO2_AMP_DEPTH    = 57;  // 40 taken by LFO2_PWM
+    static constexpr uint8_t LFO2_DELAY        = 64;  // 65-69 used for pitch env below
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // NEW: Pitch envelope
+    // DEPTH is bipolar: CC 64 = 0 semitones, 0 = -24, 127 = +24 semitones.
+    // ─────────────────────────────────────────────────────────────────────────
+    static constexpr uint8_t PITCH_ENV_ATTACK   = 65;
+    static constexpr uint8_t PITCH_ENV_DECAY    = 66;
+    static constexpr uint8_t PITCH_ENV_SUSTAIN  = 67;
+    static constexpr uint8_t PITCH_ENV_RELEASE  = 68;
+    static constexpr uint8_t PITCH_ENV_DEPTH    = 69;  // bipolar, 64 = zero
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // NEW: Velocity sensitivity — three targets matching JP-8000
+    // 0 = velocity has no effect on target; 127 = full velocity control.
+    // Applied on every noteOn — does not affect stored base parameter values.
+    // ─────────────────────────────────────────────────────────────────────────
+    static constexpr uint8_t VELOCITY_AMP_SENS    = 10;   // velocity → VCA level
+    static constexpr uint8_t VELOCITY_FILTER_SENS = 11;   // velocity → filter cutoff offset
+    static constexpr uint8_t VELOCITY_ENV_SENS    = 12;   // velocity → filter env depth
+
 } // namespace CC

@@ -22,6 +22,9 @@ namespace Presets {
   // Load one of the Microsphere bank patches by index [0..31]
   void loadMicrospherePreset(SynthEngine& synth, int index, uint8_t midiCh = 1);
 
+  // Load one of the TUS (The Usual Suspects) JP-8000 patches by index [0..33]
+  void loadTUSPreset(SynthEngine& synth, int index);
+
 // Number of your existing init/templates (whatever you already expose)
 int presets_templateCount();   // returns N (existing templates)
 

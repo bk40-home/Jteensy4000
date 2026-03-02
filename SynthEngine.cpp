@@ -110,7 +110,7 @@ SynthEngine::SynthEngine()
     // =========================================================================
     // CREATE AUDIO CONNECTIONS - AMP MODULATION
     // =========================================================================
-    
+
     _patchAmpModFixedDcToAmpModMixer = new AudioConnection(_ampModFixedDc, 0, _ampModMixer, 0);
     _patchLFO1ToAmpModMixer          = new AudioConnection(_lfo1.output(), 0, _ampModMixer, 1);
     _patchLFO2ToAmpModMixer          = new AudioConnection(_lfo2.output(), 0, _ampModMixer, 2);
@@ -235,6 +235,10 @@ void SynthEngine::noteOn(byte note, float velocity) {
     float freq = 440.0f * powf(2.0f, (note - 69) / 12.0f);
     _lastNoteFreq = freq;
 
+    // Restart LFO delay ramps on any noteOn (standard JP-8000 retrigger behaviour)
+    if (_lfo1DelayMs > 0.0f) { _lfo1NoteOnMs = millis(); _lfo1Ramping = true; _lfo1CurrentAmp = 0.0f; }
+    if (_lfo2DelayMs > 0.0f) { _lfo2NoteOnMs = millis(); _lfo2Ramping = true; _lfo2CurrentAmp = 0.0f; }
+
     // Limit per-voice amplitude to 0.95 — leaves headroom when multiple
     // voices sound simultaneously.  With 8 voices all at 1.0 the summed
     // signal would clip the final mixer; 0.95 keeps worst-case < full scale.
@@ -285,7 +289,14 @@ void SynthEngine::update() {
     if (_bpmClock) {
         updateBPMSync();
     }
-    
+
+    // Update LFO delay ramps (must run every loop iteration)
+    _updateLFODelay();
+
+    // Update LFO enabled state
+    _lfo1.update();
+    _lfo2.update();
+
     // Update all voices
     for (uint8_t v = 0; v < MAX_VOICES; v++) {
         if (_activeNotes[v] || v == 0) {
@@ -484,66 +495,56 @@ float SynthEngine::getAmpModFixedLevel() const { return _ampModFixedLevel; }
 // ---- LFOs ----
 void SynthEngine::setLFO1Frequency(float hz) { _lfo1Frequency = hz; _lfo1.setFrequency(hz); }
 void SynthEngine::setLFO2Frequency(float hz) { _lfo2Frequency = hz; _lfo2.setFrequency(hz); }
-void SynthEngine::setLFO1Amount(float amt)   { _lfo1Amount = amt;   _lfo1.setAmplitude(amt); }
-void SynthEngine::setLFO2Amount(float amt)   { _lfo2Amount = amt;   _lfo2.setAmplitude(amt); }
+void SynthEngine::setLFO1Amount(float amt) {
+    _lfo1Amount = amt;
+    _lfo1.setAmplitude(amt);
+    if (!_lfo1Ramping) _applyLFO1Gains(); // only if not mid-delay ramp
+}
+void SynthEngine::setLFO2Amount(float amt) {
+    _lfo2Amount = amt;
+    _lfo2.setAmplitude(amt);
+    if (!_lfo2Ramping) _applyLFO2Gains();
+}
 
 void SynthEngine::setLFO1Waveform(int type) { _lfo1Type = type; _lfo1.setWaveformType(type); }
 void SynthEngine::setLFO2Waveform(int type) { _lfo2Type = type; _lfo2.setWaveformType(type); }
 
 void SynthEngine::setLFO1Destination(LFODestination dest) {
-    _lfo1Dest = dest; _lfo1.setDestination(dest);
-    // Reset routing gains for LFO1 lanes
-    for (int i=0;i<MAX_VOICES;++i) {
-        _voices[i].frequencyModMixerOsc1().gain(1, 0.0f);
-        _voices[i].frequencyModMixerOsc2().gain(1, 0.0f);
-        _voices[i].shapeModMixerOsc1().gain(1, 0.0f);
-        _voices[i].shapeModMixerOsc2().gain(1, 0.0f);
-        _voices[i].filterModMixer().gain(2, 0.0f);
-        _ampModMixer.gain(1, 0.0f);
+    // Legacy single-destination setter — zeros all per-dest depths then sets one to 1.0.
+    // Existing presets that use a single destination continue to work unchanged.
+    // For multi-target modulation use setLFO1PitchDepth/FilterDepth/PWMDepth/AmpDepth.
+    _lfo1Dest = dest;
+    _lfo1.setDestination(dest);
+    _lfo1PitchDepth  = 0.0f;
+    _lfo1FilterDepth = 0.0f;
+    _lfo1PWMDepth    = 0.0f;
+    _lfo1AmpDepth    = 0.0f;
+    switch (dest) {
+        case LFO_DEST_PITCH:  _lfo1PitchDepth  = 1.0f; break;
+        case LFO_DEST_FILTER: _lfo1FilterDepth = 1.0f; break;
+        case LFO_DEST_PWM:    _lfo1PWMDepth    = 1.0f; break;
+        case LFO_DEST_AMP:    _lfo1AmpDepth    = 1.0f; break;
+        default: break;
     }
-    // Apply
-    if (dest == 1) { // frequency (both oscs)
-        for (int i=0;i<MAX_VOICES;++i) {
-            _voices[i].frequencyModMixerOsc1().gain(1, 1.0f);
-            _voices[i].frequencyModMixerOsc2().gain(1, 1.0f);
-        }
-    } else if (dest == 2) { // filter
-        for (int i=0;i<MAX_VOICES;++i) _voices[i].filterModMixer().gain(2, 1.0f);
-    } else if (dest == 3) { // shape (both oscs)
-        for (int i=0;i<MAX_VOICES;++i) {
-            _voices[i].shapeModMixerOsc1().gain(1, 1.0f);
-            _voices[i].shapeModMixerOsc2().gain(1, 1.0f);
-        }
-    } else if (dest == 4) { // amp
-        _ampModMixer.gain(1, 1.0f);
-    }
+    _applyLFO1Gains();
 }
 
 void SynthEngine::setLFO2Destination(LFODestination dest) {
-    _lfo2Dest = dest; _lfo2.setDestination(dest);
-    for (int i=0;i<MAX_VOICES;++i) {
-        _voices[i].frequencyModMixerOsc1().gain(2, 0.0f);
-        _voices[i].frequencyModMixerOsc2().gain(2, 0.0f);
-        _voices[i].shapeModMixerOsc1().gain(2, 0.0f);
-        _voices[i].shapeModMixerOsc2().gain(2, 0.0f);
-        _voices[i].filterModMixer().gain(3, 0.0f);
-        _ampModMixer.gain(2, 0.0f);
+    // Legacy single-destination setter — backward compatible with Microsphere presets.
+    _lfo2Dest = dest;
+    _lfo2.setDestination(dest);
+    _lfo2PitchDepth  = 0.0f;
+    _lfo2FilterDepth = 0.0f;
+    _lfo2PWMDepth    = 0.0f;
+    _lfo2AmpDepth    = 0.0f;
+    switch (dest) {
+        case LFO_DEST_PITCH:  _lfo2PitchDepth  = 1.0f; break;
+        case LFO_DEST_FILTER: _lfo2FilterDepth = 1.0f; break;
+        case LFO_DEST_PWM:    _lfo2PWMDepth    = 1.0f; break;
+        case LFO_DEST_AMP:    _lfo2AmpDepth    = 1.0f; break;
+        default: break;
     }
-    if (dest == 1) {
-        for (int i=0;i<MAX_VOICES;++i) {
-            _voices[i].frequencyModMixerOsc1().gain(2, 1.0f);
-            _voices[i].frequencyModMixerOsc2().gain(2, 1.0f);
-        }
-    } else if (dest == 2) {
-        for (int i=0;i<MAX_VOICES;++i) _voices[i].filterModMixer().gain(3, 1.0f);
-    } else if (dest == 3) {
-        for (int i=0;i<MAX_VOICES;++i) {
-            _voices[i].shapeModMixerOsc1().gain(2, 1.0f);
-            _voices[i].shapeModMixerOsc2().gain(2, 1.0f);
-        }
-    } else if (dest == 4) {
-        _ampModMixer.gain(2, 1.0f);
-    }
+    _applyLFO2Gains();
 }
 
 float SynthEngine::getLFO1Frequency() const { return _lfo1Frequency; }
@@ -562,12 +563,198 @@ const char* SynthEngine::getLFO2WaveformName() const {
     return waveformShortName((WaveformType)_lfo2Type);
 }
 const char* SynthEngine::getLFO1DestinationName() const {
-    int d = (int)_lfo1Dest;
-    return (d >= 0 && d < NUM_LFO_DESTS) ? LFODestNames[d] : "Unknown";
+    // Show "Multi" when more than one per-destination depth is active
+    int active = (_lfo1PitchDepth > 0) + (_lfo1FilterDepth > 0)
+               + (_lfo1PWMDepth   > 0) + (_lfo1AmpDepth   > 0);
+    if (active > 1)  return "Multi";
+    if (active == 0) return LFODestNames[LFO_DEST_NONE];
+    if (_lfo1PitchDepth  > 0) return LFODestNames[LFO_DEST_PITCH];
+    if (_lfo1FilterDepth > 0) return LFODestNames[LFO_DEST_FILTER];
+    if (_lfo1PWMDepth    > 0) return LFODestNames[LFO_DEST_PWM];
+    if (_lfo1AmpDepth    > 0) return LFODestNames[LFO_DEST_AMP];
+    return LFODestNames[LFO_DEST_NONE];
 }
 const char* SynthEngine::getLFO2DestinationName() const {
-    int d = (int)_lfo2Dest;
-    return (d >= 0 && d < NUM_LFO_DESTS) ? LFODestNames[d] : "Unknown";
+    int active = (_lfo2PitchDepth > 0) + (_lfo2FilterDepth > 0)
+               + (_lfo2PWMDepth   > 0) + (_lfo2AmpDepth   > 0);
+    if (active > 1)  return "Multi";
+    if (active == 0) return LFODestNames[LFO_DEST_NONE];
+    if (_lfo2PitchDepth  > 0) return LFODestNames[LFO_DEST_PITCH];
+    if (_lfo2FilterDepth > 0) return LFODestNames[LFO_DEST_FILTER];
+    if (_lfo2PWMDepth    > 0) return LFODestNames[LFO_DEST_PWM];
+    if (_lfo2AmpDepth    > 0) return LFODestNames[LFO_DEST_AMP];
+    return LFODestNames[LFO_DEST_NONE];
+}
+
+
+// ============================================================================
+// NEW: LFO PER-DESTINATION GAINS
+// Final gain on each mixer input = masterAmount * destDepth
+// ============================================================================
+
+void SynthEngine::_applyLFO1Gains() {
+    // Per-dest depth system: mixer gains = depth (0..1) directly.
+    // _lfo1Amount is the LFO DSP waveform amplitude — set by CC::LFO1_DEPTH.
+    // When using per-dest depths with the legacy LFO_DEPTH CC still at 0,
+    // the effective amplitude would be zero. Auto-raise to 1.0 so depths work
+    // without needing to also set LFO1_DEPTH. If LFO1_DEPTH was explicitly set,
+    // use that as a master scale on top (allows JP-8000 style overall LFO level).
+    const float eff1 = (_lfo1Amount > 0.0f) ? _lfo1Amount : (
+        (_lfo1PitchDepth > 0.0f || _lfo1FilterDepth > 0.0f ||
+         _lfo1PWMDepth   > 0.0f || _lfo1AmpDepth   > 0.0f) ? 1.0f : 0.0f);
+    // Ensure LFO DSP amplitude tracks effective level
+    if (eff1 != _lfo1.getAmplitude()) _lfo1.setAmplitude(eff1);
+
+    const float pitchG  = eff1 * _lfo1PitchDepth;
+    const float filterG = eff1 * _lfo1FilterDepth;
+    const float pwmG    = eff1 * _lfo1PWMDepth;
+    const float ampG    = eff1 * _lfo1AmpDepth;
+    for (int i = 0; i < MAX_VOICES; ++i) {
+        _voices[i].frequencyModMixerOsc1().gain(1, pitchG);
+        _voices[i].frequencyModMixerOsc2().gain(1, pitchG);
+        _voices[i].filterModMixer().gain(2, filterG);
+        _voices[i].shapeModMixerOsc1().gain(1, pwmG);
+        _voices[i].shapeModMixerOsc2().gain(1, pwmG);
+    }
+    _ampModMixer.gain(1, ampG);
+}
+
+void SynthEngine::_applyLFO2Gains() {
+    const float eff2 = (_lfo2Amount > 0.0f) ? _lfo2Amount : (
+        (_lfo2PitchDepth > 0.0f || _lfo2FilterDepth > 0.0f ||
+         _lfo2PWMDepth   > 0.0f || _lfo2AmpDepth   > 0.0f) ? 1.0f : 0.0f);
+    if (eff2 != _lfo2.getAmplitude()) _lfo2.setAmplitude(eff2);
+
+    const float pitchG  = eff2 * _lfo2PitchDepth;
+    const float filterG = eff2 * _lfo2FilterDepth;
+    const float pwmG    = eff2 * _lfo2PWMDepth;
+    const float ampG    = eff2 * _lfo2AmpDepth;
+    for (int i = 0; i < MAX_VOICES; ++i) {
+        _voices[i].frequencyModMixerOsc1().gain(2, pitchG);
+        _voices[i].frequencyModMixerOsc2().gain(2, pitchG);
+        _voices[i].filterModMixer().gain(3, filterG);
+        _voices[i].shapeModMixerOsc1().gain(2, pwmG);
+        _voices[i].shapeModMixerOsc2().gain(2, pwmG);
+    }
+    _ampModMixer.gain(2, ampG);
+}
+
+void SynthEngine::setLFO1PitchDepth(float d)  { _lfo1PitchDepth  = d; _applyLFO1Gains(); }
+void SynthEngine::setLFO1FilterDepth(float d) { _lfo1FilterDepth = d; _applyLFO1Gains(); }
+void SynthEngine::setLFO1PWMDepth(float d)    { _lfo1PWMDepth    = d; _applyLFO1Gains(); }
+void SynthEngine::setLFO1AmpDepth(float d)    { _lfo1AmpDepth    = d; _applyLFO1Gains(); }
+void SynthEngine::setLFO1Delay(float ms)      { _lfo1DelayMs     = ms; }
+
+void SynthEngine::setLFO2PitchDepth(float d)  { _lfo2PitchDepth  = d; _applyLFO2Gains(); }
+void SynthEngine::setLFO2FilterDepth(float d) { _lfo2FilterDepth = d; _applyLFO2Gains(); }
+void SynthEngine::setLFO2PWMDepth(float d)    { _lfo2PWMDepth    = d; _applyLFO2Gains(); }
+void SynthEngine::setLFO2AmpDepth(float d)    { _lfo2AmpDepth    = d; _applyLFO2Gains(); }
+void SynthEngine::setLFO2Delay(float ms)      { _lfo2DelayMs     = ms; }
+
+// ============================================================================
+// NEW: LFO DELAY RAMP — called from update() every Arduino loop iteration
+// Linear fade-in from 0 → target amplitude over the delay period.
+// ============================================================================
+void SynthEngine::_updateLFODelay() {
+    const uint32_t now = millis();
+
+    // LFO1 delay ramp
+    if (_lfo1Ramping && _lfo1DelayMs > 0.0f) {
+        const float elapsed = (float)(now - _lfo1NoteOnMs);
+        const float t = (elapsed >= _lfo1DelayMs) ? 1.0f : (elapsed / _lfo1DelayMs);
+        _lfo1CurrentAmp = _lfo1Amount * t;
+        if (t >= 1.0f) _lfo1Ramping = false;
+
+        // Apply ramped amplitude to all per-destination gains
+        const float pitchG  = _lfo1CurrentAmp * _lfo1PitchDepth;
+        const float filterG = _lfo1CurrentAmp * _lfo1FilterDepth;
+        const float pwmG    = _lfo1CurrentAmp * _lfo1PWMDepth;
+        const float ampG    = _lfo1CurrentAmp * _lfo1AmpDepth;
+        for (int i = 0; i < MAX_VOICES; ++i) {
+            _voices[i].frequencyModMixerOsc1().gain(1, pitchG);
+            _voices[i].frequencyModMixerOsc2().gain(1, pitchG);
+            _voices[i].filterModMixer().gain(2, filterG);
+            _voices[i].shapeModMixerOsc1().gain(1, pwmG);
+            _voices[i].shapeModMixerOsc2().gain(1, pwmG);
+        }
+        _ampModMixer.gain(1, ampG);
+    }
+
+    // LFO2 delay ramp
+    if (_lfo2Ramping && _lfo2DelayMs > 0.0f) {
+        const float elapsed = (float)(now - _lfo2NoteOnMs);
+        const float t = (elapsed >= _lfo2DelayMs) ? 1.0f : (elapsed / _lfo2DelayMs);
+        _lfo2CurrentAmp = _lfo2Amount * t;
+        if (t >= 1.0f) _lfo2Ramping = false;
+
+        const float pitchG  = _lfo2CurrentAmp * _lfo2PitchDepth;
+        const float filterG = _lfo2CurrentAmp * _lfo2FilterDepth;
+        const float pwmG    = _lfo2CurrentAmp * _lfo2PWMDepth;
+        const float ampG    = _lfo2CurrentAmp * _lfo2AmpDepth;
+        for (int i = 0; i < MAX_VOICES; ++i) {
+            _voices[i].frequencyModMixerOsc1().gain(2, pitchG);
+            _voices[i].frequencyModMixerOsc2().gain(2, pitchG);
+            _voices[i].filterModMixer().gain(3, filterG);
+            _voices[i].shapeModMixerOsc1().gain(2, pwmG);
+            _voices[i].shapeModMixerOsc2().gain(2, pwmG);
+        }
+        _ampModMixer.gain(2, ampG);
+    }
+}
+
+// ============================================================================
+// NEW: PITCH ENVELOPE
+// ============================================================================
+
+void SynthEngine::setPitchEnvAttack(float ms) {
+    _pitchEnvAttack = ms;
+    for (int i = 0; i < MAX_VOICES; ++i) _voices[i].setPitchEnvAttack(ms);
+}
+void SynthEngine::setPitchEnvDecay(float ms) {
+    _pitchEnvDecay = ms;
+    for (int i = 0; i < MAX_VOICES; ++i) _voices[i].setPitchEnvDecay(ms);
+}
+void SynthEngine::setPitchEnvSustain(float l) {
+    _pitchEnvSustain = l;
+    for (int i = 0; i < MAX_VOICES; ++i) _voices[i].setPitchEnvSustain(l);
+}
+void SynthEngine::setPitchEnvRelease(float ms) {
+    _pitchEnvRelease = ms;
+    for (int i = 0; i < MAX_VOICES; ++i) _voices[i].setPitchEnvRelease(ms);
+}
+void SynthEngine::setPitchEnvDepth(float semitones) {
+    if (semitones >  24.0f) semitones =  24.0f;
+    if (semitones < -24.0f) semitones = -24.0f;
+    _pitchEnvDepth = semitones;
+    for (int i = 0; i < MAX_VOICES; ++i) _voices[i].setPitchEnvDepth(semitones);
+
+    // Gain for pitch envelope on freqModMixer input 3.
+    // AudioEffectEnvelope outputs 0.0-1.0.
+    // OscillatorBlock sets frequencyModulation(10) = ±10 octaves at mixer gain 1.0.
+    // To get ±semitones range: gain = (semitones / 12.0) / 10.0
+    // Example: 12 semitones → gain = 1.0/10.0 = 0.1 → 1 octave sweep
+    // const float gainOctaves = (semitones / 12.0f) / 10.0f;
+    // for (int i = 0; i < MAX_VOICES; ++i) {
+    //     _voices[i].frequencyModMixerOsc1().gain(3, 1);
+    //     _voices[i].frequencyModMixerOsc2().gain(3, 1);
+    //  }
+}
+
+// ============================================================================
+// NEW: VELOCITY SENSITIVITY
+// ============================================================================
+
+void SynthEngine::setVelocityAmpSens(float s) {
+    _velAmpSens = s;
+    for (int i = 0; i < MAX_VOICES; ++i) _voices[i].setVelocityAmpSens(s);
+}
+void SynthEngine::setVelocityFilterSens(float s) {
+    _velFilterSens = s;
+    for (int i = 0; i < MAX_VOICES; ++i) _voices[i].setVelocityFilterSens(s);
+}
+void SynthEngine::setVelocityEnvSens(float s) {
+    _velEnvSens = s;
+    for (int i = 0; i < MAX_VOICES; ++i) _voices[i].setVelocityEnvSens(s);
 }
 
 // ============================================================================
@@ -991,6 +1178,7 @@ void SynthEngine::handleControlChange(byte /*channel*/, byte control, byte value
         case CC::LFO2_DESTINATION: { int d = JT4000Map::lfoDestFromCC(value); setLFO2Destination((LFODestination)d); JT_LOGF("[CC %u:%s] LFO2 Dest = %d\n", control, ccName, d); } break;
         case CC::LFO2_WAVEFORM:    { WaveformType t = waveformFromCC(value); setLFO2Waveform((int)t); JT_LOGF("[CC %u:%s] LFO2 Wave -> %s (%d)\n", control, ccName, waveformShortName(t), (int)t); } break;
 
+        
         // ============================================================================
         // JPFX CC HANDLERS (add to handleControlChange switch)
         // ============================================================================
@@ -1291,6 +1479,51 @@ case CC::DELAY_TIMING_MODE: {
 }
 
 
+
+        // =================== NEW: LFO per-destination depths ===================
+        // Each CC maps to a 0..1 depth for a specific LFO→destination lane.
+        // Final mixer gain = masterAmount * depthScalar.
+
+        case CC::LFO1_PITCH_DEPTH:  { setLFO1PitchDepth(norm);  JT_LOGF("[CC %u] LFO1 Pitch depth %.3f\n",  control, norm); } break;
+        case CC::LFO1_FILTER_DEPTH: { setLFO1FilterDepth(norm); JT_LOGF("[CC %u] LFO1 Filter depth %.3f\n", control, norm); } break;
+        case CC::LFO1_PWM_DEPTH:    { setLFO1PWMDepth(norm);    JT_LOGF("[CC %u] LFO1 PWM depth %.3f\n",    control, norm); } break;
+        case CC::LFO1_AMP_DEPTH:    { setLFO1AmpDepth(norm);    JT_LOGF("[CC %u] LFO1 Amp depth %.3f\n",    control, norm); } break;
+        case CC::LFO1_DELAY:
+        {   // CC 0-127 → 0-4000 ms delay before LFO reaches full depth
+            const float ms = norm * 4000.0f;
+            setLFO1Delay(ms);
+            JT_LOGF("[CC %u] LFO1 Delay %.0f ms\n", control, ms);
+        } break;
+
+        case CC::LFO2_PITCH_DEPTH:  { setLFO2PitchDepth(norm);  JT_LOGF("[CC %u] LFO2 Pitch depth %.3f\n",  control, norm); } break;
+        case CC::LFO2_FILTER_DEPTH: { setLFO2FilterDepth(norm); JT_LOGF("[CC %u] LFO2 Filter depth %.3f\n", control, norm); } break;
+        case CC::LFO2_PWM_DEPTH:    { setLFO2PWMDepth(norm);    JT_LOGF("[CC %u] LFO2 PWM depth %.3f\n",    control, norm); } break;
+        case CC::LFO2_AMP_DEPTH:    { setLFO2AmpDepth(norm);    JT_LOGF("[CC %u] LFO2 Amp depth %.3f\n",    control, norm); } break;
+        case CC::LFO2_DELAY:
+        {   const float ms = norm * 4000.0f;
+            setLFO2Delay(ms);
+            JT_LOGF("[CC %u] LFO2 Delay %.0f ms\n", control, ms);
+        } break;
+
+        // =================== NEW: Pitch envelope ===================
+        // ADSR times share the same cc_to_time_ms() mapping as amp/filter envs.
+        // DEPTH is bipolar: CC64 = 0 semitones; 0 = -24; 127 = +24.
+
+        case CC::PITCH_ENV_ATTACK:  { setPitchEnvAttack(CCtoTime(value));  JT_LOGF("[CC %u] PEnv Attack %.1f ms\n",  control, CCtoTime(value)); } break;
+        case CC::PITCH_ENV_DECAY:   { setPitchEnvDecay(CCtoTime(value));   JT_LOGF("[CC %u] PEnv Decay %.1f ms\n",   control, CCtoTime(value)); } break;
+        case CC::PITCH_ENV_SUSTAIN: { setPitchEnvSustain(norm);            JT_LOGF("[CC %u] PEnv Sustain %.3f\n",    control, norm);            } break;
+        case CC::PITCH_ENV_RELEASE: { setPitchEnvRelease(CCtoTime(value)); JT_LOGF("[CC %u] PEnv Release %.1f ms\n", control, CCtoTime(value)); } break;
+        case CC::PITCH_ENV_DEPTH:
+        {   // Bipolar: CC 64 = 0 semis, 0 = -24, 127 = +24
+            const float semis = ((float)value - 64.0f) * (24.0f / 64.0f);
+            setPitchEnvDepth(semis);
+            JT_LOGF("[CC %u] PEnv Depth %.1f semitones\n", control, semis);
+        } break;
+
+        // =================== NEW: Velocity sensitivity ===================
+        case CC::VELOCITY_AMP_SENS:    { setVelocityAmpSens(norm);    JT_LOGF("[CC %u] Vel Amp Sens %.3f\n",    control, norm); } break;
+        case CC::VELOCITY_FILTER_SENS: { setVelocityFilterSens(norm); JT_LOGF("[CC %u] Vel Filter Sens %.3f\n", control, norm); } break;
+        case CC::VELOCITY_ENV_SENS:    { setVelocityEnvSens(norm);    JT_LOGF("[CC %u] Vel Env Sens %.3f\n",    control, norm); } break;
 
         // ------------------- Fallback -------------------
         default:

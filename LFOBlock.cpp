@@ -44,10 +44,8 @@ void LFOBlock::setFrequency(float hz) {
     if (_timingMode == TIMING_FREE) {
         _freq = hz;
         _lfo.frequency(hz);
-        Serial.printf("LFO setFrequency %.3f Hz (FREE)\n", _freq);
-    } else {
-        Serial.printf("LFO in sync mode, freq managed by BPM clock\n");
     }
+    // BPM-sync mode: frequency is managed by updateFromBPMClock() each frame
 }
 
 void LFOBlock::update() {    
@@ -89,23 +87,15 @@ void LFOBlock::setDestination(LFODestination destination) {
 
 void LFOBlock::setAmplitude(float amp) {
     _amp = amp;
-    // If enabled, apply the new amplitude.  Otherwise, keep the
-    // underlying oscillator muted.  We still store the requested
-    // amplitude for later.
-    if (_enabled) {
-        _lfo.amplitude(_amp);
-    } else {
-        _lfo.amplitude(0.0f);
-    }
-    Serial.printf("setAmplitude %.3f\n",  _amp);
-    // If the amplitude becomes zero, disable the LFO to save CPU
+    // Enable/disable based purely on amplitude value.
+    // The old code required _destination != LFO_DEST_NONE to enable — this broke
+    // the per-destination depth system where the destination enum is never set,
+    // keeping the LFO permanently muted even when mixer gains were non-zero.
+    // CPU saving is achieved by zeroing amplitude, not by disabling the oscillator.
     if (_amp <= 0.0f) {
         setEnabled(false);
     } else {
-        // If a valid destination is set, re‑enable the LFO
-        if (_destination != LFO_DEST_NONE) {
-            setEnabled(true);
-        }
+        setEnabled(true);
     }
 }
 

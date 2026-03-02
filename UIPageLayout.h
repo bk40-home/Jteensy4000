@@ -46,6 +46,14 @@
 //              24 OSC1 Bank / OSC1 Wave# / OSC2 Bank / OSC2 Wave#
 //
 //   BPM      : 25 ClockSrc / IntBPM / DelaySync / -
+//
+//  NEW (pages 26-31):
+//   LFO1Dep  : 26 L1 Pitch / L1 Filter / L1 PWM / L1 Amp
+//   LFO1Dly  : 27 L1 Delay / L1 Freq / L1 Wave / -
+//   LFO2Dep  : 28 L2 Pitch / L2 Filter / L2 PWM / L2 Amp
+//   LFO2Dly  : 29 L2 Delay / L2 Freq / L2 Wave / -
+//   PitchEnv : 30 PE ADSR
+//   PitchV   : 31 PE Depth / Vel Amp / Vel Filter / Vel Env
 // =============================================================================
 
 #pragma once
@@ -54,7 +62,7 @@
 
 namespace UIPage {
 
-static constexpr int NUM_PAGES       = 26;  // 0..25
+static constexpr int NUM_PAGES       = 32;  // 0..31  (pages 26-31 = new LFO+PitchEnv+Velocity)
 static constexpr int PARAMS_PER_PAGE = 4;
 
 // ---------------------------------------------------------------------------
@@ -176,6 +184,23 @@ static constexpr uint8_t ccMap[NUM_PAGES][PARAMS_PER_PAGE] = {
 
     // Page 25: BPM clock source and internal tempo
     { CC::BPM_CLOCK_SOURCE, CC::BPM_INTERNAL_TEMPO, 255, 255 },
+
+ 
+
+    // Page 26/7
+    // LFO1 per-destination depths and delay
+    {CC::LFO1_PITCH_DEPTH, CC::LFO1_FILTER_DEPTH, CC::LFO1_PWM_DEPTH, CC::LFO1_AMP_DEPTH},
+    {CC::LFO1_DELAY, CC::LFO1_FREQ, CC::LFO1_DESTINATION, CC::LFO1_WAVEFORM },
+    // Page 28/9
+    // LFO2 per-destination depths and delay
+    {CC::LFO2_PITCH_DEPTH, CC::LFO2_FILTER_DEPTH, CC::LFO2_PWM_DEPTH, CC::LFO2_AMP_DEPTH},
+    {CC::LFO2_DELAY, CC::LFO2_FREQ, CC::LFO2_DESTINATION, CC::LFO2_WAVEFORM },
+
+    // Page 30/31
+    // Pitch envelope
+    {CC::PITCH_ENV_ATTACK, CC::PITCH_ENV_DECAY, CC::PITCH_ENV_SUSTAIN, CC::PITCH_ENV_RELEASE},
+    {CC::PITCH_ENV_DEPTH, CC::VELOCITY_AMP_SENS, CC::VELOCITY_FILTER_SENS, CC::VELOCITY_ENV_SENS },
+
 };
 
 // ---------------------------------------------------------------------------
@@ -261,6 +286,24 @@ static constexpr const char* ccNames[NUM_PAGES][PARAMS_PER_PAGE] = {
 
     // Page 25 — BPM clock
     { "Clock Src", "Int BPM",    "---",        "---"       },
+
+    // Page 26 — LFO1 per-dest depths
+    { "L1 Pitch",  "L1 Filter",  "L1 PWM",     "L1 Amp"    },
+
+    // Page 27 — LFO1 delay + refs: DELAY, FREQ, DESTINATION, WAVEFORM
+    { "L1 Delay",  "L1 Freq",    "L1 Dest",    "L1 Wave"   },
+
+    // Page 28 — LFO2 per-dest depths
+    { "L2 Pitch",  "L2 Filter",  "L2 PWM",     "L2 Amp"    },
+
+    // Page 29 — LFO2 delay + refs: DELAY, FREQ, DESTINATION, WAVEFORM
+    { "L2 Delay",  "L2 Freq",    "L2 Dest",    "L2 Wave"   },
+
+    // Page 30 — Pitch envelope ADSR
+    { "PE Att",    "PE Dec",     "PE Sus",     "PE Rel"    },
+
+    // Page 31 — Pitch env depth + velocity
+    { "PE Depth",  "Vel Amp",    "Vel Flt",    "Vel Env"   },
 };
 
 // ---------------------------------------------------------------------------
@@ -294,6 +337,13 @@ static constexpr const char* pageTitle[NUM_PAGES] = {
     "Performance",       // 23
     "Arb Waveforms",     // 24
     "BPM Clock",         // 25
-};
+    "Depths LFO1",       // 26  tab shows "Depths"
+    "Delay LFO1",        // 27  tab shows "Delay"
+    "Depths LFO2",       // 28  tab shows "Depths" — same section, scrollable
+    "Delay LFO2",        // 29  tab shows "Delay"
+    "Pitch Env ADSR",    // 30  tab shows "Pitch"
+    "Vel+PEnv Depth",    // 31  tab shows "Vel+PEnv"
+
+    };
 
 } // namespace UIPage
