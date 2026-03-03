@@ -21,10 +21,14 @@ VoiceBlock::VoiceBlock() : _osc1(true), _osc2(false)    // ← OSC1: supersaw en
     
     _patchCables[13] = new AudioConnection(_filter.envmod(), 0 , _filterEnvelope.input(), 0); 
     _patchCables[14] = new AudioConnection(_filterEnvelope.output(), 0, _filter.modMixer(), 1);
-    _pitchEnvDc.amplitude(1.0f);
+    // Pitch envelope DC source.
+    // _pitchEnvDc amplitude = semitones / 12.0 (set by SynthEngine::setPitchEnvDepth).
+    // Positive amplitude → pitch UP, negative → pitch DOWN.
+    // AudioEffectEnvelope gates this signal: output = amplitude × ADSR(0..1).
+    // freqModMixer gain(3) is fixed at 1/10 (set by SynthEngine at construction).
+    // At amplitude=1.0, gain=0.1, frequencyModulation(10): shift = 2^(1×0.1×10) = 2^1 = 1 oct.
+    _pitchEnvDc.amplitude(0.0f);   // starts at 0; setPitchEnvDepth() writes the real value
     _patchCables[15] = new AudioConnection(_pitchEnvDc, 0, _pitchEnvelope.input(), 0);
-    _patchCables[16] = new AudioConnection(_pitchEnvelope.output(), 0, _osc1.frequencyModMixer(), 3);
-    _patchCables[17] = new AudioConnection(_pitchEnvelope.output(), 0, _osc2.frequencyModMixer(), 3);
 
     _oscMixer.gain(0, _on);
     _oscMixer.gain(1, _on);
@@ -82,10 +86,11 @@ void VoiceBlock::noteOn(float freq, float velocity) {
     _filterEnvelope.noteOn();
     _ampEnvelope.noteOn();
 
-    // Pitch envelope — only trigger if depth is non-zero (CPU guard)
-    if (_pitchEnvDepth != 0.0f) {
-        _pitchEnvelope.noteOn();
-    }
+    // Pitch envelope — trigger unconditionally, same as _filterEnvelope.
+    // Depth control is handled by freqModMixer gain(3) set in SynthEngine::setPitchEnvDepth().
+    // When depth=0 that gain=0, so no pitch effect occurs even though the envelope runs.
+    // Guarding on _pitchEnvDepth caused a race where setting depth after noteOn had no effect.
+    _pitchEnvelope.noteOn();
 
     // ---- Key tracking: compute filter cutoff modulation ----
     float deltaOct   = log2f(freq / 440.0f);
@@ -101,9 +106,8 @@ void VoiceBlock::noteOff() {
     _isActive = false;
     _filterEnvelope.noteOff();
     _ampEnvelope.noteOff();
-    if (_pitchEnvDepth != 0.0f) {
-        _pitchEnvelope.noteOff();
-    }
+    // Trigger unconditionally — gain=0 means no audible effect when depth=0
+    _pitchEnvelope.noteOff();
 }
 
 void VoiceBlock::setOsc1Waveform(int wave) { _osc1.setWaveformType(wave); }
@@ -358,16 +362,23 @@ void VoiceBlock::setPitchEnvSustain(float level) { _pitchEnvelope.setSustainLeve
 void VoiceBlock::setPitchEnvRelease(float ms)    { _pitchEnvelope.setReleaseTime(ms); }
 
 void VoiceBlock::setPitchEnvDepth(float semitones) {
-    // Clamp to safe range — 24 semitones = 2 octaves each way
+    // Clamp to ±24 semitones (2 octaves each way).
     if (semitones >  24.0f) semitones =  24.0f;
     if (semitones < -24.0f) semitones = -24.0f;
     _pitchEnvDepth = semitones;
-    // Note: SynthEngine must update the downstream frequencyModMixer gain
-    // whenever depth changes, since the gain encodes the semitone range.
+    // Write depth directly into the DC source amplitude.
+    // Range: -1.0 (24 semi down) to +1.0 (24 semi up); 0 = no effect.
+    // freqModMixer gain(3) is fixed at 1/10 (set by SynthEngine at construction).
+    // The AudioEffectEnvelope gates this signal; its ADSR shape the pitch sweep over time.
+    _pitchEnvDc.amplitude(semitones / 12.0f);
 }
 
 AudioStream& VoiceBlock::pitchEnvOutput() {
     return _pitchEnvelope.output();
+}
+
+AudioSynthWaveformDc& VoiceBlock::pitchEnvDcRef() {
+    return _pitchEnvDc;
 }
 
 // Getters

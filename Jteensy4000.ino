@@ -292,6 +292,13 @@ void setup() {
     hw.begin();
     ui.begin(synth);
     synth.setNotifier(onCCHandled);
+
+    // Load init template BEFORE syncFromEngine so _ccState is populated.
+    // Without this, all CC values are 0 at boot and the display shows wrong values
+    // until the first preset is loaded.
+    //Presets.loadInitTemplateByWave(synth, 0);
+    
+
     ui.syncFromEngine(synth);
 
     // -------------------------------------------------------------------------

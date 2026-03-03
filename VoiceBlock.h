@@ -135,7 +135,8 @@ public:
     float getPitchEnvDepth() const { return _pitchEnvDepth; }
 
     // Pitch envelope audio output — wired by SynthEngine to frequencyModMixer
-    AudioStream& pitchEnvOutput();
+    AudioStream&         pitchEnvOutput();  // envelope AudioStream (source to freqModMixer)
+    AudioSynthWaveformDc& pitchEnvDcRef();  // DC source — amplitude set by setPitchEnvDepth()
 
     // =========================================================================
     // NEW: VELOCITY SENSITIVITY
@@ -269,7 +270,7 @@ private:
     float _on = 0.9f;
     float _clampedLevel(float level);
 
-    AudioConnection* _patchCables[18];  // +1 for pitch envelope DC source
+    AudioConnection* _patchCables[16];  // +1 for pitch envelope DC source
 
     // -----------------------------------------------------------------------
     // NEW: Pitch envelope
@@ -277,10 +278,18 @@ private:
     // which it multiplies by the ADSR shape.  _pitchEnvDc provides that 1.0 feed.
     // The output (0..1) flows to frequencyModMixer input 3 via SynthEngine wiring.
     // -----------------------------------------------------------------------
-    AudioSynthWaveformDc _pitchEnvDc;   // constant 1.0 feed into pitch envelope
+    // Pitch envelope DC source.
+    // Amplitude encodes depth AND direction: amplitude = semitones / 12.0 (range -1..+1)
+    // AudioEffectEnvelope gates this to produce the ADSR-shaped pitch modulation signal.
+    // freqModMixer gain(3) is fixed at 1/10 so ±1.0 at the FM input = ±10 octaves.
+    AudioSynthWaveformDc _pitchEnvDc;
     EnvelopeBlock _pitchEnvelope;
 
-
+    // Audio connection from pitch envelope → oscillator freq mixer.
+    // Created by SynthEngine so it can control the gain (depth scaling).
+    // This pointer is nullptr until SynthEngine wires it.
+    AudioConnection* _pitchEnvPatch1 = nullptr;  // → osc1 freqMod input 0
+    AudioConnection* _pitchEnvPatch2 = nullptr;  // → osc2 freqMod input 0
 
     // Pitch env depth in semitones (signed, ±24)
     float _pitchEnvDepth = 0.0f;

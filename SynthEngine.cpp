@@ -110,6 +110,28 @@ SynthEngine::SynthEngine()
     // =========================================================================
     // CREATE AUDIO CONNECTIONS - AMP MODULATION
     // =========================================================================
+    
+    // ---- Pitch envelope audio connections ----
+    // frequencyModMixer input slot allocation (DO NOT change without checking OscillatorBlock):
+    //   0 = _frequencyDc   — wired inside OscillatorBlock constructor, must NOT be touched
+    //   1 = LFO1           — wired above
+    //   2 = LFO2           — wired above
+    //   3 = Pitch envelope — the only free slot
+    // Connecting to slot 0 would REPLACE the _frequencyDc connection and detune all voices.
+    // frequencyModMixer gain(3) is fixed at 1/10 because frequencyModulation(10).
+    // Depth and direction are encoded in _pitchEnvDc amplitude (set by setPitchEnvDepth).
+    // At amplitude ±1.0 and gain 0.1: FM shift = 2^(±1 × 0.1 × 10) = ±1 octave.
+    // With depth ±12 semitones: amplitude = ±12/12 = ±1.0 → ±1 octave. Correct.
+    static constexpr float kPitchEnvFMGain = 1.0f / 10.0f;
+    for (int i = 0; i < MAX_VOICES; ++i) {
+        // _voices[i]._pitchEnvPatch1 = new AudioConnection(
+        //     _voices[i].pitchEnvOutput(), 0, _voices[i].frequencyModMixerOsc1(), 3);
+        // _voices[i]._pitchEnvPatch2 = new AudioConnection(
+        //     _voices[i].pitchEnvOutput(), 0, _voices[i].frequencyModMixerOsc2(), 3);
+        // // Fixed gain — depth is encoded in _pitchEnvDc amplitude, not here.
+        // _voices[i].frequencyModMixerOsc1().gain(3, kPitchEnvFMGain);
+        // _voices[i].frequencyModMixerOsc2().gain(3, kPitchEnvFMGain);
+    }
 
     _patchAmpModFixedDcToAmpModMixer = new AudioConnection(_ampModFixedDc, 0, _ampModMixer, 0);
     _patchLFO1ToAmpModMixer          = new AudioConnection(_lfo1.output(), 0, _ampModMixer, 1);
@@ -723,21 +745,12 @@ void SynthEngine::setPitchEnvRelease(float ms) {
     for (int i = 0; i < MAX_VOICES; ++i) _voices[i].setPitchEnvRelease(ms);
 }
 void SynthEngine::setPitchEnvDepth(float semitones) {
-    if (semitones >  24.0f) semitones =  24.0f;
-    if (semitones < -24.0f) semitones = -24.0f;
+    semitones = constrain(semitones, -24.0f, 24.0f);
     _pitchEnvDepth = semitones;
+    // VoiceBlock::setPitchEnvDepth writes amplitude = semitones / 12.0 to _pitchEnvDc.
+    // Range: -1.0 (full down) to +1.0 (full up), 0 = no pitch shift.
+    // freqModMixer gain(3) is fixed at 1/10 set at construction — do NOT change it here.
     for (int i = 0; i < MAX_VOICES; ++i) _voices[i].setPitchEnvDepth(semitones);
-
-    // Gain for pitch envelope on freqModMixer input 3.
-    // AudioEffectEnvelope outputs 0.0-1.0.
-    // OscillatorBlock sets frequencyModulation(10) = ±10 octaves at mixer gain 1.0.
-    // To get ±semitones range: gain = (semitones / 12.0) / 10.0
-    // Example: 12 semitones → gain = 1.0/10.0 = 0.1 → 1 octave sweep
-    // const float gainOctaves = (semitones / 12.0f) / 10.0f;
-    // for (int i = 0; i < MAX_VOICES; ++i) {
-    //     _voices[i].frequencyModMixerOsc1().gain(3, 1);
-    //     _voices[i].frequencyModMixerOsc2().gain(3, 1);
-    //  }
 }
 
 // ============================================================================
