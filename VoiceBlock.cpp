@@ -314,8 +314,10 @@ void VoiceBlock::setFilterADSR(float a, float d, float s, float r) {
     _filterEnvelope.setADSR(a,d,s,r);
 }
 
-void VoiceBlock::setOsc1PitchOffset(float semis) { _osc1.setPitchOffset(semis); }
-void VoiceBlock::setOsc2PitchOffset(float semis) { _osc2.setPitchOffset(semis); }
+void VoiceBlock::setOsc1PitchOffset(float semis)     { _osc1.setPitchOffset(semis); }
+void VoiceBlock::setOsc2PitchOffset(float semis)     { _osc2.setPitchOffset(semis); }
+void VoiceBlock::setOsc1PitchModulation(float semis) { _osc1.setPitchModulation(semis); }
+void VoiceBlock::setOsc2PitchModulation(float semis) { _osc2.setPitchModulation(semis); }
 void VoiceBlock::setOsc1Detune(float hz) { _osc1.setDetune(hz); }
 void VoiceBlock::setOsc2Detune(float hz) { _osc2.setDetune(hz); }
 void VoiceBlock::setOsc1FineTune(float cents) { _osc1.setFineTune(cents); }
@@ -362,15 +364,26 @@ void VoiceBlock::setPitchEnvSustain(float level) { _pitchEnvelope.setSustainLeve
 void VoiceBlock::setPitchEnvRelease(float ms)    { _pitchEnvelope.setReleaseTime(ms); }
 
 void VoiceBlock::setPitchEnvDepth(float semitones) {
-    // Clamp to ±24 semitones (2 octaves each way).
+    // Clamp to ±PITCH_ENV_MAX_SEMITONES (±24 semitones, 2 octaves each way).
     if (semitones >  24.0f) semitones =  24.0f;
     if (semitones < -24.0f) semitones = -24.0f;
     _pitchEnvDepth = semitones;
-    // Write depth directly into the DC source amplitude.
-    // Range: -1.0 (24 semi down) to +1.0 (24 semi up); 0 = no effect.
-    // freqModMixer gain(3) is fixed at 1/10 (set by SynthEngine at construction).
-    // The AudioEffectEnvelope gates this signal; its ADSR shape the pitch sweep over time.
-    _pitchEnvDc.amplitude(semitones / 12.0f);
+
+    // Write depth into the DC source amplitude.
+    //
+    // The DC → EnvelopeBlock → freqModMixer(slot 3) → _mainOsc FM input chain uses:
+    //   delta_Hz = dc_amplitude * freqModMixer_gain(3) * FM_OCTAVE_RANGE * base_freq
+    //
+    // freqModMixer gain(3) = 1.0 (full pass-through; the DC amplitude carries the depth).
+    // FM_OCTAVE_RANGE = 10  (set by _mainOsc.frequencyModulation(10) in OscillatorBlock).
+    //
+    // Required:  dc_amplitude = semitones * FM_SEMITONE_SCALE
+    //                         = semitones / (FM_OCTAVE_RANGE × 12)
+    //                         = semitones / 120
+    //
+    // Previously: amplitude = semitones / 12  → 10× too large (1 octave/12 instead of 120)
+    static constexpr float PITCH_ENV_FM_SCALE = 1.0f / (10.0f * 12.0f);  // = FM_SEMITONE_SCALE
+    _pitchEnvDc.amplitude(semitones * PITCH_ENV_FM_SCALE);
 }
 
 AudioStream& VoiceBlock::pitchEnvOutput() {

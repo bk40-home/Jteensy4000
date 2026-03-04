@@ -114,6 +114,11 @@ private:
     void _handleTouch(SynthEngine& synth);
     void _drawFullScope(SynthEngine& synth);
 
+    // ---- Diagnostic ----
+    //   while (true) {}              // halt so you can read the screen
+    //
+    // Remove both lines once colours are confirmed correct.
+
     // ---- Members ----
     ILI9341_t3n   _display;
     TouchInput    _touch;
@@ -126,5 +131,7 @@ private:
     SectionScreen _section;
     PresetBrowser _browser;
     int           _currentPresetIdx;
-    bool          _scopeFullFirstFrame;
+    bool          _scopeFullFirstFrame;   // true = draw static chrome this frame
+    float         _fsPeakSmooth;          // full-screen scope peak (exponential decay)
+    int16_t       _fsPrevWave[282];        // per-column previous Y for erase-before-draw
 };

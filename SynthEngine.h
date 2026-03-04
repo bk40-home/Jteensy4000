@@ -15,7 +15,84 @@
 
 using namespace JT4000Map;
 
+// ============================================================================
+// FREQUENCY MODULATION SCALING — READ THIS BEFORE TOUCHING ANY PITCH GAINS
+// ============================================================================
+//
+// OscillatorBlock wires a 4-channel AudioMixer4 into the FM input of every
+// AudioSynthWaveformModulated oscillator.  The call:
+//
+//     _mainOsc.frequencyModulation(FM_OCTAVE_RANGE)   // = 10
+//
+// means a ±1.0 signal on the FM input shifts pitch by ±FM_OCTAVE_RANGE octaves
+// using EXPONENTIAL (musical) scaling:
+//
+//     output_freq = base_freq × 2^(fm_input × FM_OCTAVE_RANGE)
+//
+// To shift by S semitones:
+//     fm_input = S / (FM_OCTAVE_RANGE × 12)  =  S × FM_SEMITONE_SCALE
+//
+// Examples:
+//     ±1 semitone  → fm_input = ±0.00833
+//     ±2 semitones → fm_input = ±0.01667
+//     ±7 semitones → fm_input = ±0.05833
+//     ±12 semitones → fm_input = ±0.10000
+//     ±24 semitones → fm_input = ±0.20000
+//
+// ── FM MIXER SLOT ALLOCATION ──────────────────────────────────────────────
+//   Slot 0: _frequencyDc     — static pitch offset (DC), gain 1.0, amplitude scaled
+//   Slot 1: LFO1             — gain set by _applyLFO1Gains(), amplitude kept at eff1
+//   Slot 2: LFO2             — gain set by _applyLFO2Gains(), amplitude kept at eff2
+//   Slot 3: Pitch envelope   — gain 1.0, per-voice DC amplitude carries the depth
+//
+// ── LFO DESIGN RATIONALE ─────────────────────────────────────────────────
+//   LFO amplitude is always kept at eff1 (0..1 from LFO1_DEPTH CC or auto-1.0).
+//   The per-destination depth CC controls the FM MIXER GAIN for that slot — NOT
+//   the LFO waveform amplitude.  This keeps the LFO waveform shape undistorted
+//   and allows the same LFO to simultaneously modulate pitch at one depth and
+//   filter at a different depth.
+//
+//   At full LFO1_DEPTH (eff1=1.0) and full LFO1_PITCH_DEPTH (depth=1.0):
+//     mixer gain = 1.0 × 1.0 × (LFO_PITCH_MAX_SEMITONES × FM_SEMITONE_SCALE)
+//               = 7 / 120 = 0.0583
+//     FM input peak = ±0.0583  →  ±7 semitones of vibrato
+//
+//   With gain=1.0 (unscaled), ±1.0 LFO → ±10 octaves: clearly unusable.
+//   With FM_SEMITONE_SCALE applied, the range is musical and controllable.
+//
+// ── PITCH BEND ────────────────────────────────────────────────────────────
+//   Pitch bend is handled in SOFTWARE (OscillatorBlock::setPitchModulation),
+//   NOT through the FM mixer.  This gives exact semitone accuracy at all
+//   base frequencies and avoids consuming an FM mixer slot.
+//   The bend amount is applied to all active voices via SynthEngine::setPitchBend().
+// ============================================================================
+
 #define MAX_VOICES 8   // 8-voice polyphony
+
+// Must equal the argument passed to _mainOsc.frequencyModulation(N) in OscillatorBlock.
+static constexpr float FM_OCTAVE_RANGE = 10.0f;
+
+// Converts a semitone count to the corresponding FM mod-input amplitude.
+//   fm_input = desired_semitones * FM_SEMITONE_SCALE
+static constexpr float FM_SEMITONE_SCALE = 1.0f / (FM_OCTAVE_RANGE * 12.0f);  // = 0.008333
+
+// Maximum LFO vibrato at full pitch depth CC (peak semitones, positive side).
+// At LFO1_DEPTH=127 + LFO1_PITCH_DEPTH=127: ±LFO_PITCH_MAX_SEMITONES of vibrato.
+// 7 semitones ≈ JP-8000 full vibrato range.
+static constexpr float LFO_PITCH_MAX_SEMITONES = 7.0f;
+
+// Maximum unipolar DC pitch offset (semitones).
+// CC=0 → 0 semitones, CC=127 → +DC_PITCH_MAX_SEMITONES.
+static constexpr float DC_PITCH_MAX_SEMITONES  = 24.0f;
+
+// Maximum bipolar pitch envelope depth (semitones from centre).
+// CC=64 → 0, CC=127 → +PITCH_ENV_MAX_SEMITONES, CC=0 → -PITCH_ENV_MAX_SEMITONES.
+static constexpr float PITCH_ENV_MAX_SEMITONES = 24.0f;
+
+// Default and maximum pitch bend range (semitones, applied ± symmetrically).
+// Standard MIDI = ±2 semitones.  Set via CC::PITCH_BEND_RANGE.
+static constexpr float PITCH_BEND_DEFAULT_SEMITONES = 2.0f;
+static constexpr float PITCH_BEND_MAX_SEMITONES     = 24.0f;
 
 class SynthEngine {
 public:
@@ -59,6 +136,22 @@ public:
     void setOsc2Detune(float semis);
     void setOsc1FineTune(float cents);
     void setOsc2FineTune(float cents);
+
+    // ---- Pitch bend ----
+    // handlePitchBend()  — call from MIDI pitch bend callback.
+    //   value   = raw 14-bit MIDI value (0..16383, centre = 8192).
+    //   channel = MIDI channel (currently ignored; all channels bend equally).
+    // Stores bend internally and applies to all active voices immediately.
+    void handlePitchBend(uint8_t channel, int16_t value);
+
+    // setPitchBendRange()  — set ±range in semitones (0..PITCH_BEND_MAX_SEMITONES).
+    //   Default = PITCH_BEND_DEFAULT_SEMITONES (2).
+    //   Applied on next handlePitchBend() call.
+    void setPitchBendRange(float semitones);
+
+    float getPitchBendRange()  const { return _pitchBendRange; }
+    float getPitchBendSemis()  const { return _pitchBendSemis; }
+
     void setOscMix(float osc1Level, float osc2Level);
     void setOsc1Mix(float oscLevel);
     void setOsc2Mix(float oscLevel);
@@ -424,6 +517,9 @@ private:
     // Oscillator
     int   _osc1Wave = 0,  _osc2Wave = 0;
     float _osc1PitchSemi = 0.0f, _osc2PitchSemi = 0.0f;
+    // Pitch bend state — shared across all voices.
+    float _pitchBendRange = PITCH_BEND_DEFAULT_SEMITONES;  // ±semitones at wheel extremes
+    float _pitchBendSemis = 0.0f;                          // current bend in semitones
     float _osc1DetuneSemi = 0.0f, _osc2DetuneSemi = 0.0f;
     float _osc1FineCents = 0.0f,  _osc2FineCents = 0.0f;
     float _osc1Mix = 1.0f,  _osc2Mix = 1.0f;

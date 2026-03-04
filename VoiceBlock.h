@@ -44,6 +44,12 @@ public:
     void setOsc2Mix(float oscLevel);
     void setOsc1PitchOffset(float semis);
     void setOsc2PitchOffset(float semis);
+    // Pitch modulation — used for pitch bend (and any other transient pitch shift).
+    // Unlike setPitchOffset (which sets a stored coarse value), this is applied
+    // on top of pitchOffset inside OscillatorBlock::update() and can be changed
+    // per audio frame without altering the preset state.
+    void setOsc1PitchModulation(float semis);
+    void setOsc2PitchModulation(float semis);
     void setOsc1Detune(float hz);
     void setOsc2Detune(float hz);
     void setOsc1FineTune(float cents);

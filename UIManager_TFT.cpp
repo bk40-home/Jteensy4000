@@ -21,6 +21,7 @@ UIManager_TFT::UIManager_TFT()
     , _synthRef(nullptr)
     , _currentPresetIdx(0)
     , _scopeFullFirstFrame(true)
+    , _fsPeakSmooth(0.0f)
 {}
 
 // =============================================================================
@@ -30,6 +31,12 @@ UIManager_TFT::UIManager_TFT()
 void UIManager_TFT::beginDisplay() {
     _display.begin(SPI_CLOCK_HZ);
     _display.setRotation(3);       // landscape 320×240
+
+    // The ILI9341 power-on default is INVON (colour inversion active).
+    // Without this call every colour would display as its complement.
+    // invertDisplay(false) sends the INVOFF (0x20) command once.
+    _display.invertDisplay(true);
+
     _display.fillScreen(0x0000);
 
     // Touch controller init over I2C — safe before AudioMemory
@@ -176,7 +183,7 @@ void UIManager_TFT::_setMode(Mode m) {
     _mode = m;
     _display.fillScreen(0x0000);
     if (m == Mode::HOME)       _home.markFullRedraw();
-    if (m == Mode::SCOPE_FULL) _scopeFullFirstFrame = true;
+    if (m == Mode::SCOPE_FULL) { _scopeFullFirstFrame = true; }
 }
 
 void UIManager_TFT::_goHome() {
@@ -258,7 +265,10 @@ void UIManager_TFT::_handleTouch(SynthEngine& synth) {
             break;
 
         case Mode::SCOPE_FULL:
-            if (g == TouchInput::GESTURE_TAP) _goHome();
+            // Any tap on the full-screen scope returns home.
+            if (g == TouchInput::GESTURE_TAP) {
+                _goHome();
+            }
             break;
     }
 }
@@ -270,89 +280,80 @@ void UIManager_TFT::_handleTouch(SynthEngine& synth) {
 // entry via _scopeFullFirstFrame. Only the waveform band (y=20..219) is cleared
 // each frame. This saves ~100 000 SPI bytes/frame vs fillScreen().
 // =============================================================================
-// _drawFullScope — repurposed as a colour calibration screen.
-// Shows every named palette colour as a filled swatch with its hex value and name.
-// This lets you verify the BGR565 pre-swap values are displaying the intended colours.
-// Drawn once on entry (_scopeFullFirstFrame); press any button to return to HOME.
 void UIManager_TFT::_drawFullScope(SynthEngine& /*synth*/) {
 
-    // Only draw on first frame — this is a static reference screen, not animated.
-    if (!_scopeFullFirstFrame) return;
-    _scopeFullFirstFrame = false;
+    if (_scopeFullFirstFrame) {
+        _scopeFullFirstFrame = false;
 
-    // Clear to dark background
-    _display.fillScreen(COLOUR_BACKGROUND);
-
-    // ---- Header ----
-    _display.fillRect(0, 0, 320, 18, COLOUR_HEADER_BG);
-    _display.setTextSize(1);
-    _display.setTextColor(COLOUR_SYSTEXT, COLOUR_HEADER_BG);
-    _display.setCursor(4, 5);
-    _display.print("COLOUR CALIBRATION");
-    _display.setTextColor(COLOUR_TEXT_DIM, COLOUR_HEADER_BG);
-    _display.setCursor(200, 5);
-    _display.print("PRESS BTN TO EXIT");
-
-    // ---- Colour table ----
-    // Each entry: { value, name, intended hex comment }
-    struct ColourEntry { uint16_t val; const char* name; const char* hex; };
-    static const ColourEntry kColours[] = {
-        { COLOUR_BACKGROUND, "BACKGROUND", "#101428" },
-        { COLOUR_TEXT,       "TEXT",       "#D2D7E1" },
-        { COLOUR_SYSTEXT,    "SYSTEXT",    "#FFA000" },
-        { COLOUR_TEXT_DIM,   "TEXT_DIM",   "#787D8C" },
-        { COLOUR_SELECTED,   "SELECTED",   "#FFA000" },
-        { COLOUR_ACCENT,     "ACCENT",     "#FF1C18" },
-        { COLOUR_OSC,        "OSC",        "#00CBFF" },
-        { COLOUR_FILTER,     "FILTER",     "#FFB428" },
-        { COLOUR_ENV,        "ENV",        "#DC32A0" },
-        { COLOUR_LFO,        "LFO",        "#FF6C00" },
-        { COLOUR_FX,         "FX",         "#00DCFF" },
-        { COLOUR_GLOBAL,     "GLOBAL",     "#828291" },
-        { COLOUR_HEADER_BG,  "HEADER_BG",  "#19233C" },
-        { COLOUR_BORDER,     "BORDER",     "#2D3750" },
-        { COLOUR_SCOPE_WAVE, "SCOPE_WAVE", "#00FF38" },
-        { COLOUR_SCOPE_ZERO, "SCOPE_ZERO", "#006414" },
-        { COLOUR_SCOPE_BG,   "SCOPE_BG",   "#000C00" },
-        { COLOUR_METER_GREEN,"METER_GRN",  "#14DC14" },
-        { COLOUR_METER_YELLOW,"METER_YEL", "#FFDC00" },
-        { COLOUR_METER_RED,  "METER_RED",  "#FF1C18" },
-    };
-    static constexpr int kCount = sizeof(kColours) / sizeof(kColours[0]);
-
-    // Layout: 2 columns, rows from y=20 downward
-    // Each row: 18px tall, swatch 28px wide, name, hex value
-    static constexpr int16_t ROW_H   = 11;
-    static constexpr int16_t COL_W   = 160;  // half screen width
-    static constexpr int16_t SWATCH  = 26;
-    static constexpr int16_t START_Y = 20;
-
-    for (int i = 0; i < kCount; ++i) {
-        const int col = i / 10;                // 0=left, 1=right
-        const int row = i % 10;
-        const int16_t x = col * COL_W;
-        const int16_t y = START_Y + row * ROW_H;
-
-        // Filled colour swatch
-        _display.fillRect(x + 2, y + 1, SWATCH, ROW_H - 2, kColours[i].val);
-        // Thin border around swatch so near-black swatches are visible
-        _display.drawRect(x + 2, y + 1, SWATCH, ROW_H - 2, COLOUR_BORDER);
-
-        // Name
+        // Static header
+        _display.fillRect(0, 0, 320, 20, COLOUR_HEADER_BG);
         _display.setTextSize(1);
-        _display.setTextColor(COLOUR_TEXT, COLOUR_BACKGROUND);
-        _display.setCursor(x + SWATCH + 5, y + 2);
-        _display.print(kColours[i].name);
+        _display.setTextColor(COLOUR_SYSTEXT, COLOUR_HEADER_BG);
+        _display.setCursor(4, 6);
+        _display.print("OSCILLOSCOPE");
 
-        // Intended hex colour (target colour in standard RGB)
-        _display.setTextColor(COLOUR_TEXT_DIM, COLOUR_BACKGROUND);
-        _display.setCursor(x + SWATCH + 5 + 7 * 6, y + 2);
-        _display.print(kColours[i].hex);
+        // Static footer
+        _display.fillRect(0, 220, 320, 20, COLOUR_HEADER_BG);
+        _display.setTextSize(1);
+        _display.setTextColor(COLOUR_TEXT_DIM, COLOUR_HEADER_BG);
+        _display.setCursor(4, 226);
+        _display.print("TAP OR PRESS ANY BUTTON TO RETURN");
     }
 
-    // ---- Footer: raw value key ----
-    _display.fillRect(0, 230, 320, 10, COLOUR_HEADER_BG);
-    _display.setTextColor(COLOUR_TEXT_DIM, COLOUR_HEADER_BG);
-    _display.setCursor(4, 232);
-    _display.print("Swatch shows SENT value. Name=intended colour. Report any mismatches.");
+    // CPU% in header — update every frame (small region)
+    {
+        char cpuBuf[12];
+        snprintf(cpuBuf, sizeof(cpuBuf), "CPU:%d%%", (int)AudioProcessorUsageMax());
+        const int16_t cpuX = 320 - (int16_t)(strlen(cpuBuf) * 6) - 4;
+        _display.fillRect(cpuX - 2, 2, 320 - cpuX + 2, 16, COLOUR_HEADER_BG);
+        _display.setTextColor(COLOUR_TEXT_DIM, COLOUR_HEADER_BG);
+        _display.setCursor(cpuX, 6);
+        _display.print(cpuBuf);
+    }
+
+    // Clear only the waveform band — not the whole screen
+    _display.fillRect(0, 20, 320, 200, 0x0000);
+
+    // Full-screen scope: 512 samples gives ~11 ms window.
+    // After trig offset (n/4 = 128) we have 384 samples for 286 columns — fills width.
+    static int16_t buf[512];
+    const uint16_t n  = scopeTap.snapshot(buf, 512);
+    const int16_t  wy = 22, wh = 198, ww = 288;
+
+    _display.drawRect(0, wy, ww, wh, COLOUR_BORDER);
+
+    if (n >= 64) {
+        // Rising zero-crossing trigger — search first half of buffer
+        int trig = n / 4;
+        for (int i = 4; i < (int)n / 2; ++i) {
+            if (buf[i-1] <= 0 && buf[i] > 0) { trig = i; break; }
+        }
+
+        const int16_t midY = wy + wh / 2;
+        const int     spp  = ((int)n > ww) ? (n / ww) : 1;
+        int16_t px = 1, py = midY;
+
+        for (int col = 0; col < ww - 2; ++col) {
+            const int base = trig + col * spp;
+            if (base >= (int)n) break;
+
+            // Box-filter average per pixel column — reduces aliasing
+            int32_t acc = 0; int cnt = 0;
+            for (int s = 0; s < spp && (base + s) < (int)n; ++s) {
+                acc += buf[base + s]; cnt++;
+            }
+            const int16_t samp = cnt ? (int16_t)(acc / cnt) : 0;
+
+            // ×10 gain (+20 dB) — same as home scope for consistent appearance.
+            // Full-screen scope uses drawLine to connect adjacent points smoothly.
+            static constexpr float SCOPE_GAIN = 10.0f;
+            int cy = midY - (int)((float)samp * (float)(wh / 2 - 2) * SCOPE_GAIN / 32767.0f);
+            cy = constrain(cy, wy + 1, wy + wh - 1);
+
+            if (col > 0) _display.drawLine(px, py, col + 1, cy, COLOUR_SCOPE_WAVE);
+            px = col + 1; py = cy;
+        }
+        _display.drawFastHLine(1, midY, ww - 2, COLOUR_SCOPE_ZERO);
+    }
 }
+

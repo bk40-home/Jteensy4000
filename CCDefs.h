@@ -341,4 +341,17 @@ namespace CC {
     static constexpr uint8_t VELOCITY_FILTER_SENS = 11;   // velocity → filter cutoff offset
     static constexpr uint8_t VELOCITY_ENV_SENS    = 12;   // velocity → filter env depth
 
+    // ─────────────────────────────────────────────────────────────────────────
+    // PITCH BEND RANGE
+    // ─────────────────────────────────────────────────────────────────────────
+    // Sets the pitch wheel throw in semitones (both up and down).
+    // CC value 0..127 maps to 0..24 semitones range.
+    // Default (CC=12): ±2 semitones — standard MIDI keyboard range.
+    // CC=127:  ±24 semitones (2 octaves each way).
+    //
+    // This is a global (synth-level) setting, stored in SynthEngine::_pitchBendRange.
+    // Using CC rather than RPN 0 for simplicity — easier to set from a MIDI controller.
+    // ─────────────────────────────────────────────────────────────────────────
+    static constexpr uint8_t PITCH_BEND_RANGE = 127; // CC 127: 0-127 → 0-24 semitones range
+
 } // namespace CC

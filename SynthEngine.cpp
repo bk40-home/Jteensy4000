@@ -122,15 +122,36 @@ SynthEngine::SynthEngine()
     // Depth and direction are encoded in _pitchEnvDc amplitude (set by setPitchEnvDepth).
     // At amplitude ±1.0 and gain 0.1: FM shift = 2^(±1 × 0.1 × 10) = ±1 octave.
     // With depth ±12 semitones: amplitude = ±12/12 = ±1.0 → ±1 octave. Correct.
-    static constexpr float kPitchEnvFMGain = 1.0f / 10.0f;
+    // -------------------------------------------------------------------------
+    // PITCH ENVELOPE → FM MIXER WIRING
+    // -------------------------------------------------------------------------
+    // Slot allocation in frequencyModMixer (must not conflict with existing wires):
+    //   0 = _frequencyDc   — wired inside OscillatorBlock (internal DC offset)
+    //   1 = LFO1           — wired above
+    //   2 = LFO2           — wired above
+    //   3 = Pitch envelope — wired here (the only remaining free slot)
+    //
+    // The FM mixer gain for slot 3 is 1.0 (full pass-through).
+    // All depth scaling is encoded in the _pitchEnvDc amplitude via
+    // VoiceBlock::setPitchEnvDepth() which applies FM_SEMITONE_SCALE.
+    //
+    // Signal flow per voice:
+    //   _pitchEnvDc (amplitude=depth×FM_SEMITONE_SCALE)
+    //     → EnvelopeBlock (ADSR shaping)
+    //       → frequencyModMixerOsc1/2 slot 3 (gain=1.0)
+    //         → _mainOsc FM input → pitch shift in Hz
+    // -------------------------------------------------------------------------
     for (int i = 0; i < MAX_VOICES; ++i) {
-        // _voices[i]._pitchEnvPatch1 = new AudioConnection(
-        //     _voices[i].pitchEnvOutput(), 0, _voices[i].frequencyModMixerOsc1(), 3);
-        // _voices[i]._pitchEnvPatch2 = new AudioConnection(
-        //     _voices[i].pitchEnvOutput(), 0, _voices[i].frequencyModMixerOsc2(), 3);
-        // // Fixed gain — depth is encoded in _pitchEnvDc amplitude, not here.
-        // _voices[i].frequencyModMixerOsc1().gain(3, kPitchEnvFMGain);
-        // _voices[i].frequencyModMixerOsc2().gain(3, kPitchEnvFMGain);
+        // Wire pitch envelope output into both oscillator FM mixers at slot 3.
+        _voices[i]._pitchEnvPatch1 = new AudioConnection(
+            _voices[i].pitchEnvOutput(), 0, _voices[i].frequencyModMixerOsc1(), 3);
+        _voices[i]._pitchEnvPatch2 = new AudioConnection(
+            _voices[i].pitchEnvOutput(), 0, _voices[i].frequencyModMixerOsc2(), 3);
+
+        // Gain = 1.0: depth is already encoded in _pitchEnvDc amplitude.
+        // DO NOT reduce this gain here — it would silently scale depth down.
+        _voices[i].frequencyModMixerOsc1().gain(3, 1.0f);
+        _voices[i].frequencyModMixerOsc2().gain(3, 1.0f);
     }
 
     _patchAmpModFixedDcToAmpModMixer = new AudioConnection(_ampModFixedDc, 0, _ampModMixer, 0);
@@ -413,6 +434,62 @@ void SynthEngine::setOsc2Waveform(int wave) { _osc2Wave = wave; for (int i=0;i<M
 void SynthEngine::setOsc1PitchOffset(float semis) { _osc1PitchSemi = semis; for (int i=0;i<MAX_VOICES;++i) _voices[i].setOsc1PitchOffset(semis); }
 void SynthEngine::setOsc2PitchOffset(float semis) { _osc2PitchSemi = semis; for (int i=0;i<MAX_VOICES;++i) _voices[i].setOsc2PitchOffset(semis); }
 
+// ============================================================================
+// PITCH BEND
+// ============================================================================
+// MIDI pitch bend uses a 14-bit value (0..16383, centre = 8192).
+// This is converted to ±_pitchBendRange semitones and routed to every voice
+// via OscillatorBlock::setPitchModulation(), which feeds into the software
+// pitch computation inside OscillatorBlock::update():
+//
+//   finalFreq = baseFreq × 2^((pitchOffset + pitchModulation + fineTune) / 12)
+//
+// Using the software path gives exact semitone accuracy at ALL base frequencies,
+// which is important — ±2 semitones means the same musical interval whether you
+// are playing A1 (55 Hz) or A6 (1760 Hz).
+//
+// The FM hardware path (frequencyModMixer) is NOT used for pitch bend because:
+//   1. It requires a free mixer slot (all 4 are in use).
+//   2. It would need per-voice AudioConnection changes.
+//   3. The software path is already proven for pitchOffset.
+// ============================================================================
+
+void SynthEngine::setPitchBendRange(float semitones) {
+    // Clamp to sensible range.  Zero range means the wheel is silent.
+    if (semitones < 0.0f)                        semitones = 0.0f;
+    if (semitones > PITCH_BEND_MAX_SEMITONES)     semitones = PITCH_BEND_MAX_SEMITONES;
+    _pitchBendRange = semitones;
+
+    // Re-apply the current bend at the new range so pitch is consistent
+    // immediately without requiring another wheel movement.
+    // Preserve current normalised wheel position, re-scale to new range.
+    const float oldRange = (_pitchBendRange > 0.0f) ? _pitchBendRange : PITCH_BEND_DEFAULT_SEMITONES;
+    const float normPos  = (_pitchBendRange > 0.0f) ? (_pitchBendSemis / oldRange) : 0.0f;
+    _pitchBendSemis = normPos * semitones;
+    for (int i = 0; i < MAX_VOICES; ++i) {
+        _voices[i].setOsc1PitchModulation(_pitchBendSemis);
+        _voices[i].setOsc2PitchModulation(_pitchBendSemis);
+    }
+}
+
+void SynthEngine::handlePitchBend(uint8_t /*channel*/, int16_t value) {
+    // MIDI pitch bend: 0..16383, centre = 8192.
+    // Map to -1.0 .. +1.0:
+    //   value=0     → -1.0 (full down)
+    //   value=8192  →  0.0 (centre / no bend)
+    //   value=16383 → +1.0 (full up, almost — correct enough)
+    //
+    // Multiply by current bend range to get semitones.
+    const float normalised  = (float)(value - 8192) / 8192.0f;
+    _pitchBendSemis         = normalised * _pitchBendRange;
+
+    // Apply to all voices — both oscillators share the same bend offset.
+    for (int i = 0; i < MAX_VOICES; ++i) {
+        _voices[i].setOsc1PitchModulation(_pitchBendSemis);
+        _voices[i].setOsc2PitchModulation(_pitchBendSemis);
+    }
+}
+
 void SynthEngine::setOsc1Detune(float semis) { _osc1DetuneSemi = semis; for (int i=0;i<MAX_VOICES;++i) _voices[i].setOsc1Detune(semis); }
 void SynthEngine::setOsc2Detune(float semis) { _osc2DetuneSemi = semis; for (int i=0;i<MAX_VOICES;++i) _voices[i].setOsc2Detune(semis); }
 
@@ -615,22 +692,36 @@ const char* SynthEngine::getLFO2DestinationName() const {
 // ============================================================================
 
 void SynthEngine::_applyLFO1Gains() {
-    // Per-dest depth system: mixer gains = depth (0..1) directly.
-    // _lfo1Amount is the LFO DSP waveform amplitude — set by CC::LFO1_DEPTH.
-    // When using per-dest depths with the legacy LFO_DEPTH CC still at 0,
-    // the effective amplitude would be zero. Auto-raise to 1.0 so depths work
-    // without needing to also set LFO1_DEPTH. If LFO1_DEPTH was explicitly set,
-    // use that as a master scale on top (allows JP-8000 style overall LFO level).
+    // -------------------------------------------------------------------------
+    // Effective LFO amplitude:
+    //   If LFO1_DEPTH CC is explicitly set, use it as a master scale.
+    //   If no depth CC was received but any per-dest depth is non-zero,
+    //   auto-raise to 1.0 so destinations work without needing LFO1_DEPTH.
+    //   This mirrors the JP-8000 where LFO Rate + Depth are independent of dest.
+    // -------------------------------------------------------------------------
     const float eff1 = (_lfo1Amount > 0.0f) ? _lfo1Amount : (
         (_lfo1PitchDepth > 0.0f || _lfo1FilterDepth > 0.0f ||
          _lfo1PWMDepth   > 0.0f || _lfo1AmpDepth   > 0.0f) ? 1.0f : 0.0f);
-    // Ensure LFO DSP amplitude tracks effective level
+
+    // Drive the DSP waveform amplitude — only write if changed (avoid audio glitch)
     if (eff1 != _lfo1.getAmplitude()) _lfo1.setAmplitude(eff1);
 
-    const float pitchG  = eff1 * _lfo1PitchDepth;
+    // -------------------------------------------------------------------------
+    // PITCH gain:
+    //   _lfo1PitchDepth (0..1 from CC) represents the fraction of max vibrato.
+    //   LFO_PITCH_MAX_SEMITONES × FM_SEMITONE_SCALE converts the desired semitone
+    //   range into the correct FM-mixer input amplitude (see SynthEngine.h).
+    //   Without FM_SEMITONE_SCALE, full depth would try to shift ±10 octaves!
+    // -------------------------------------------------------------------------
+    const float pitchScale = LFO_PITCH_MAX_SEMITONES * FM_SEMITONE_SCALE;  // = 7/120 ≈ 0.0583
+    const float pitchG  = eff1 * _lfo1PitchDepth * pitchScale;
+
+    // Filter, PWM and amp gains are already dimensionless (0..1 into their respective
+    // mod mixers) — no additional scale needed for those paths.
     const float filterG = eff1 * _lfo1FilterDepth;
     const float pwmG    = eff1 * _lfo1PWMDepth;
     const float ampG    = eff1 * _lfo1AmpDepth;
+
     for (int i = 0; i < MAX_VOICES; ++i) {
         _voices[i].frequencyModMixerOsc1().gain(1, pitchG);
         _voices[i].frequencyModMixerOsc2().gain(1, pitchG);
@@ -642,12 +733,15 @@ void SynthEngine::_applyLFO1Gains() {
 }
 
 void SynthEngine::_applyLFO2Gains() {
+    // Same structure as _applyLFO1Gains — see comments there for explanation.
     const float eff2 = (_lfo2Amount > 0.0f) ? _lfo2Amount : (
         (_lfo2PitchDepth > 0.0f || _lfo2FilterDepth > 0.0f ||
          _lfo2PWMDepth   > 0.0f || _lfo2AmpDepth   > 0.0f) ? 1.0f : 0.0f);
     if (eff2 != _lfo2.getAmplitude()) _lfo2.setAmplitude(eff2);
 
-    const float pitchG  = eff2 * _lfo2PitchDepth;
+    // Pitch: scale depth (0..1) to FM mod-input units via semitone conversion
+    const float pitchScale = LFO_PITCH_MAX_SEMITONES * FM_SEMITONE_SCALE;  // ≈ 0.0583
+    const float pitchG  = eff2 * _lfo2PitchDepth * pitchScale;
     const float filterG = eff2 * _lfo2FilterDepth;
     const float pwmG    = eff2 * _lfo2PWMDepth;
     const float ampG    = eff2 * _lfo2AmpDepth;
@@ -687,8 +781,9 @@ void SynthEngine::_updateLFODelay() {
         _lfo1CurrentAmp = _lfo1Amount * t;
         if (t >= 1.0f) _lfo1Ramping = false;
 
-        // Apply ramped amplitude to all per-destination gains
-        const float pitchG  = _lfo1CurrentAmp * _lfo1PitchDepth;
+        // Apply ramped amplitude — pitch gains use the same FM_SEMITONE_SCALE as _applyLFO1Gains
+        const float pitchScale1 = LFO_PITCH_MAX_SEMITONES * FM_SEMITONE_SCALE;
+        const float pitchG  = _lfo1CurrentAmp * _lfo1PitchDepth * pitchScale1;
         const float filterG = _lfo1CurrentAmp * _lfo1FilterDepth;
         const float pwmG    = _lfo1CurrentAmp * _lfo1PWMDepth;
         const float ampG    = _lfo1CurrentAmp * _lfo1AmpDepth;
@@ -709,7 +804,8 @@ void SynthEngine::_updateLFODelay() {
         _lfo2CurrentAmp = _lfo2Amount * t;
         if (t >= 1.0f) _lfo2Ramping = false;
 
-        const float pitchG  = _lfo2CurrentAmp * _lfo2PitchDepth;
+        const float pitchScale2 = LFO_PITCH_MAX_SEMITONES * FM_SEMITONE_SCALE;
+        const float pitchG  = _lfo2CurrentAmp * _lfo2PitchDepth * pitchScale2;
         const float filterG = _lfo2CurrentAmp * _lfo2FilterDepth;
         const float pwmG    = _lfo2CurrentAmp * _lfo2PWMDepth;
         const float ampG    = _lfo2CurrentAmp * _lfo2AmpDepth;
@@ -1333,10 +1429,33 @@ case CC::FX_REVERB_BYPASS: {
         case CC::SUPERSAW2_DETUNE: { setSupersawDetune(1, norm); JT_LOGF("[CC %u:%s] Supersaw2 Detune = %.3f\n", control, ccName, norm); } break;
         case CC::SUPERSAW2_MIX:    { setSupersawMix(1, norm);    JT_LOGF("[CC %u:%s] Supersaw2 Mix    = %.3f\n", control, ccName, norm); } break;
 
-        case CC::OSC1_FREQ_DC:  { setOsc1FrequencyDcAmp(norm); JT_LOGF("[CC %u:%s] Osc1 Freq DC = %.3f\n", control, ccName, norm); } break;
-        case CC::OSC1_SHAPE_DC: { setOsc1ShapeDcAmp(norm);     JT_LOGF("[CC %u:%s] Osc1 Shape DC = %.3f\n", control, ccName, norm); } break;
-        case CC::OSC2_FREQ_DC:  { setOsc2FrequencyDcAmp(norm); JT_LOGF("[CC %u:%s] Osc2 Freq DC = %.3f\n", control, ccName, norm); } break;
-        case CC::OSC2_SHAPE_DC: { setOsc2ShapeDcAmp(norm);     JT_LOGF("[CC %u:%s] Osc2 Shape DC = %.3f\n", control, ccName, norm); } break;
+        // OSC1/2 FREQ DC — static pitch offset injected into the FM mixer.
+        // Unipolar: CC=0 → no shift, CC=127 → +24 semitones (2 octaves up).
+        //
+        // PROBLEM with old code (setOsc1FrequencyDcAmp(norm)):
+        //   norm=1.0 → FM input=1.0 → shift = 2^(1.0 × 10) = 1024× freq = 10 octaves
+        //   (well beyond audio range — inaudible; hence "no effect")
+        //   norm=0.0 → no shift — also "no effect"
+        //
+        // FIX: scale so CC=127 → +24 semitones using FM_SEMITONE_SCALE.
+        //   amp = norm × DC_PITCH_MAX_SEMITONES × FM_SEMITONE_SCALE
+        //       = norm × 24 × (1/120) = norm × 0.2
+        //
+        // Presets with CC=0 (default/unset) still play in tune — no regression.
+        case CC::OSC1_FREQ_DC: {
+            const float dcAmp = norm * DC_PITCH_MAX_SEMITONES * FM_SEMITONE_SCALE;
+            setOsc1FrequencyDcAmp(dcAmp);
+            JT_LOGF("[CC %u:%s] Osc1 Freq DC %.0f semitones (amp %.4f)\n",
+                    control, ccName, norm * DC_PITCH_MAX_SEMITONES, dcAmp);
+        } break;
+        case CC::OSC1_SHAPE_DC: { setOsc1ShapeDcAmp(norm); JT_LOGF("[CC %u:%s] Osc1 Shape DC = %.3f\n", control, ccName, norm); } break;
+        case CC::OSC2_FREQ_DC: {
+            const float dcAmp = norm * DC_PITCH_MAX_SEMITONES * FM_SEMITONE_SCALE;
+            setOsc2FrequencyDcAmp(dcAmp);
+            JT_LOGF("[CC %u:%s] Osc2 Freq DC %.0f semitones (amp %.4f)\n",
+                    control, ccName, norm * DC_PITCH_MAX_SEMITONES, dcAmp);
+        } break;
+        case CC::OSC2_SHAPE_DC: { setOsc2ShapeDcAmp(norm); JT_LOGF("[CC %u:%s] Osc2 Shape DC = %.3f\n", control, ccName, norm); } break;
 
         case CC::RING1_MIX: { setRing1Mix(norm); JT_LOGF("[CC %u:%s] Ring1 Mix = %.3f\n", control, ccName, norm); } break;
         case CC::RING2_MIX: { setRing2Mix(norm); JT_LOGF("[CC %u:%s] Ring2 Mix = %.3f\n", control, ccName, norm); } break;
@@ -1537,6 +1656,15 @@ case CC::DELAY_TIMING_MODE: {
         case CC::VELOCITY_AMP_SENS:    { setVelocityAmpSens(norm);    JT_LOGF("[CC %u] Vel Amp Sens %.3f\n",    control, norm); } break;
         case CC::VELOCITY_FILTER_SENS: { setVelocityFilterSens(norm); JT_LOGF("[CC %u] Vel Filter Sens %.3f\n", control, norm); } break;
         case CC::VELOCITY_ENV_SENS:    { setVelocityEnvSens(norm);    JT_LOGF("[CC %u] Vel Env Sens %.3f\n",    control, norm); } break;
+
+        // PITCH_BEND_RANGE: CC 0..127 → 0..PITCH_BEND_MAX_SEMITONES (24).
+        // Default = 2 semitones (standard MIDI keyboard).
+        // Setting to 12 gives a full-octave wheel; 24 gives 2-octave.
+        case CC::PITCH_BEND_RANGE: {
+            const float rangeSemis = norm * PITCH_BEND_MAX_SEMITONES;
+            setPitchBendRange(rangeSemis);
+            JT_LOGF("[CC %u:%s] Bend range = ±%.1f semitones\n", control, ccName, rangeSemis);
+        } break;
 
         // ------------------- Fallback -------------------
         default:

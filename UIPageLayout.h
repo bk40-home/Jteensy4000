@@ -62,7 +62,7 @@
 
 namespace UIPage {
 
-static constexpr int NUM_PAGES       = 32;  // 0..31  (pages 26-31 = new LFO+PitchEnv+Velocity)
+static constexpr int NUM_PAGES       = 33;  // 0..32  (page 32 = GLOBAL params: pitch bend range)
 static constexpr int PARAMS_PER_PAGE = 4;
 
 // ---------------------------------------------------------------------------
@@ -201,6 +201,9 @@ static constexpr uint8_t ccMap[NUM_PAGES][PARAMS_PER_PAGE] = {
     {CC::PITCH_ENV_ATTACK, CC::PITCH_ENV_DECAY, CC::PITCH_ENV_SUSTAIN, CC::PITCH_ENV_RELEASE},
     {CC::PITCH_ENV_DEPTH, CC::VELOCITY_AMP_SENS, CC::VELOCITY_FILTER_SENS, CC::VELOCITY_ENV_SENS },
 
+    // Page 32 — GLOBAL: pitch bend range (CC 127)
+    {CC::PITCH_BEND_RANGE, 255, 255, 255 },
+
 };
 
 // ---------------------------------------------------------------------------
@@ -304,6 +307,9 @@ static constexpr const char* ccNames[NUM_PAGES][PARAMS_PER_PAGE] = {
 
     // Page 31 — Pitch env depth + velocity
     { "PE Depth",  "Vel Amp",    "Vel Flt",    "Vel Env"   },
+
+    // Page 32
+    { "Bend Rng",  "",          "",           ""          },
 };
 
 // ---------------------------------------------------------------------------
@@ -343,7 +349,8 @@ static constexpr const char* pageTitle[NUM_PAGES] = {
     "Delay LFO2",        // 29  tab shows "Delay"
     "Pitch Env ADSR",    // 30  tab shows "Pitch"
     "Vel+PEnv Depth",    // 31  tab shows "Vel+PEnv"
+    "Global 2",          // 32  pitch bend range
 
-    };
+};
 
 } // namespace UIPage

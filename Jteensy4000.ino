@@ -160,9 +160,10 @@ static void printUSBDeviceInfo(bool connected) {
                       midiHost.idVendor(), midiHost.idProduct());
         // manufacturer() and product() return const char* from USB string descriptors.
         // They may be nullptr if the device does not supply them.
-        const char* mfr  = midiHost.manufacturer();
-        const char* prod = midiHost.product();
-        const char* ser  = midiHost.serialNumber();
+        // reinterpret_cast: USBHost_t36 returns uint8_t* for string data.
+        const char* mfr  = reinterpret_cast<const char*>(midiHost.manufacturer());
+        const char* prod = reinterpret_cast<const char*>(midiHost.product());
+        const char* ser  = reinterpret_cast<const char*>(midiHost.serialNumber());
         Serial.printf("[USB-HOST]   Manufacturer : %s\n", mfr  ? mfr  : "(none)");
         Serial.printf("[USB-HOST]   Product      : %s\n", prod ? prod : "(none)");
         Serial.printf("[USB-HOST]   Serial       : %s\n", ser  ? ser  : "(none)");
@@ -210,6 +211,16 @@ static void onCC(byte channel, byte control, byte value) {
     synth.handleControlChange(channel, control, value);
 }
 
+// onPitchBend — MIDI pitch bend wheel callback.
+// value = raw 14-bit pitch bend (0..16383, centre = 8192).
+// Forwarded directly to SynthEngine which converts to semitones and applies
+// to all voices via OscillatorBlock::setPitchModulation().
+static void onPitchBend(byte channel, int value) {
+    // Teensy MIDI libraries pass pitch bend as int (0..16383, centre 8192).
+    synth.handlePitchBend(channel, (int16_t)value);
+    JT_LOGF("[MIDI] PitchBend ch%u val=%d\n", (unsigned)channel, value);
+}
+
 // Real-time clock messages — forwarded to BPMClockManager only (no logging —
 // these fire up to 24× per beat and would flood the ring).
 static void onMIDIClock()    { bpmClock.handleMIDIClock();    }
@@ -244,6 +255,16 @@ void setup() {
     Serial.println("[JT4000] Display OK");
 
     // -------------------------------------------------------------------------
+    // COLOUR DIAGNOSTIC  —  enable to identify display channel mapping
+    // -------------------------------------------------------------------------
+    // Step 1: uncomment BOTH lines below and upload.
+    //         The screen will show 6 colour bars.  Note what colour each bar
+    //         ACTUALLY appears as on the hardware, then report back.
+    //   while (true) {}   // halt — synth does not start
+    // #endif
+    // -------------------------------------------------------------------------
+
+    // -------------------------------------------------------------------------
     // STEP 2: Audio memory pool.
     // 200 blocks = 51200 bytes DMAMEM.  256 was marginal under heavy SPI.
     // -------------------------------------------------------------------------
@@ -257,6 +278,7 @@ void setup() {
     midiHost.setHandleNoteOn(onNoteOn);
     midiHost.setHandleNoteOff(onNoteOff);
     midiHost.setHandleControlChange(onCC);
+    midiHost.setHandlePitchChange(onPitchBend);    // pitch wheel
     midiHost.setHandleRealTimeSystem(onUSBHostRealTime);
 
     Serial.println("[JT4000] USB Host MIDI configured");
@@ -267,6 +289,7 @@ void setup() {
     usbMIDI.setHandleNoteOn(onNoteOn);
     usbMIDI.setHandleNoteOff(onNoteOff);
     usbMIDI.setHandleControlChange(onCC);
+    usbMIDI.setHandlePitchChange(onPitchBend);    // pitch wheel
     usbMIDI.setHandleRealTimeSystem(onUSBHostRealTime);
 
     Serial.println("[JT4000] USB Device MIDI configured");
@@ -278,6 +301,7 @@ void setup() {
     midi1.setHandleNoteOn(onNoteOn);
     midi1.setHandleNoteOff(onNoteOff);
     midi1.setHandleControlChange(onCC);
+    midi1.setHandlePitchBend(onPitchBend);        // pitch wheel (MIDI lib uses different name)
     midi1.setHandleClock(onMIDIClock);
     midi1.setHandleStart(onMIDIStart);
     midi1.setHandleStop(onMIDIStop);

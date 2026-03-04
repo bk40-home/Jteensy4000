@@ -59,31 +59,47 @@ inline bool sectionIsBrowser(const SectionDef& s) {
 
 // -----------------------------------------------------------------------------
 // Section table — 8 sections covering all 26 UIPages (0..25) + Presets tile
+//
+// COLOUR NOTE: All colours use the BGR565 pre-swapped values from JT4000Colours.h.
+// The ILI9341 panel has MADCTL_BGR set, which swaps R and B hardware channels.
+// Using bare RGB565 constants (RED, YELLOW, GREEN) shows the wrong colour:
+//   YELLOW 0xFFE0 (RGB565) → displays as cyan on this BGR panel
+//   RED    0xF800 (RGB565) → displays as blue on this BGR panel
+// Always use COLOUR_* constants from JT4000Colours.h for correct display.
+//
+// Section colour assignments (from existing JT-4000 palette):
+//   OSC    → COLOUR_OSC    (bright cyan  #00CBFF)
+//   FILTER → COLOUR_FILTER (amber-yellow #FFB428)
+//   ENV    → COLOUR_ENV    (magenta-pink #DC32A0)
+//   LFO    → COLOUR_LFO    (orange       #FF6C00)
+//   FX     → COLOUR_FX     (light cyan   #00DCFF)
+//   GLOBAL → COLOUR_GLOBAL (neutral grey #828291)
+//   PRESETS→ COLOUR_ACCENT (red          #FF1C18)
 // -----------------------------------------------------------------------------
 static const SectionDef kSections[SECTION_COUNT] = {
 
-    // 0 — OSC 1  (pages 0-3)
-    { "OSC 1",   YELLOW, { 0, 1, 2, 3, 255, 255 }, 4 },
+    // 0 — OSC 1  (pages 0-3)  cyan
+    { "OSC 1",   COLOUR_OSC,    { 0, 1, 2, 3, 255, 255 }, 4 },
 
-    // 1 — OSC 2  (pages 4-8 inc. Sources mixer on page 8)
-    { "OSC 2",   YELLOW, { 4, 5, 6, 7, 8, 255 },   5 },
+    // 1 — OSC 2  (pages 4-8)  cyan (matches OSC 1 — same signal group)
+    { "OSC 2",   COLOUR_OSC,    { 4, 5, 6, 7, 8, 255 },   5 },
 
-    // 2 — FILTER (pages 9-12)
-    { "FILTER",  YELLOW, { 9, 10, 11, 12, 255, 255 }, 4 },
+    // 2 — FILTER (pages 9-12)  amber-yellow
+    { "FILTER",  COLOUR_FILTER, { 9, 10, 11, 12, 255, 255 }, 4 },
 
-    // 3 — ENV    (pages 13-14)
-    { "ENV",     YELLOW, { 13, 14, 30, 31, 255, 255 }, 4 },
+    // 3 — ENV    (pages 13-14, 30-31)  magenta-pink
+    { "ENV",     COLOUR_ENV,    { 13, 14, 30, 31, 255, 255 }, 4 },
 
-    // 4 — LFO   (pages 15-17)
-    { "LFO",     YELLOW, { 26, 27, 28, 29, 255, 255 }, 4 },
+    // 4 — LFO   (pages 26-29)  orange
+    { "LFO",     COLOUR_LFO,    { 26, 27, 28, 29, 255, 255 }, 4 },
 
-    // 5 — FX    (pages 18-22)
-    { "FX",      YELLOW, { 18, 19, 20, 21, 22, 255 }, 5 },    
+    // 5 — FX    (pages 18-22)  light cyan
+    { "FX",      COLOUR_FX,     { 18, 19, 20, 21, 22, 255 }, 5 },
 
-    // 6 — GLOBAL (pages 23-25)
-    { "GLOBAL",  YELLOW, { 23, 24, 25, 255, 255, 255 }, 3 },
+    // 6 — GLOBAL (pages 23-25, 32)  neutral grey
+    { "GLOBAL",  COLOUR_GLOBAL, { 23, 24, 25, 32, 255, 255 }, 4 },
 
     // 7 — PRESETS: sentinel 0xFF → UIManager opens PresetBrowser instead of SectionScreen
     //    pageCount = 0 signals "no pages, this is a browser tile"
-    { "PRESETS", 0xF800, { SECTION_PAGE_BROWSER, 255, 255, 255, 255, 255 }, 0 },
+    { "PRESETS", COLOUR_ACCENT, { SECTION_PAGE_BROWSER, 255, 255, 255, 255, 255 }, 0 },
 };
